@@ -5,6 +5,7 @@ import {
   hydrateAttendanceSummaryRows,
   serializeAttendanceSummaryRows
 } from '../utils/attendanceSummary'
+import AttendanceImportModal from '../components/AttendanceImportModal'
 import './AttendancePreview.css'
 
 const money = value => Number(value || 0).toLocaleString('vi-VN')
@@ -92,6 +93,9 @@ function AttendancePreview() {
   const [summarizing, setSummarizing] = useState(false)
   const [error, setError] = useState('')
   const [hasSnapshot, setHasSnapshot] = useState(false)
+  const [isImportOpen, setIsImportOpen] = useState(false)
+  const [importEmployees, setImportEmployees] = useState([])
+  const [importLogs, setImportLogs] = useState([])
 
   const applySnapshot = useCallback((snapshot, nextMonth) => {
     if (!snapshot?.rows) {
@@ -139,11 +143,23 @@ function AttendancePreview() {
       try {
         const months = await loadSummaryIndex()
         if (cancelled) return
-        const initialMonth = months[0] || currentMonthValue()
-        setMonth(initialMonth)
-        const snapshot = await fbGet(`hr/attendanceMonthSummaries/${initialMonth}`)
+        // Ưu tiên chọn tháng có dữ liệu chấm công thực tế
+        let initialMonth = months[0] || currentMonthValue()
+        let initialSnapshot = null
+        for (const m of months) {
+          const snap = await fbGet(`hr/attendanceMonthSummaries/${m}`)
+          if (snap && Number(snap.sourceLogCount || 0) > 0) {
+            initialMonth = m
+            initialSnapshot = snap
+            break
+          }
+        }
+        if (!initialSnapshot && initialMonth) {
+          initialSnapshot = await fbGet(`hr/attendanceMonthSummaries/${initialMonth}`)
+        }
         if (cancelled) return
-        applySnapshot(snapshot, initialMonth)
+        setMonth(initialMonth)
+        applySnapshot(initialSnapshot, initialMonth)
       } catch (requestError) {
         console.error('Không tải được danh sách bảng công:', requestError)
         if (!cancelled) setError('Không thể tải dữ liệu bảng công.')
@@ -157,6 +173,39 @@ function AttendancePreview() {
   const handleMonthChange = async (nextMonth) => {
     setMonth(nextMonth)
     await loadMonthSnapshot(nextMonth)
+  }
+
+  const handleOpenImport = async () => {
+    try {
+      const [empData, logsData] = await Promise.all([
+        fbGet('employees'),
+        fbGetAttendanceLogsByMonth(month || '2026-08')
+      ])
+      if (empData) {
+        setImportEmployees(
+          Array.isArray(empData)
+            ? empData
+            : Object.entries(empData).map(([id, value]) => ({ ...value, id }))
+        )
+      }
+      if (logsData) {
+        setImportLogs(
+          Array.isArray(logsData)
+            ? logsData
+            : Object.entries(logsData).map(([id, value]) => ({ ...value, id }))
+        )
+      }
+    } catch (err) {
+      console.warn('Không thể nạp trước dữ liệu nhân sự để import:', err)
+    }
+    setIsImportOpen(true)
+  }
+
+  const handleImportComplete = async () => {
+    setIsImportOpen(false)
+    const months = await loadSummaryIndex()
+    const targetMonth = month || months[0] || '2026-08'
+    await loadMonthSnapshot(targetMonth)
   }
 
   const handleSummarize = async () => {
@@ -281,6 +330,13 @@ function AttendancePreview() {
             </select>
           </label>
         )}
+        <button
+          type="button"
+          className="attendance-preview-import-btn"
+          onClick={handleOpenImport}
+        >
+          📁 Tải lên Excel & Đồng bộ
+        </button>
         <button type="button" className="attendance-preview-summarize" onClick={handleSummarize} disabled={summarizing}>
           {summarizing ? 'Đang tổng hợp...' : 'Tổng hợp'}
         </button>
@@ -296,14 +352,23 @@ function AttendancePreview() {
       <>
         <div className="attendance-preview-scroll"><table className="attendance-preview-table">
           <thead>
-            <tr className="totals"><th colSpan="11"></th><th>{totals.under30 || 0}</th><th>{money(totals.lateFine)}</th><th>{totals.over30 || 0}</th><th>{money(totals.overFine)}</th><th>{totals.missing || 0}</th><th>{money(totals.missingFine)}</th><th colSpan="5"></th><th>{money(totals.absenceFine)}</th><th></th><th>{money(totals.total)}</th><th colSpan="2"></th><th>{totals.overtime || 0}</th><th>{totals.leave || 0}</th><th></th><th>{totals.probation || 0}</th><th>{totals.official || 0}</th><th colSpan="2"></th><th>{totals.workdays || 0}</th><th colSpan={calendar.length}></th></tr>
-            <tr className="groups"><th rowSpan="2">STT</th><th rowSpan="2">Xác nhận</th><th colSpan="3">Thông tin nhân sự</th><th rowSpan="2">Loại HĐ</th><th rowSpan="2">Trạng thái</th><th rowSpan="2">Ngày nhận việc</th><th rowSpan="2">Ngày chính thức</th><th rowSpan="2">Ngày làm việc cuối</th><th rowSpan="2">Notes</th><th colSpan="14">Phạt Nội quy</th><th rowSpan="2">Vé xe</th><th rowSpan="2">Phép còn lại</th><th rowSpan="2">Tăng ca</th><th rowSpan="2">Phép sử dụng</th><th rowSpan="2">Học việc</th><th rowSpan="2">Thử việc</th><th rowSpan="2">Chính thức</th><th rowSpan="2">Công làm lễ</th><th rowSpan="2">Công lễ</th><th rowSpan="2">Tổng công</th>{calendar.map(item => <th key={`w${item.day}`}>{item.weekday}</th>)}</tr>
-            <tr className="columns"><th>Họ tên</th><th>Bộ phận</th><th>Ca làm</th><th>Muộn/sớm &lt;30p</th><th>Phạt</th><th>Muộn/sớm ≥30p</th><th>Phạt</th><th>Quên chấm</th><th>Phạt</th><th>Không trực nhật</th><th>Phạt</th><th>Nghỉ đột xuất</th><th>Phạt</th><th>Nghỉ không phép</th><th>Phạt</th><th>Say xỉn</th><th>Tổng phạt</th>{calendar.map(item => <th key={item.day}>{item.day}</th>)}</tr>
-          </thead><tbody>{rows.map((row, index) => { const fine = penalties(row); return <tr key={row.employeeId}><td>{index + 1}</td><td></td><td className="name">{row.employeeName}</td>{departmentRowSpans[index] > 0 && <td rowSpan={departmentRowSpans[index]}>{row.displayDepartment}</td>}<td>{row.shift}</td><td>{contractType(row)}</td><td>{row.employmentStatus}</td><td>{dateText(row.joinDate)}</td><td>{dateText(row.officialDate)}</td><td>{dateText(row.lastWorkingDate)}</td><td>{row.lateCount ? `${row.lateCount} lần (${row.lateMinutes}p)` : ''}</td><td>{fine.under30}</td><td>{money(fine.lateFine)}</td><td>{fine.over30}</td><td>{money(fine.overFine)}</td><td>{fine.missing}</td><td>{money(fine.missingFine)}</td><td></td><td></td><td></td><td></td><td>{fine.absence}</td><td>{money(fine.absenceFine)}</td><td></td><td className="fine">{money(fine.total)}</td><td></td><td></td><td>{row.overtimeHours || ''}</td><td>{row.paidLeaveWorkdays || ''}</td><td></td><td>{row.probationWorkdays || ''}</td><td>{row.officialWorkdays || ''}</td><td></td><td></td><td>{row.workdays || ''}</td>{calendar.map(item => <td key={item.day} className="day">{dayCode(row.days.get(`${month}-${String(item.day).padStart(2, '0')}`))}</td>)}</tr> })}</tbody>
+            <tr className="totals"><th colSpan="12"></th><th>{totals.under30 || 0}</th><th>{money(totals.lateFine)}</th><th>{totals.over30 || 0}</th><th>{money(totals.overFine)}</th><th>{totals.missing || 0}</th><th>{money(totals.missingFine)}</th><th colSpan="5"></th><th>{money(totals.absenceFine)}</th><th></th><th>{money(totals.total)}</th><th colSpan="2"></th><th>{totals.overtime || 0}</th><th>{totals.leave || 0}</th><th></th><th>{totals.probation || 0}</th><th>{totals.official || 0}</th><th colSpan="2"></th><th>{totals.workdays || 0}</th><th colSpan={calendar.length}></th></tr>
+            <tr className="groups"><th rowSpan="2">STT</th><th rowSpan="2">Xác nhận</th><th colSpan="4">Thông tin nhân sự</th><th rowSpan="2">Loại HĐ</th><th rowSpan="2">Trạng thái</th><th rowSpan="2">Ngày nhận việc</th><th rowSpan="2">Ngày chính thức</th><th rowSpan="2">Ngày làm việc cuối</th><th rowSpan="2">Notes</th><th colSpan="14">Phạt Nội quy</th><th rowSpan="2">Vé xe</th><th rowSpan="2">Phép còn lại</th><th rowSpan="2">Tăng ca</th><th rowSpan="2">Phép sử dụng</th><th rowSpan="2">Học việc</th><th rowSpan="2">Thử việc</th><th rowSpan="2">Chính thức</th><th rowSpan="2">Công làm lễ</th><th rowSpan="2">Công lễ</th><th rowSpan="2">Tổng công</th>{calendar.map(item => <th key={`w${item.day}`}>{item.weekday}</th>)}</tr>
+            <tr className="columns"><th>Mã NV</th><th>Họ tên</th><th>Bộ phận</th><th>Ca làm</th><th>Muộn/sớm &lt;30p</th><th>Phạt</th><th>Muộn/sớm ≥30p</th><th>Phạt</th><th>Quên chấm</th><th>Phạt</th><th>Không trực nhật</th><th>Phạt</th><th>Nghỉ đột xuất</th><th>Phạt</th><th>Nghỉ không phép</th><th>Phạt</th><th>Say xỉn</th><th>Tổng phạt</th>{calendar.map(item => <th key={item.day}>{item.day}</th>)}</tr>
+          </thead><tbody>{rows.map((row, index) => { const fine = penalties(row); return <tr key={row.employeeId}><td>{index + 1}</td><td></td><td className="employee-code">{row.employeeCode || '-'}</td><td className="name">{row.employeeName}</td>{departmentRowSpans[index] > 0 && <td rowSpan={departmentRowSpans[index]}>{row.displayDepartment}</td>}<td>{row.shift}</td><td>{contractType(row)}</td><td>{row.employmentStatus}</td><td>{dateText(row.joinDate)}</td><td>{dateText(row.officialDate)}</td><td>{dateText(row.lastWorkingDate)}</td><td>{row.lateCount ? `${row.lateCount} lần (${row.lateMinutes}p)` : ''}</td><td>{fine.under30}</td><td>{money(fine.lateFine)}</td><td>{fine.over30}</td><td>{money(fine.overFine)}</td><td>{fine.missing}</td><td>{money(fine.missingFine)}</td><td></td><td></td><td></td><td></td><td>{fine.absence}</td><td>{money(fine.absenceFine)}</td><td></td><td className="fine">{money(fine.total)}</td><td></td><td></td><td>{row.overtimeHours || ''}</td><td>{row.paidLeaveWorkdays || ''}</td><td></td><td>{row.probationWorkdays || ''}</td><td>{row.officialWorkdays || ''}</td><td></td><td></td><td>{row.workdays || ''}</td>{calendar.map(item => <td key={item.day} className="day">{dayCode(row.days.get(`${month}-${String(item.day).padStart(2, '0')}`))}</td>)}</tr> })}</tbody>
         </table></div>
         <section className="attendance-preview-weeks">{weekly.map(week => <article key={week.label}><h3>{week.label}</h3>{week.events.map(event => <div key={event.label}><strong>{event.label}: {event.people.length}</strong><span>{event.people.join(', ') || 'Không có'}</span></div>)}</article>)}</section>
         <section className="attendance-preview-legend"><strong>Chú thích:</strong><span>X: Nghỉ theo lịch/không phép theo trạng thái</span><span>P1: Nghỉ phép năm</span><span>1 / 0.5: Công trong ngày</span></section>
       </>
+    )}
+    {isImportOpen && (
+      <AttendanceImportModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSave={handleImportComplete}
+        employees={importEmployees}
+        attendanceLogs={importLogs}
+      />
     )}
   </div>
 }

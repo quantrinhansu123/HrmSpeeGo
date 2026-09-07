@@ -58,6 +58,22 @@
   font: inherit;
 }
 
+.attendance-preview-import-btn {
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 6px;
+  background: #10b981;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attendance-preview-import-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
 .attendance-preview-summarize {
   padding: 10px 18px;
   border: 0;
@@ -162,7 +178,7 @@
   background: #fff0c8;
 }
 
-.attendance-preview-table .columns th:nth-child(-n + 3) {
+.attendance-preview-table .columns th:nth-child(-n + 4) {
   background: #dceaf7;
 }
 
@@ -177,6 +193,11 @@
 .attendance-preview-table td.name {
   text-align: left;
   font-weight: 600;
+}
+
+.attendance-preview-table td.employee-code {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .attendance-preview-table td.fine {
@@ -195,17 +216,19 @@
 .attendance-preview-table th:nth-child(2),
 .attendance-preview-table td:nth-child(2) { min-width: 72px; width: 72px; }
 .attendance-preview-table th:nth-child(3),
-.attendance-preview-table td:nth-child(3) { min-width: 205px; width: 205px; }
+.attendance-preview-table td:nth-child(3) { min-width: 100px; width: 100px; }
 .attendance-preview-table th:nth-child(4),
-.attendance-preview-table td:nth-child(4) { min-width: 130px; width: 130px; }
+.attendance-preview-table td:nth-child(4) { min-width: 205px; width: 205px; }
 .attendance-preview-table th:nth-child(5),
-.attendance-preview-table td:nth-child(5) { min-width: 105px; width: 105px; }
-.attendance-preview-table th:nth-child(n + 6):nth-child(-n + 11),
-.attendance-preview-table td:nth-child(n + 6):nth-child(-n + 11) { min-width: 112px; width: 112px; }
-.attendance-preview-table th:nth-child(n + 12):nth-child(-n + 25),
-.attendance-preview-table td:nth-child(n + 12):nth-child(-n + 25) { min-width: 92px; width: 92px; }
-.attendance-preview-table th:nth-child(n + 26):nth-child(-n + 35),
-.attendance-preview-table td:nth-child(n + 26):nth-child(-n + 35) { min-width: 78px; width: 78px; }
+.attendance-preview-table td:nth-child(5) { min-width: 130px; width: 130px; }
+.attendance-preview-table th:nth-child(6),
+.attendance-preview-table td:nth-child(6) { min-width: 105px; width: 105px; }
+.attendance-preview-table th:nth-child(n + 7):nth-child(-n + 12),
+.attendance-preview-table td:nth-child(n + 7):nth-child(-n + 12) { min-width: 112px; width: 112px; }
+.attendance-preview-table th:nth-child(n + 13):nth-child(-n + 26),
+.attendance-preview-table td:nth-child(n + 13):nth-child(-n + 26) { min-width: 92px; width: 92px; }
+.attendance-preview-table th:nth-child(n + 27):nth-child(-n + 36),
+.attendance-preview-table td:nth-child(n + 27):nth-child(-n + 36) { min-width: 78px; width: 78px; }
 
 .attendance-preview-weeks {
   display: grid;

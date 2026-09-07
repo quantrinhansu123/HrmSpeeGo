@@ -691,6 +691,20 @@ function AttendanceImportModal({
   ) => {
     const groups = new Map()
 
+    // Tự động ghi nhớ các ánh xạ nhân viên đã từng được ghép trong attendanceLogs
+    const previousMatchFromLogs = new Map()
+    attendanceLogs.forEach(item => {
+      const sCode = item.sourceEmployeeCode || item.employeeCode || ''
+      const sName = item.sourceEmployeeName || item.employeeName || item.machineName || ''
+      if ((sCode || sName) && item.employeeId && !String(item.employeeId).startsWith('external:')) {
+        const sKey = buildSourceEmployeeKey(sCode, sName)
+        const emp = employeesById.get(String(item.employeeId))
+        if (emp && !previousMatchFromLogs.has(sKey)) {
+          previousMatchFromLogs.set(sKey, emp)
+        }
+      }
+    })
+
     logs.forEach(log => {
       const sourceCode =
         log.sourceEmployeeCode ||
@@ -705,16 +719,17 @@ function AttendanceImportModal({
       const sourceKey = buildSourceEmployeeKey(sourceCode, sourceName)
 
       if (!groups.has(sourceKey)) {
+        const rememberedEmployee = previousMatchFromLogs.get(sourceKey)
         const currentEmployee = preserveExistingMatches
           ? employeesById.get(String(log.employeeId))
-          : null
+          : (rememberedEmployee || null)
         const smartMatch = currentEmployee
           ? {
               employee: currentEmployee,
               suggestedEmployee: currentEmployee,
               confidence: 1,
               gap: 1,
-              method: 'Đã gắn với hồ sơ Lumi',
+              method: rememberedEmployee ? 'Đã ghi nhớ từ lần ghép trước' : 'Đã gắn với hồ sơ Lumi',
               status: 'matched',
               candidates: [{ employee: currentEmployee, score: 1 }]
             }
@@ -1056,26 +1071,56 @@ function AttendanceImportModal({
           count += chunk.length
         }
       } else {
-        const existingKeys = new Set(attendanceLogs.map(buildAttendanceRecordKey))
+        const existingMap = new Map()
+        attendanceLogs.forEach(log => {
+          const key = buildAttendanceRecordKey(log)
+          existingMap.set(key, log)
+        })
+
         const importKeys = new Set()
         const skippedSourceKeys = new Set(
           previewData.matchGroups
             .filter(group => group.status === 'skipped')
             .map(group => group.key)
         )
-        const logsToInsert = previewData.logs.filter(log => {
+
+        const logsToInsert = []
+        const logsToUpdate = []
+
+        previewData.logs.forEach(log => {
           if (skippedSourceKeys.has(log._sourceEmployeeKey)) {
             skippedCount += 1
-            return false
+            return
           }
           const key = buildAttendanceRecordKey(log)
-          if (existingKeys.has(key) || importKeys.has(key)) {
+          if (importKeys.has(key)) {
             skippedCount += 1
-            return false
+            return
           }
           importKeys.add(key)
-          return true
+
+          const existing = existingMap.get(key)
+          if (existing && existing.id) {
+            const isEmployeeChanged =
+              String(existing.employeeId || '') !== String(log.employeeId || '') ||
+              String(existing.employeeCode || '') !== String(log.employeeCode || '') ||
+              String(existing.employeeName || '') !== String(log.employeeName || '')
+            if (isEmployeeChanged) {
+              logsToUpdate.push({ id: existing.id, data: sanitizeLog(log) })
+            } else {
+              skippedCount += 1
+            }
+          } else {
+            logsToInsert.push(log)
+          }
         })
+
+        for (let i = 0; i < logsToUpdate.length; i += BATCH_SIZE) {
+          const chunk = logsToUpdate.slice(i, i + BATCH_SIZE)
+          await Promise.all(
+            chunk.map(item => fbUpdate(`hr/attendanceLogs/${item.id}`, item.data))
+          )
+        }
 
         for (let i = 0; i < logsToInsert.length; i += BATCH_SIZE) {
           const chunk = logsToInsert.slice(i, i + BATCH_SIZE)
@@ -1084,15 +1129,14 @@ function AttendanceImportModal({
           )
           count += chunk.length
         }
-      }
 
-      alert(
-        previewData.isReconcileMode
-          ? `Đã cập nhật liên kết nhân sự cho ${count} dòng chấm công.`
-          : `Đã import ${count} dòng chấm công.` +
-            `${unresolvedCount ? ` ${unresolvedCount} nhân viên được giữ theo mã/tên nguồn để đối soát sau.` : ''}` +
-            `${skippedCount ? ` Bỏ qua ${skippedCount} dòng đã có.` : ''}`
-      )
+        const updateMsg = logsToUpdate.length ? ` Cập nhật lại ${logsToUpdate.length} dòng theo nhân sự mới chọn.` : ''
+        alert(
+          `Đã import ${count} dòng mới.${updateMsg}` +
+          `${unresolvedCount ? ` ${unresolvedCount} nhân viên được giữ theo mã/tên nguồn để đối soát sau.` : ''}` +
+          `${skippedCount ? ` Bỏ qua ${skippedCount} dòng đã có.` : ''}`
+        )
+      }
       await onSave()
       onClose()
       setFile(null)
