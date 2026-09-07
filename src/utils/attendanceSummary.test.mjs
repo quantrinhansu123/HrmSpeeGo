@@ -71,3 +71,34 @@ test('recalculates the late report from actual punches and each employee shift',
   assert.equal(sale.earlyMinutes, 0)
   assert.equal(sale.lateCount, 1)
 })
+
+test('uses configured times for the employee shift in summary reports', () => {
+  const employees = [
+    { id: 'normal', name: 'Hành chính', position: 'HR', shift: 'Ca Hành chính' },
+    { id: 'sale', name: 'Sale', position: 'Sale', shift: 'Ca Sáng Sale' }
+  ]
+  const attendanceLogs = [
+    { employeeId: 'normal', date: '2026-08-01', vao: '08:40', ra: '17:35', cong: 1 },
+    { employeeId: 'sale', date: '2026-08-01', vao: '04:10', ra: '13:25', cong: 1 }
+  ]
+  const attendanceSettings = {
+    shifts: {
+      administrative: { standardCheckIn: '08:35', standardCheckOut: '17:40' },
+      saleMorning: { standardCheckIn: '04:05', standardCheckOut: '13:35' }
+    }
+  }
+
+  const rows = buildAttendanceSummary({
+    attendanceLogs,
+    employees,
+    month: '2026-08',
+    attendanceSettings
+  })
+  const normal = rows.find(row => row.employeeId === 'normal')
+  const sale = rows.find(row => row.employeeId === 'sale')
+
+  assert.equal(normal.lateMinutes, 5)
+  assert.equal(normal.earlyMinutes, 5)
+  assert.equal(sale.lateMinutes, 5)
+  assert.equal(sale.earlyMinutes, 10)
+})

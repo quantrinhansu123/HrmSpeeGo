@@ -6,7 +6,10 @@ import { fbGet, fbUpdate, fbGetAttendanceByEmployee } from '../services/firebase
 import { uploadToCloudinary, getCloudinaryConfig, saveCloudinaryConfig } from '../utils/cloudinary'
 import {
   applyCalculatedAttendanceTiming,
-  DEFAULT_ATTENDANCE_SHIFT,
+  ATTENDANCE_SHIFT_IDS,
+  buildAttendanceShiftSettingsPayload,
+  getAttendanceShiftOptions,
+  normalizeAttendanceShiftSettings,
   resolveAttendanceShift
 } from '../utils/attendanceShift'
 import './OnlineAttendance.css'
@@ -51,7 +54,6 @@ const displayDate = value => {
 function OnlineAttendance() {
   const { user } = useAuth()
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'manager'
-  const userShift = useMemo(() => resolveAttendanceShift(user), [user])
   const [today, setToday] = useState(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -75,8 +77,9 @@ function OnlineAttendance() {
 
   // 4. Cài đặt ca làm việc & Cloudinary
   const [showShiftModal, setShowShiftModal] = useState(false)
-  const [standardIn, setStandardIn] = useState('08:30')
-  const [standardOut, setStandardOut] = useState('17:30')
+  const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
+  const [shiftDrafts, setShiftDrafts] = useState(() => normalizeAttendanceShiftSettings())
+  const [selectedShiftId, setSelectedShiftId] = useState(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
   const [cloudNameInput, setCloudNameInput] = useState('')
   const [cloudPresetInput, setCloudPresetInput] = useState('')
   const [adminPin, setAdminPin] = useState('')
@@ -96,7 +99,7 @@ function OnlineAttendance() {
       const data = await fbGetAttendanceByEmployee(empId)
       if (data) {
         const list = Object.entries(data).map(([id, val]) =>
-          applyCalculatedAttendanceTiming({ ...val, id }, user)
+          applyCalculatedAttendanceTiming({ ...val, id }, user, attendanceSettings)
         )
         list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
         setHistoryLogs(list)
@@ -104,7 +107,7 @@ function OnlineAttendance() {
     } catch (e) {
       console.warn('Lỗi tải lịch sử chấm công:', e)
     }
-  }, [user])
+  }, [attendanceSettings, user])
 
   useEffect(() => {
     loadHistory()
@@ -137,16 +140,16 @@ function OnlineAttendance() {
   useEffect(() => {
     fbGet('hr/attendanceSettings/default')
       .then(settings => {
-        const hasEmployeeShift = userShift !== DEFAULT_ATTENDANCE_SHIFT
-        setStandardIn(hasEmployeeShift ? userShift.start : settings?.standardCheckIn || '08:30')
-        setStandardOut(hasEmployeeShift ? userShift.end : settings?.standardCheckOut || '17:30')
+        const normalized = normalizeAttendanceShiftSettings(settings)
+        setAttendanceSettings(normalized)
+        setShiftDrafts(normalized)
       })
       .catch(() => {})
 
     const { cloudName, uploadPreset } = getCloudinaryConfig()
     setCloudNameInput(cloudName)
     setCloudPresetInput(uploadPreset)
-  }, [userShift])
+  }, [])
 
   // Hàm lấy vị trí GPS
   const getCurrentLocation = useCallback(() => {
@@ -237,8 +240,6 @@ function OnlineAttendance() {
       setError(requestError.message)
     } else {
       setToday(data)
-      if (data?.standardCheckIn) setStandardIn(data.standardCheckIn)
-      if (data?.standardCheckOut) setStandardOut(data.standardCheckOut)
     }
     setLoading(false)
   }, [])
@@ -250,6 +251,12 @@ function OnlineAttendance() {
   const record = today?.record || null
   const checkedIn = Boolean(record?.checkIn || record?.vao)
   const checkedOut = Boolean(record?.checkOut || record?.ra)
+  const userShift = useMemo(
+    () => resolveAttendanceShift(user, record || {}, attendanceSettings),
+    [attendanceSettings, record, user]
+  )
+  const standardIn = userShift.start
+  const standardOut = userShift.end
 
   // Tính số phút đi muộn / về sớm thời gian thực
   const calcTimingStatus = () => {
@@ -372,19 +379,50 @@ function OnlineAttendance() {
       alert('Chỉ Quản trị viên / Sếp mới có quyền thay đổi cài đặt ca! Vui lòng nhập mã PIN (123456) để mở khóa.')
       return
     }
+    const invalidShift = getAttendanceShiftOptions(shiftDrafts).find(
+      shift => shift.standardCheckIn >= shift.standardCheckOut
+    )
+    if (invalidShift) {
+      setSelectedShiftId(invalidShift.id)
+      alert(`Giờ ra chuẩn của ${invalidShift.name} phải sau giờ vào chuẩn.`)
+      return
+    }
     try {
-      await fbUpdate('hr/attendanceSettings/default', {
-        standardCheckIn: standardIn,
-        standardCheckOut: standardOut,
-        timezone: 'Asia/Ho_Chi_Minh'
-      })
+      const nextSettings = normalizeAttendanceShiftSettings(shiftDrafts)
+      await fbUpdate(
+        'hr/attendanceSettings/default',
+        buildAttendanceShiftSettingsPayload(nextSettings)
+      )
       saveCloudinaryConfig(cloudNameInput, cloudPresetInput)
+      setAttendanceSettings(nextSettings)
       setShowShiftModal(false)
       setNotice('✓ Đã cập nhật cài đặt ca và Cloudinary thành công.')
     } catch (err) {
       alert('Lỗi lưu cài đặt: ' + err.message)
     }
   }
+
+  const openShiftSettings = () => {
+    setShiftDrafts(normalizeAttendanceShiftSettings(attendanceSettings))
+    setSelectedShiftId(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
+    setShowShiftModal(true)
+  }
+
+  const updateSelectedShift = (field, value) => {
+    setShiftDrafts(current => ({
+      ...current,
+      shifts: {
+        ...current.shifts,
+        [selectedShiftId]: {
+          ...current.shifts[selectedShiftId],
+          [field]: value
+        }
+      }
+    }))
+  }
+
+  const shiftOptions = getAttendanceShiftOptions(shiftDrafts)
+  const selectedShift = shiftDrafts.shifts[selectedShiftId]
 
   const hoursStr = String(currentTime.getHours()).padStart(2, '0')
   const minutesStr = String(currentTime.getMinutes()).padStart(2, '0')
@@ -406,7 +444,7 @@ function OnlineAttendance() {
           <button
             type="button"
             className="oa-btn-settings"
-            onClick={() => setShowShiftModal(true)}
+            onClick={openShiftSettings}
             title="Cài đặt ca làm việc & Cloudinary"
           >
             ⚙️ Cài đặt ca
@@ -775,39 +813,17 @@ function OnlineAttendance() {
 
               <h4>1. Cài đặt Giờ vào / Giờ ra theo ca</h4>
               <div className="oa-preset-shifts">
-                <button
-                  type="button"
-                  className="oa-shift-chip"
-                  disabled={!isAdminOrManager && !isUnlocked}
-                  onClick={() => {
-                    setStandardIn('08:30')
-                    setStandardOut('17:30')
-                  }}
-                >
-                  Ca Hành chính (08:30 - 17:30)
-                </button>
-                <button
-                  type="button"
-                  className="oa-shift-chip"
-                  disabled={!isAdminOrManager && !isUnlocked}
-                  onClick={() => {
-                    setStandardIn('08:00')
-                    setStandardOut('12:00')
-                  }}
-                >
-                  Ca Sáng (08:00 - 12:00)
-                </button>
-                <button
-                  type="button"
-                  className="oa-shift-chip"
-                  disabled={!isAdminOrManager && !isUnlocked}
-                  onClick={() => {
-                    setStandardIn('13:30')
-                    setStandardOut('17:30')
-                  }}
-                >
-                  Ca Chiều (13:30 - 17:30)
-                </button>
+                {shiftOptions.map(shift => (
+                  <button
+                    key={shift.id}
+                    type="button"
+                    className={`oa-shift-chip ${selectedShiftId === shift.id ? 'is-active' : ''}`}
+                    disabled={!isAdminOrManager && !isUnlocked}
+                    onClick={() => setSelectedShiftId(shift.id)}
+                  >
+                    {shift.name} ({shift.standardCheckIn} - {shift.standardCheckOut})
+                  </button>
+                ))}
               </div>
 
               <div className="oa-form-row">
@@ -816,8 +832,8 @@ function OnlineAttendance() {
                   <input
                     type="time"
                     disabled={!isAdminOrManager && !isUnlocked}
-                    value={standardIn}
-                    onChange={e => setStandardIn(e.target.value)}
+                    value={selectedShift?.standardCheckIn || ''}
+                    onChange={e => updateSelectedShift('standardCheckIn', e.target.value)}
                   />
                 </div>
                 <div className="oa-form-group">
@@ -825,8 +841,8 @@ function OnlineAttendance() {
                   <input
                     type="time"
                     disabled={!isAdminOrManager && !isUnlocked}
-                    value={standardOut}
-                    onChange={e => setStandardOut(e.target.value)}
+                    value={selectedShift?.standardCheckOut || ''}
+                    onChange={e => updateSelectedShift('standardCheckOut', e.target.value)}
                   />
                 </div>
               </div>

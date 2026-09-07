@@ -1,15 +1,20 @@
 import { normalizeString } from './helpers.js'
 
 export const DEFAULT_ATTENDANCE_SHIFT = Object.freeze({
-  name: 'Ca hành chính',
+  name: 'Ca Hành chính',
   start: '08:30',
   end: '17:30'
 })
 
 export const SALE_ATTENDANCE_SHIFT = Object.freeze({
-  name: 'Ca Sale',
+  name: 'Ca Sáng Sale',
   start: '04:00',
   end: '13:30'
+})
+
+export const ATTENDANCE_SHIFT_IDS = Object.freeze({
+  ADMINISTRATIVE: 'administrative',
+  SALE_MORNING: 'saleMorning'
 })
 
 const firstValue = (...values) =>
@@ -32,6 +37,99 @@ const normalizeTime = value => {
   const minutes = Number(match[2])
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return ''
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+const normalizeConfiguredShift = (id, value, fallback) => {
+  const source = value && typeof value === 'object' ? value : {}
+  return {
+    id,
+    name: String(source.name || fallback.name).trim() || fallback.name,
+    standardCheckIn: normalizeTime(source.standardCheckIn || source.start) || fallback.start,
+    standardCheckOut: normalizeTime(source.standardCheckOut || source.end) || fallback.end
+  }
+}
+
+export const normalizeAttendanceShiftSettings = (settings = {}) => {
+  const source = settings && typeof settings === 'object' ? settings : {}
+  const storedShifts = source.shifts && typeof source.shifts === 'object'
+    ? source.shifts
+    : {}
+  const findStoredShift = id => Array.isArray(storedShifts)
+    ? storedShifts.find(shift => shift?.id === id)
+    : storedShifts[id]
+  const administrativeSource = findStoredShift(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
+  const legacyAdministrative = administrativeSource || {
+    standardCheckIn: source.standardCheckIn,
+    standardCheckOut: source.standardCheckOut
+  }
+
+  return {
+    timezone: source.timezone || 'Asia/Ho_Chi_Minh',
+    shifts: {
+      [ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE]: normalizeConfiguredShift(
+        ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE,
+        legacyAdministrative,
+        DEFAULT_ATTENDANCE_SHIFT
+      ),
+      [ATTENDANCE_SHIFT_IDS.SALE_MORNING]: normalizeConfiguredShift(
+        ATTENDANCE_SHIFT_IDS.SALE_MORNING,
+        findStoredShift(ATTENDANCE_SHIFT_IDS.SALE_MORNING),
+        SALE_ATTENDANCE_SHIFT
+      )
+    }
+  }
+}
+
+export const getAttendanceShiftOptions = settings =>
+  Object.values(normalizeAttendanceShiftSettings(settings).shifts)
+
+export const buildAttendanceShiftSettingsPayload = settings => {
+  const normalized = normalizeAttendanceShiftSettings(settings)
+  const administrative = normalized.shifts[ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE]
+  return {
+    timezone: normalized.timezone,
+    shifts: normalized.shifts,
+    // Giữ hai trường cũ để các bản triển khai chưa cập nhật vẫn đọc đúng ca hành chính.
+    standardCheckIn: administrative.standardCheckIn,
+    standardCheckOut: administrative.standardCheckOut
+  }
+}
+
+const shiftFromConfiguration = (shift, settings) => {
+  const configured = normalizeAttendanceShiftSettings(settings).shifts[shift]
+  return configured
+    ? {
+        name: configured.name,
+        start: configured.standardCheckIn,
+        end: configured.standardCheckOut
+      }
+    : null
+}
+
+const configuredShiftFromName = (value, settings) => {
+  const normalizedName = normalizeString(value)
+  if (!normalizedName) return null
+  const configured = normalizeAttendanceShiftSettings(settings).shifts
+
+  const exact = Object.values(configured).find(shift =>
+    normalizeString(shift.id) === normalizedName ||
+    normalizeString(shift.name) === normalizedName
+  )
+  if (exact) {
+    return {
+      name: exact.name,
+      start: exact.standardCheckIn,
+      end: exact.standardCheckOut
+    }
+  }
+
+  if (/\b(sale|sales)\b/.test(normalizedName) || normalizedName.includes('kinh doanh')) {
+    return shiftFromConfiguration(ATTENDANCE_SHIFT_IDS.SALE_MORNING, settings)
+  }
+  if (['ca hanh chinh', 'hanh chinh', 'ca full', 'ca ngay', 'ngay'].includes(normalizedName)) {
+    return shiftFromConfiguration(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE, settings)
+  }
+  return null
 }
 
 const rangeFromText = value => {
@@ -72,7 +170,7 @@ const employeeIsSale = (employee, log) => {
     identity.includes('kinh doanh')
 }
 
-export const resolveAttendanceShift = (employee = {}, log = {}) => {
+export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) => {
   const employeeStart = normalizeTime(firstValue(
     employee.standardCheckIn,
     employee.shiftStart,
@@ -133,9 +231,24 @@ export const resolveAttendanceShift = (employee = {}, log = {}) => {
     }
   }
 
-  if (employeeIsSale(employee, log)) return SALE_ATTENDANCE_SHIFT
+  const employeeConfiguredShift = configuredShiftFromName(
+    firstValue(...employeeShiftFields(employee)),
+    settings
+  )
+  const logConfiguredShift = configuredShiftFromName(
+    firstValue(log.shiftName, log.tenCa),
+    settings
+  )
 
-  return DEFAULT_ATTENDANCE_SHIFT
+  // Dữ liệu cũ thường gán "Ca full/Ca ngày" cho mọi người; bộ phận Sale vẫn phải
+  // dùng ca Sale. Tên ca Sale rõ ràng trong hồ sơ hoặc log luôn được nhận diện.
+  if (employeeIsSale(employee, log)) {
+    return configuredShiftFromName('Ca Sáng Sale', settings) || SALE_ATTENDANCE_SHIFT
+  }
+  if (employeeConfiguredShift) return employeeConfiguredShift
+  if (logConfiguredShift) return logConfiguredShift
+
+  return shiftFromConfiguration(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE, settings) || DEFAULT_ATTENDANCE_SHIFT
 }
 
 export const attendanceTimeToMinutes = value => {
@@ -172,8 +285,14 @@ export const formatAttendanceTime = value => {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
-export const calculateAttendanceTiming = ({ employee = {}, log = {}, checkIn, checkOut } = {}) => {
-  const shift = resolveAttendanceShift(employee, log)
+export const calculateAttendanceTiming = ({
+  employee = {},
+  log = {},
+  checkIn,
+  checkOut,
+  attendanceSettings = {}
+} = {}) => {
+  const shift = resolveAttendanceShift(employee, log, attendanceSettings)
   const actualCheckIn = firstValue(checkIn, log.vao, log.checkIn)
   const actualCheckOut = firstValue(checkOut, log.ra, log.checkOut)
   const checkInMinutes = attendanceTimeToMinutes(actualCheckIn)
@@ -199,8 +318,8 @@ const numericValue = value => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-export const applyCalculatedAttendanceTiming = (log = {}, employee = {}) => {
-  const timing = calculateAttendanceTiming({ employee, log })
+export const applyCalculatedAttendanceTiming = (log = {}, employee = {}, attendanceSettings = {}) => {
+  const timing = calculateAttendanceTiming({ employee, log, attendanceSettings })
   const lateMinutes = timing.hasCheckIn
     ? timing.lateMinutes
     : numericValue(log.lateMinutes ?? log.vaoTre)
@@ -210,6 +329,8 @@ export const applyCalculatedAttendanceTiming = (log = {}, employee = {}) => {
 
   return {
     ...log,
+    shiftName: log.shiftName || log.tenCa || timing.shift.name,
+    tenCa: log.tenCa || log.shiftName || timing.shift.name,
     lateMinutes,
     earlyMinutes,
     vaoTre: lateMinutes,

@@ -22,7 +22,10 @@ import {
 import { TAX_CONFIG } from '../utils/constants'
 import { calculateProgressiveTax, formatMoney, normalizeString } from '../utils/helpers'
 import { downloadAttendanceFromGoldenTemplate } from '../utils/attendanceExcel'
-import { applyCalculatedAttendanceTiming } from '../utils/attendanceShift'
+import {
+  applyCalculatedAttendanceTiming,
+  normalizeAttendanceShiftSettings
+} from '../utils/attendanceShift'
 
 const buildAttendanceEmployeeFilterKey = (name, code) => {
   const normalizedCode = normalizeString(code)
@@ -598,6 +601,7 @@ function Attendance() {
   const [dependents, setDependents] = useState([])
   const [approvalRequests, setApprovalRequests] = useState([])
   const [employees, setEmployees] = useState([])
+  const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [loading, setLoading] = useState(true)
 
   // Modal states
@@ -734,8 +738,13 @@ function Attendance() {
   )
 
   const dailyAttendanceMap = useMemo(
-    () => buildDailyAttendanceMap(attendanceLogs, filterAttendanceMonth, employees),
-    [attendanceLogs, employees, filterAttendanceMonth]
+    () => buildDailyAttendanceMap(
+      attendanceLogs,
+      filterAttendanceMonth,
+      employees,
+      attendanceSettings
+    ),
+    [attendanceLogs, attendanceSettings, employees, filterAttendanceMonth]
   )
 
   const paidLeaveStatsByEmployee = useMemo(() => {
@@ -786,7 +795,8 @@ function Attendance() {
       employees,
       month: filterAttendanceMonth,
       attendanceAdjustments,
-      manualWorkdays
+      manualWorkdays,
+      attendanceSettings
       })
       const rowsByEmployee = new Map(
         baseRows.map((row) => [String(row.employeeId), row])
@@ -834,6 +844,7 @@ function Attendance() {
       filterAttendanceMonth,
       attendanceAdjustments,
       manualWorkdays,
+      attendanceSettings,
       paidLeaveStatsByEmployee
     ]
   )
@@ -889,7 +900,8 @@ function Attendance() {
         dependentsData,
         adjustments,
         manuals,
-        approvalRequestsData
+        approvalRequestsData,
+        storedAttendanceSettings
       ] = await Promise.all([
         fbGet('employees'),
         fbGet('hr/attendanceLogs'),
@@ -899,8 +911,12 @@ function Attendance() {
         fbGet('hr/dependents'),
         fbGet(`hr/attendanceAdjustments/${filterAttendanceMonth}`),
         fbGet(`hr/manualWorkdays/${filterAttendanceMonth}`),
-        fbGet('hr/approvalRequests')
+        fbGet('hr/approvalRequests'),
+        fbGet('hr/attendanceSettings/default')
       ])
+
+      const nextAttendanceSettings = normalizeAttendanceShiftSettings(storedAttendanceSettings)
+      setAttendanceSettings(nextAttendanceSettings)
 
       // Process Employees
       let empList = []
@@ -923,7 +939,8 @@ function Attendance() {
         ? Object.entries(attendanceLogsData).map(([k, v]) =>
             applyCalculatedAttendanceTiming(
               { ...v, id: k },
-              employeesByIdForTiming.get(String(v.employeeId || '')) || {}
+              employeesByIdForTiming.get(String(v.employeeId || '')) || {},
+              nextAttendanceSettings
             )
           )
         : []
@@ -1378,7 +1395,8 @@ function Attendance() {
         employees,
         month: period,
         attendanceAdjustments,
-        manualWorkdays
+        manualWorkdays,
+        attendanceSettings
       })
       const empWorkdays = Object.fromEntries(
         periodSummary.map(row => [row.employeeId, row.workdays])
@@ -2655,6 +2673,7 @@ function Attendance() {
       <AttendanceImportModal
         employees={employees}
         attendanceLogs={attendanceLogs}
+        attendanceSettings={attendanceSettings}
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onSave={loadData}
@@ -2663,6 +2682,7 @@ function Attendance() {
       <AttendanceModal
         attendance={selectedAttendance}
         employees={employees}
+        attendanceSettings={attendanceSettings}
         isOpen={isAttendanceModalOpen}
         onClose={() => {
           setIsAttendanceModalOpen(false)
@@ -2676,6 +2696,7 @@ function Attendance() {
       <AttendanceSettingsModal
         isOpen={isAttendanceSettingsOpen}
         onClose={() => setIsAttendanceSettingsOpen(false)}
+        onSaved={loadData}
       />
 
       <PayrollDetailModal

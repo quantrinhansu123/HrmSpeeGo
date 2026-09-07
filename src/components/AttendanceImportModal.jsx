@@ -27,6 +27,7 @@ const { read, utils, writeFile } = XLSX
 function AttendanceImportModal({
   employees,
   attendanceLogs = [],
+  attendanceSettings = {},
   isOpen,
   onClose,
   onSave
@@ -123,7 +124,7 @@ function AttendanceImportModal({
       }
     }
 
-    const shift = resolveAttendanceShift(employee, log)
+    const shift = resolveAttendanceShift(employee, log, attendanceSettings)
     const [startHour, startMinute] = shift.start.split(':').map(Number)
     const [endHour, endMinute] = shift.end.split(':').map(Number)
     const STANDARD_START = startHour + startMinute / 60
@@ -215,7 +216,8 @@ function AttendanceImportModal({
       employee: sysEmp,
       log: extra,
       checkIn: checkInStr,
-      checkOut: checkOutStr
+      checkOut: checkOutStr,
+      attendanceSettings
     })
     const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
 
@@ -724,7 +726,8 @@ function AttendanceImportModal({
       return selectedEmployee
         ? applyCalculatedAttendanceTiming(
             applyEmployeeToAttendanceLog(preparedLog, selectedEmployee),
-            selectedEmployee
+            selectedEmployee,
+            attendanceSettings
           )
         : preparedLog
     })
@@ -768,7 +771,8 @@ function AttendanceImportModal({
         if (selectedEmployee) {
           return applyCalculatedAttendanceTiming(
             applyEmployeeToAttendanceLog(log, selectedEmployee),
-            selectedEmployee
+            selectedEmployee,
+            attendanceSettings
           )
         }
 

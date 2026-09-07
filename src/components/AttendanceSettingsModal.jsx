@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react'
 import { fbGet, fbUpdate } from '../services/firebase'
 import { getCloudinaryConfig, saveCloudinaryConfig } from '../utils/cloudinary'
+import {
+  ATTENDANCE_SHIFT_IDS,
+  buildAttendanceShiftSettingsPayload,
+  getAttendanceShiftOptions,
+  normalizeAttendanceShiftSettings
+} from '../utils/attendanceShift'
 
-function AttendanceSettingsModal({ isOpen, onClose }) {
-  const [standardCheckIn, setStandardCheckIn] = useState('08:30')
-  const [standardCheckOut, setStandardCheckOut] = useState('17:30')
+function AttendanceSettingsModal({ isOpen, onClose, onSaved }) {
+  const [settings, setSettings] = useState(() => normalizeAttendanceShiftSettings())
+  const [selectedShiftId, setSelectedShiftId] = useState(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
   const [cloudName, setCloudName] = useState('')
   const [uploadPreset, setUploadPreset] = useState('')
   const [loading, setLoading] = useState(false)
@@ -19,23 +25,46 @@ function AttendanceSettingsModal({ isOpen, onClose }) {
     setCloudName(cName)
     setUploadPreset(cPreset)
 
-    fbGet('hr/attendanceSettings/default').then(settings => {
-      setStandardCheckIn(settings?.standardCheckIn || '08:30')
-      setStandardCheckOut(settings?.standardCheckOut || '17:30')
+    fbGet('hr/attendanceSettings/default').then(storedSettings => {
+      setSettings(normalizeAttendanceShiftSettings(storedSettings))
+      setSelectedShiftId(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
     }).catch(requestError => setError(requestError.message)).finally(() => setLoading(false))
   }, [isOpen])
 
+  const shiftOptions = getAttendanceShiftOptions(settings)
+  const selectedShift = settings.shifts[selectedShiftId]
+  const updateSelectedShift = (field, value) => {
+    setSettings(current => ({
+      ...current,
+      shifts: {
+        ...current.shifts,
+        [selectedShiftId]: {
+          ...current.shifts[selectedShiftId],
+          [field]: value
+        }
+      }
+    }))
+  }
+
   const submit = async event => {
     event.preventDefault()
-    if (standardCheckIn >= standardCheckOut) {
-      setError('Giờ Check-out chuẩn phải sau giờ Check-in chuẩn.')
+    const invalidShift = getAttendanceShiftOptions(settings).find(
+      shift => shift.standardCheckIn >= shift.standardCheckOut
+    )
+    if (invalidShift) {
+      setSelectedShiftId(invalidShift.id)
+      setError(`Giờ ra chuẩn của ${invalidShift.name} phải sau giờ vào chuẩn.`)
       return
     }
     setSaving(true)
     setError('')
     try {
-      await fbUpdate('hr/attendanceSettings/default', { standardCheckIn, standardCheckOut, timezone: 'Asia/Ho_Chi_Minh' })
+      await fbUpdate(
+        'hr/attendanceSettings/default',
+        buildAttendanceShiftSettingsPayload(settings)
+      )
       saveCloudinaryConfig(cloudName, uploadPreset)
+      await onSaved?.()
       onClose()
     } catch (requestError) {
       setError(requestError.message)
@@ -51,12 +80,24 @@ function AttendanceSettingsModal({ isOpen, onClose }) {
         <div className="modal-header"><h2>Cài đặt giờ chấm công</h2><button className="modal-close" onClick={onClose} type="button">&times;</button></div>
         <form onSubmit={submit}>
           <div className="modal-body">
-            <p style={{ marginBottom: 18, color: '#64748b' }}>Giờ mặc định cho ca thường khi tính đi muộn/về sớm. Nhân viên Sale dùng ca 04:00–13:30; giờ ca ghi trong hồ sơ nhân viên được ưu tiên.</p>
+            <p style={{ marginBottom: 18, color: '#64748b' }}>Chọn từng ca để cài giờ chuẩn riêng. Báo cáo đi muộn/về sớm sẽ dùng ca của từng nhân viên.</p>
             {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
             {loading ? <div style={{ padding: 24, textAlign: 'center' }}>Đang tải cài đặt...</div> : <>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                {shiftOptions.map(shift => (
+                  <button
+                    key={shift.id}
+                    className={`btn ${selectedShiftId === shift.id ? 'btn-primary' : ''}`}
+                    type="button"
+                    onClick={() => setSelectedShiftId(shift.id)}
+                  >
+                    {shift.name} ({shift.standardCheckIn}–{shift.standardCheckOut})
+                  </button>
+                ))}
+              </div>
               <div className="attendance-settings__grid">
-                <div className="form-group"><label>Giờ Check-in chuẩn</label><input type="time" value={standardCheckIn} onChange={event => setStandardCheckIn(event.target.value)} required /></div>
-                <div className="form-group"><label>Giờ Check-out chuẩn</label><input type="time" value={standardCheckOut} onChange={event => setStandardCheckOut(event.target.value)} required /></div>
+                <div className="form-group"><label>Giờ vào chuẩn</label><input type="time" value={selectedShift?.standardCheckIn || ''} onChange={event => updateSelectedShift('standardCheckIn', event.target.value)} required /></div>
+                <div className="form-group"><label>Giờ ra chuẩn</label><input type="time" value={selectedShift?.standardCheckOut || ''} onChange={event => updateSelectedShift('standardCheckOut', event.target.value)} required /></div>
               </div>
               <h4 style={{ margin: '18px 0 8px', fontSize: '14px', color: '#1e293b' }}>Cấu hình Cloudinary (Lưu trữ ảnh xác thực)</h4>
               <div className="attendance-settings__grid">

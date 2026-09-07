@@ -19,7 +19,7 @@ const hasNumericValue = (value) =>
   value !== undefined &&
   Number.isFinite(Number(value))
 
-export const summarizeAttendanceDay = (logs, employee = {}) => {
+export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings = {}) => {
   let hours = 0
   let workdays = 0
   let extraWorkdays = 0
@@ -35,7 +35,7 @@ export const summarizeAttendanceDay = (logs, employee = {}) => {
   let unapprovedAbsence = false
 
   logs.forEach(sourceLog => {
-    const log = applyCalculatedAttendanceTiming(sourceLog, employee)
+    const log = applyCalculatedAttendanceTiming(sourceLog, employee, attendanceSettings)
     const logHours = numberValue(log.tongGio ?? (
       numberValue(log.hours ?? log.soGio ?? log.gio) +
       numberValue(log.gioPlus)
@@ -118,7 +118,12 @@ export const summarizeAttendanceDay = (logs, employee = {}) => {
   }
 }
 
-export const buildDailyAttendanceMap = (attendanceLogs, month = '', employees = []) => {
+export const buildDailyAttendanceMap = (
+  attendanceLogs,
+  month = '',
+  employees = [],
+  attendanceSettings = {}
+) => {
   const grouped = new Map()
   const employeesById = new Map(
     employees.map(employee => [String(employee.id), employee])
@@ -145,7 +150,8 @@ export const buildDailyAttendanceMap = (attendanceLogs, month = '', employees = 
       key,
       summarizeAttendanceDay(
         logs,
-        employeesById.get(String(logs[0]?.employeeId || '')) || {}
+        employeesById.get(String(logs[0]?.employeeId || '')) || {},
+        attendanceSettings
       )
     ])
   )
@@ -156,14 +162,20 @@ export const buildAttendanceSummary = ({
   employees,
   month,
   attendanceAdjustments = {},
-  manualWorkdays = {}
+  manualWorkdays = {},
+  attendanceSettings = {}
 }) => {
   if (!month) return []
 
   const employeesById = new Map(
     employees.map(employee => [String(employee.id), employee])
   )
-  const dailyMap = buildDailyAttendanceMap(attendanceLogs, month, employees)
+  const dailyMap = buildDailyAttendanceMap(
+    attendanceLogs,
+    month,
+    employees,
+    attendanceSettings
+  )
   const summaryByEmployee = new Map()
 
   const ensureSummaryRow = (employeeId, log = {}) => {

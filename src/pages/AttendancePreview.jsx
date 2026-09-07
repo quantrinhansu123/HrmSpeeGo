@@ -6,6 +6,7 @@ import {
   serializeAttendanceSummaryRows
 } from '../utils/attendanceSummary'
 import AttendanceImportModal from '../components/AttendanceImportModal'
+import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
 import './AttendancePreview.css'
 
 const money = value => Number(value || 0).toLocaleString('vi-VN')
@@ -96,6 +97,7 @@ function AttendancePreview() {
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [importEmployees, setImportEmployees] = useState([])
   const [importLogs, setImportLogs] = useState([])
+  const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
 
   const applySnapshot = useCallback((snapshot, nextMonth) => {
     if (!snapshot?.rows) {
@@ -177,10 +179,12 @@ function AttendancePreview() {
 
   const handleOpenImport = async () => {
     try {
-      const [empData, logsData] = await Promise.all([
+      const [empData, logsData, storedSettings] = await Promise.all([
         fbGet('employees'),
-        fbGetAttendanceLogsByMonth(month || '2026-08')
+        fbGetAttendanceLogsByMonth(month || '2026-08'),
+        fbGet('hr/attendanceSettings/default')
       ])
+      setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
       if (empData) {
         setImportEmployees(
           Array.isArray(empData)
@@ -221,12 +225,15 @@ function AttendancePreview() {
     setSummarizing(true)
     setError('')
     try {
-      const [employeeData, logData, nextAdjustments, nextManuals] = await Promise.all([
+      const [employeeData, logData, nextAdjustments, nextManuals, storedSettings] = await Promise.all([
         fbGet('employees'),
         fbGetAttendanceLogsByMonth(targetMonth),
         fbGet(`hr/attendanceAdjustments/${targetMonth}`),
-        fbGet(`hr/manualWorkdays/${targetMonth}`)
+        fbGet(`hr/manualWorkdays/${targetMonth}`),
+        fbGet('hr/attendanceSettings/default')
       ])
+      const nextAttendanceSettings = normalizeAttendanceShiftSettings(storedSettings)
+      setAttendanceSettings(nextAttendanceSettings)
       const employeeList = employeeData
         ? Object.entries(employeeData).map(([id, value]) => ({ ...value, id }))
         : []
@@ -238,7 +245,8 @@ function AttendancePreview() {
         employees: employeeList,
         month: targetMonth,
         attendanceAdjustments: nextAdjustments || {},
-        manualWorkdays: nextManuals || {}
+        manualWorkdays: nextManuals || {},
+        attendanceSettings: nextAttendanceSettings
       })
       const snapshot = {
         month: targetMonth,
@@ -368,6 +376,7 @@ function AttendancePreview() {
         onSave={handleImportComplete}
         employees={importEmployees}
         attendanceLogs={importLogs}
+        attendanceSettings={attendanceSettings}
       />
     )}
   </div>

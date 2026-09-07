@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { fbGetAttendanceByEmployee } from '../services/firebase'
+import { fbGet, fbGetAttendanceByEmployee } from '../services/firebase'
 import { buildAttendanceSummary } from '../utils/attendanceSummary'
 import {
   applyCalculatedAttendanceTiming,
-  formatAttendanceTime
+  formatAttendanceTime,
+  normalizeAttendanceShiftSettings
 } from '../utils/attendanceShift'
 import './MyAttendance.css'
 
@@ -19,6 +20,7 @@ function MyAttendance() {
   const { user } = useAuth()
   const employeeId = String(user.id)
   const [logs, setLogs] = useState([])
+  const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -26,8 +28,12 @@ function MyAttendance() {
   useEffect(() => {
     let active = true
     setLoading(true)
-    fbGetAttendanceByEmployee(employeeId).then(data => {
+    Promise.all([
+      fbGetAttendanceByEmployee(employeeId),
+      fbGet('hr/attendanceSettings/default')
+    ]).then(([data, storedSettings]) => {
       if (!active) return
+      setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
       const nextLogs = data ? Object.entries(data).map(([id, value]) => ({ ...value, id })) : []
       setLogs(nextLogs)
       const latest = [...new Set(nextLogs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().at(-1)
@@ -44,9 +50,9 @@ function MyAttendance() {
   const months = useMemo(() => [...new Set(logs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().reverse(), [logs])
   const monthLogs = useMemo(() => logs
     .filter(log => dateValue(log).startsWith(month))
-    .map(log => applyCalculatedAttendanceTiming(log, user))
-    .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [logs, month, user])
-  const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month }).find(row => String(row.employeeId) === employeeId), [employeeId, logs, month, user])
+    .map(log => applyCalculatedAttendanceTiming(log, user, attendanceSettings))
+    .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [attendanceSettings, logs, month, user])
+  const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, employeeId, logs, month, user])
 
   return (
     <div className="my-attendance">

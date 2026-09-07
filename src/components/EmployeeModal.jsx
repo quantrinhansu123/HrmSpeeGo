@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../services/supabase'
 import { mapAppToUser, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import {
+  DEFAULT_ATTENDANCE_SHIFT,
+  SALE_ATTENDANCE_SHIFT
+} from '../utils/attendanceShift'
+
+const EMPLOYEE_SHIFT_OPTIONS = [DEFAULT_ATTENDANCE_SHIFT, SALE_ATTENDANCE_SHIFT]
 
 function normalizeFiles(files = []) {
   return (files || []).map((file, idx) => {
@@ -138,7 +144,7 @@ function EmployeeModal({
     bo_phan: '',
     vi_tri: '',
     trang_thai: 'Thử việc',
-    ca_lam_viec: 'Ca full',
+    ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
     ngay_vao_lam: '',
     ngay_lam_chinh_thuc: '',
     cccd: '',
@@ -193,7 +199,7 @@ function EmployeeModal({
         bo_phan: employee.bo_phan || '',
         vi_tri: employee.vi_tri || '',
         trang_thai: employee.trang_thai || employee.status || 'Thử việc',
-        ca_lam_viec: employee.ca_lam_viec || 'Ca full',
+        ca_lam_viec: employee.ca_lam_viec || DEFAULT_ATTENDANCE_SHIFT.name,
         ngay_vao_lam: employee.ngay_vao_lam || '',
         ngay_lam_chinh_thuc: employee.ngay_lam_chinh_thuc || '',
         cccd: employee.cccd || '',
@@ -254,7 +260,7 @@ function EmployeeModal({
       bo_phan: '',
       vi_tri: '',
       trang_thai: 'Thử việc',
-      ca_lam_viec: 'Ca full',
+      ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
       ngay_vao_lam: '',
       ngay_lam_chinh_thuc: '',
       cccd: '',
@@ -932,9 +938,14 @@ function EmployeeModal({
                       onChange={handleChange}
                       disabled={!editable}
                     >
-                      <option value="Ca full">Ca full</option>
-                      <option value="Ca sáng">Ca sáng (8h - 11h30)</option>
-                      <option value="Ca chiều">Ca chiều (13h30 - 17h30)</option>
+                      {formData.ca_lam_viec && !EMPLOYEE_SHIFT_OPTIONS.some(shift => shift.name === formData.ca_lam_viec) && (
+                        <option value={formData.ca_lam_viec}>{formData.ca_lam_viec} (dữ liệu cũ)</option>
+                      )}
+                      {EMPLOYEE_SHIFT_OPTIONS.map(shift => (
+                        <option key={shift.name} value={shift.name}>
+                          {shift.name} ({shift.start} - {shift.end})
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>

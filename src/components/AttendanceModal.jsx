@@ -48,7 +48,15 @@ function emptyForm(today) {
   }
 }
 
-function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readOnly = false }) {
+function AttendanceModal({
+  attendance,
+  employees,
+  attendanceSettings = {},
+  isOpen,
+  onClose,
+  onSave,
+  readOnly = false
+}) {
   const [formData, setFormData] = useState(() => emptyForm(new Date().toISOString().split('T')[0]))
   const [searchTerm, setSearchTerm] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
@@ -128,7 +136,8 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
         employee: emp,
         log: updated,
         checkIn: updated.checkIn,
-        checkOut: updated.checkOut
+        checkOut: updated.checkOut,
+        attendanceSettings
       })
       updated.lateMinutes = timing.lateMinutes ?? 0
       updated.earlyMinutes = timing.earlyMinutes ?? 0
@@ -146,7 +155,7 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
       updated.dayOfWeek = dayOfWeekFromDate(value)
     }
 
-    if (name === 'checkIn' || name === 'checkOut') {
+    if (name === 'checkIn' || name === 'checkOut' || name === 'shiftName') {
       const hours = calculateHours(updated.checkIn, updated.checkOut)
       updated.hours = hours
       updated.tongGio = Math.round((hours + Number(updated.gioPlus || 0)) * 10) / 10
@@ -159,7 +168,8 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
         employee,
         log: updated,
         checkIn: updated.checkIn,
-        checkOut: updated.checkOut
+        checkOut: updated.checkOut,
+        attendanceSettings
       })
       updated.lateMinutes = timing.lateMinutes ?? 0
       updated.earlyMinutes = timing.earlyMinutes ?? 0
@@ -193,6 +203,14 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
 
       const hours = parseFloat(formData.hours) || 0
       const gioPlus = parseFloat(formData.gioPlus) || 0
+      const employee = employees.find(item => item.id === formData.employeeId) || {}
+      const timing = calculateAttendanceTiming({
+        employee,
+        log: formData,
+        checkIn: formData.checkIn,
+        checkOut: formData.checkOut,
+        attendanceSettings
+      })
       const dataToSave = {
         employeeId: formData.employeeId,
         employeeCode: formData.employeeCode,
@@ -213,15 +231,15 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
         gio: hours,
         congPlus: parseFloat(formData.congPlus) || 0,
         gioPlus,
-        lateMinutes: parseFloat(formData.lateMinutes) || 0,
-        earlyMinutes: parseFloat(formData.earlyMinutes) || 0,
-        vaoTre: parseFloat(formData.lateMinutes) || 0,
-        raSom: parseFloat(formData.earlyMinutes) || 0,
+        lateMinutes: timing.lateMinutes ?? 0,
+        earlyMinutes: timing.earlyMinutes ?? 0,
+        vaoTre: timing.lateMinutes ?? 0,
+        raSom: timing.earlyMinutes ?? 0,
         tc1: parseFloat(formData.tc1) || 0,
         tc2: parseFloat(formData.tc2) || 0,
         tc3: parseFloat(formData.tc3) || 0,
-        shiftName: formData.shiftName || '',
-        tenCa: formData.shiftName || '',
+        shiftName: formData.shiftName || timing.shift.name,
+        tenCa: formData.shiftName || timing.shift.name,
         kyHieu: formData.kyHieu || formData.status || '',
         kyHieuPlus: formData.kyHieuPlus || '',
         tongGio: parseFloat(formData.tongGio) || hours + gioPlus,
@@ -359,7 +377,7 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
               </div>
               <div className="form-group">
                 <label>Tên ca</label>
-                <input name="shiftName" value={formData.shiftName} onChange={handleChange} disabled={readOnly} placeholder="Ca full / Ca sáng..." />
+                <input name="shiftName" value={formData.shiftName} onChange={handleChange} disabled={readOnly} placeholder="Ca Hành chính / Ca Sáng Sale" />
               </div>
             </div>
 

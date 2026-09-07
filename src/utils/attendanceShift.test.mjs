@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   applyCalculatedAttendanceTiming,
+  buildAttendanceShiftSettingsPayload,
   calculateAttendanceTiming,
   formatAttendanceTime,
+  normalizeAttendanceShiftSettings,
   resolveAttendanceShift
 } from './attendanceShift.js'
 
@@ -33,9 +35,51 @@ test('uses 04:00-13:30 for an employee identified as Sale', () => {
   assert.equal(result.earlyMinutes, 10)
 })
 
+test('stores and resolves separate times for each configured shift', () => {
+  const settings = normalizeAttendanceShiftSettings({
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính',
+        standardCheckIn: '08:35',
+        standardCheckOut: '17:40'
+      },
+      saleMorning: {
+        name: 'Ca Sáng Sale',
+        standardCheckIn: '04:05',
+        standardCheckOut: '13:35'
+      }
+    }
+  })
+
+  assert.deepEqual(
+    resolveAttendanceShift({ shift: 'Ca Hành chính', position: 'HR' }, {}, settings),
+    { name: 'Ca Hành chính', start: '08:35', end: '17:40' }
+  )
+  assert.deepEqual(
+    resolveAttendanceShift({ shift: 'Ca Sáng Sale', position: 'Sale' }, {}, settings),
+    { name: 'Ca Sáng Sale', start: '04:05', end: '13:35' }
+  )
+
+  const payload = buildAttendanceShiftSettingsPayload(settings)
+  assert.equal(payload.shifts.administrative.standardCheckIn, '08:35')
+  assert.equal(payload.shifts.saleMorning.standardCheckIn, '04:05')
+  assert.equal(payload.standardCheckIn, '08:35')
+})
+
+test('legacy shared settings only change the administrative shift', () => {
+  const settings = normalizeAttendanceShiftSettings({
+    standardCheckIn: '09:00',
+    standardCheckOut: '18:00'
+  })
+
+  assert.equal(settings.shifts.administrative.standardCheckIn, '09:00')
+  assert.equal(settings.shifts.saleMorning.standardCheckIn, '04:00')
+  assert.equal(settings.shifts.saleMorning.standardCheckOut, '13:30')
+})
+
 test('reuses the existing Trang team mapping to identify Sale employees', () => {
   const result = resolveAttendanceShift({ department: 'Trang', position: '' })
-  assert.equal(result, resolveAttendanceShift({ position: 'Sale' }))
+  assert.deepEqual(result, resolveAttendanceShift({ position: 'Sale' }))
 })
 
 test('prefers an explicit shift range in the attendance row over Sale inference', () => {
