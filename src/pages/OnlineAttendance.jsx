@@ -4,6 +4,11 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../services/supabase'
 import { fbGet, fbUpdate, fbGetAttendanceByEmployee } from '../services/firebase'
 import { uploadToCloudinary, getCloudinaryConfig, saveCloudinaryConfig } from '../utils/cloudinary'
+import {
+  applyCalculatedAttendanceTiming,
+  DEFAULT_ATTENDANCE_SHIFT,
+  resolveAttendanceShift
+} from '../utils/attendanceShift'
 import './OnlineAttendance.css'
 
 const getTime = value => {
@@ -46,6 +51,7 @@ const displayDate = value => {
 function OnlineAttendance() {
   const { user } = useAuth()
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'manager'
+  const userShift = useMemo(() => resolveAttendanceShift(user), [user])
   const [today, setToday] = useState(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -89,14 +95,16 @@ function OnlineAttendance() {
     try {
       const data = await fbGetAttendanceByEmployee(empId)
       if (data) {
-        const list = Object.entries(data).map(([id, val]) => ({ ...val, id }))
+        const list = Object.entries(data).map(([id, val]) =>
+          applyCalculatedAttendanceTiming({ ...val, id }, user)
+        )
         list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
         setHistoryLogs(list)
       }
     } catch (e) {
       console.warn('Lỗi tải lịch sử chấm công:', e)
     }
-  }, [user?.id, user?.auth_user_id])
+  }, [user])
 
   useEffect(() => {
     loadHistory()
@@ -129,15 +137,16 @@ function OnlineAttendance() {
   useEffect(() => {
     fbGet('hr/attendanceSettings/default')
       .then(settings => {
-        if (settings?.standardCheckIn) setStandardIn(settings.standardCheckIn)
-        if (settings?.standardCheckOut) setStandardOut(settings.standardCheckOut)
+        const hasEmployeeShift = userShift !== DEFAULT_ATTENDANCE_SHIFT
+        setStandardIn(hasEmployeeShift ? userShift.start : settings?.standardCheckIn || '08:30')
+        setStandardOut(hasEmployeeShift ? userShift.end : settings?.standardCheckOut || '17:30')
       })
       .catch(() => {})
 
     const { cloudName, uploadPreset } = getCloudinaryConfig()
     setCloudNameInput(cloudName)
     setCloudPresetInput(uploadPreset)
-  }, [])
+  }, [userShift])
 
   // Hàm lấy vị trí GPS
   const getCurrentLocation = useCallback(() => {
@@ -402,7 +411,7 @@ function OnlineAttendance() {
           >
             ⚙️ Cài đặt ca
           </button>
-          <Link className="oa-btn-view" to="/bang-cong">
+          <Link className="oa-btn-view" to={isAdminOrManager ? '/attendance' : '/bang-cong'}>
             Xem bảng công
           </Link>
         </div>
@@ -660,8 +669,8 @@ function OnlineAttendance() {
                 </tr>
               ) : (
                 filteredLogs.map((log, idx) => {
-                  const checkInFull = formatDateTimeNow(log.checkIn, log.date) || log.vao || '—'
-                  const checkOutFull = formatDateTimeNow(log.checkOut, log.date) || log.ra || '—'
+                  const checkInFull = formatDateTimeNow(log.vao || log.checkIn, log.date)
+                  const checkOutFull = formatDateTimeNow(log.ra || log.checkOut, log.date)
                   const isLate = Number(log.lateMinutes || log.vaoTre || 0) > 0
                   const isEarly = Number(log.earlyMinutes || log.raSom || 0) > 0
                   return (

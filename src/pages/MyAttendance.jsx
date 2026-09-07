@@ -3,14 +3,16 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGetAttendanceByEmployee } from '../services/firebase'
 import { buildAttendanceSummary } from '../utils/attendanceSummary'
+import {
+  applyCalculatedAttendanceTiming,
+  formatAttendanceTime
+} from '../utils/attendanceShift'
 import './MyAttendance.css'
 
 const dateValue = log => String(log?.date || log?.timestamp || '').slice(0, 10)
 const numberValue = value => Number.isFinite(Number(value)) ? Number(value) : 0
 const timeValue = value => {
-  if (!value) return '—'
-  const match = String(value).match(/(\d{1,2}):(\d{2})/)
-  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : String(value)
+  return formatAttendanceTime(value) || '—'
 }
 
 function MyAttendance() {
@@ -40,7 +42,10 @@ function MyAttendance() {
   }, [employeeId])
 
   const months = useMemo(() => [...new Set(logs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().reverse(), [logs])
-  const monthLogs = useMemo(() => logs.filter(log => dateValue(log).startsWith(month)).sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [logs, month])
+  const monthLogs = useMemo(() => logs
+    .filter(log => dateValue(log).startsWith(month))
+    .map(log => applyCalculatedAttendanceTiming(log, user))
+    .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [logs, month, user])
   const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month }).find(row => String(row.employeeId) === employeeId), [employeeId, logs, month, user])
 
   return (
@@ -59,7 +64,7 @@ function MyAttendance() {
         <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Time (Check-in)</th><th>TimeCheckout</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th></tr></thead><tbody>
           {monthLogs.length ? monthLogs.map(log => {
             const date = dateValue(log), hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
-            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.checkIn || log.vao)}</td><td>{timeValue(log.checkOut || log.ra)}</td><td>{log.cong ?? '—'}</td><td>{hours || '—'}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td></tr>
+            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{log.cong ?? '—'}</td><td>{hours || '—'}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td></tr>
           }) : <tr><td colSpan="9" className="my-attendance__empty">Không có dữ liệu trong tháng này.</td></tr>}
         </tbody></table></div></section>
       </>}

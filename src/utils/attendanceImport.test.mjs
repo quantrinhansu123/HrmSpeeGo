@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   collectAttendancePunches,
-  findAttendancePunchColumns
+  findAttendancePunchColumns,
+  parseAttendanceDate,
+  parseAttendanceTime
 } from './attendanceImport.js'
 
 test('finds numbered punch pairs in the August attendance export', () => {
@@ -51,4 +53,17 @@ test('keeps a lone Ra as checkout instead of converting it to check-in', () => {
 
   assert.equal(result.checkIn, '')
   assert.equal(result.checkOut, '17:30')
+})
+
+test('parses Excel serial times and AM/PM without dropping the meridiem', () => {
+  assert.equal(parseAttendanceTime(0.5).str, '12:00')
+  assert.equal(parseAttendanceTime('8:30 AM').str, '08:30')
+  assert.equal(parseAttendanceTime('8:30 PM').str, '20:30')
+  assert.equal(parseAttendanceTime('12:05 AM').str, '00:05')
+})
+
+test('prefers Vietnamese day/month order for ambiguous text dates', () => {
+  assert.equal(parseAttendanceDate('01/08/2026'), '2026-08-01')
+  assert.equal(parseAttendanceDate('8/27/2026'), '2026-08-27')
+  assert.equal(parseAttendanceDate(46235), '2026-08-01')
 })

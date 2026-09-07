@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { fbPush, fbUpdate } from '../services/firebase'
 import { normalizeString } from '../utils/helpers'
+import {
+  calculateAttendanceTiming,
+  formatAttendanceTime
+} from '../utils/attendanceShift'
 
 const DAY_NAMES = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
 
 function formatTimeHM(value) {
-  if (!value) return ''
-  if (typeof value === 'string' && /^\d{1,2}:\d{2}/.test(value)) return value.slice(0, 5)
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return String(value)
-  return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return formatAttendanceTime(value) || String(value || '')
 }
 
 function dayOfWeekFromDate(dateStr) {
@@ -71,8 +71,8 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
         position: attendance.position || attendance.chucVu || emp?.vi_tri || '',
         date,
         dayOfWeek: attendance.dayOfWeek || attendance.thu || dayOfWeekFromDate(date),
-        checkIn: formatTimeHM(attendance.checkIn || attendance.vao),
-        checkOut: formatTimeHM(attendance.checkOut || attendance.ra),
+        checkIn: formatTimeHM(attendance.vao || attendance.checkIn),
+        checkOut: formatTimeHM(attendance.ra || attendance.checkOut),
         cong: Number(attendance.cong ?? 0) || 0,
         hours,
         congPlus: Number(attendance.congPlus ?? 0) || 0,
@@ -113,16 +113,27 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
   }
 
   const pickEmployee = (emp) => {
-    setFormData(prev => ({
-      ...prev,
-      employeeId: emp.id,
-      employeeCode: emp.employeeId || emp.username || '',
-      employeeName: emp.ho_va_ten || emp.name || '',
-      machineName: prev.machineName || emp.ho_va_ten || emp.name || '',
-      department: emp.bo_phan || '',
-      position: emp.vi_tri || '',
-      shiftName: prev.shiftName || emp.ca_lam_viec || ''
-    }))
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        employeeId: emp.id,
+        employeeCode: emp.employeeId || emp.username || '',
+        employeeName: emp.ho_va_ten || emp.name || '',
+        machineName: prev.machineName || emp.ho_va_ten || emp.name || '',
+        department: emp.bo_phan || '',
+        position: emp.vi_tri || '',
+        shiftName: prev.shiftName || emp.ca_lam_viec || ''
+      }
+      const timing = calculateAttendanceTiming({
+        employee: emp,
+        log: updated,
+        checkIn: updated.checkIn,
+        checkOut: updated.checkOut
+      })
+      updated.lateMinutes = timing.lateMinutes ?? 0
+      updated.earlyMinutes = timing.earlyMinutes ?? 0
+      return updated
+    })
     setSearchTerm(emp.ho_va_ten || emp.name || 'N/A')
     setShowDropdown(false)
   }
@@ -143,6 +154,15 @@ function AttendanceModal({ attendance, employees, isOpen, onClose, onSave, readO
       else if (hours > 0) updated.status = 'Thiếu'
       else updated.status = 'Vắng'
       if (!updated.kyHieu) updated.kyHieu = updated.status
+      const employee = employees.find(item => item.id === updated.employeeId) || {}
+      const timing = calculateAttendanceTiming({
+        employee,
+        log: updated,
+        checkIn: updated.checkIn,
+        checkOut: updated.checkOut
+      })
+      updated.lateMinutes = timing.lateMinutes ?? 0
+      updated.earlyMinutes = timing.earlyMinutes ?? 0
     }
 
     if (name === 'hours' || name === 'gioPlus') {

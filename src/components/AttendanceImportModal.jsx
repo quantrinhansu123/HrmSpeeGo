@@ -11,8 +11,16 @@ import {
 } from '../utils/attendanceMatching'
 import {
   collectAttendancePunches,
-  findAttendancePunchColumns
+  findAttendancePunchColumns,
+  parseAttendanceDate,
+  parseAttendanceTime
 } from '../utils/attendanceImport'
+import {
+  applyCalculatedAttendanceTiming,
+  calculateAttendanceTiming,
+  formatAttendanceTime,
+  resolveAttendanceShift
+} from '../utils/attendanceShift'
 
 const { read, utils, writeFile } = XLSX
 
@@ -86,47 +94,9 @@ function AttendanceImportModal({
     setFile(e.target.files[0])
   }
 
-  const parseTime = (timeRaw) => {
-    if (timeRaw === null || timeRaw === undefined || timeRaw === '') return null
+  const parseTime = parseAttendanceTime
 
-    // Excel serial time (fraction of day)
-    if (typeof timeRaw === 'number') {
-      if (timeRaw > 0 && timeRaw < 1) {
-        const totalMinutes = Math.round(timeRaw * 24 * 60)
-        const h = Math.floor(totalMinutes / 60) % 24
-        const m = totalMinutes % 60
-        return { h, m, val: h + m / 60, str: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` }
-      }
-      // Excel datetime serial — take time portion
-      if (timeRaw > 1) {
-        const fraction = timeRaw % 1
-        if (fraction > 0) return parseTime(fraction)
-      }
-      return null
-    }
-
-    const timeStr = String(timeRaw).trim()
-    if (!timeStr || timeStr === '-' || timeStr === '------') return null
-
-    // HH:MM or H:MM:SS
-    const match = timeStr.match(/^(\d{1,2}):(\d{2})(?::\d{2})?/)
-    if (match) {
-      const h = Number(match[1])
-      const m = Number(match[2])
-      if (isNaN(h) || isNaN(m)) return null
-      return { h, m, val: h + m / 60, str: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` }
-    }
-
-    // Decimal string like 0.333
-    const numVal = parseFloat(timeStr)
-    if (!isNaN(numVal) && numVal > 0 && numVal < 1) {
-      return parseTime(numVal)
-    }
-
-    return null
-  }
-
-  const calculateStats = (timeStrs) => {
+  const calculateStats = (timeStrs, employee = {}, log = {}) => {
     if (!timeStrs || timeStrs.length === 0) return null
 
     const parsed = timeStrs
@@ -153,8 +123,11 @@ function AttendanceImportModal({
       }
     }
 
-    const STANDARD_START = 8.0
-    const STANDARD_END = 17.5
+    const shift = resolveAttendanceShift(employee, log)
+    const [startHour, startMinute] = shift.start.split(':').map(Number)
+    const [endHour, endMinute] = shift.end.split(':').map(Number)
+    const STANDARD_START = startHour + startMinute / 60
+    const STANDARD_END = endHour + endMinute / 60
     const LUNCH_START = 12.0
     const LUNCH_END = 13.5
     const LUNCH_DURATION = 1.5
@@ -215,50 +188,7 @@ function AttendanceImportModal({
     _sourceEmployeeName: String(name || '').replace(/\s+/g, ' ').trim()
   })
 
-  const parseDateValue = (dateRaw) => {
-    if (dateRaw === null || dateRaw === undefined || dateRaw === '') return null
-
-    if (typeof dateRaw === 'number') {
-      const d = new Date(Math.round((dateRaw - 25569) * 86400 * 1000))
-      if (isNaN(d.getTime())) return null
-      return d.toISOString().split('T')[0]
-    }
-
-    const str = String(dateRaw).trim()
-    if (!str) return null
-
-    // YYYY-MM-DD
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-      return str.slice(0, 10)
-    }
-
-    // M/D/YYYY or D/M/YYYY or DD/MM/YYYY
-    const slash = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
-    if (slash) {
-      let a = Number(slash[1])
-      let b = Number(slash[2])
-      const y = Number(slash[3])
-      // Prefer M/D/YYYY when first > 12 impossible for day in VN style... 
-      // Sample file uses M/D/YYYY (5/1/2026). If a > 12 => D/M. If b > 12 => M/D.
-      let month, day
-      if (a > 12) {
-        day = a
-        month = b
-      } else if (b > 12) {
-        month = a
-        day = b
-      } else {
-        // Ambiguous: default M/D/YYYY (US / Excel sample)
-        month = a
-        day = b
-      }
-      return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    }
-
-    const d = new Date(str)
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]
-    return null
-  }
+  const parseDateValue = parseAttendanceDate
 
   const buildLog = (sysEmp, dateStr, stats, extra = {}) => {
     const baseDate = new Date(`${dateStr}T00:00:00`)
@@ -281,6 +211,12 @@ function AttendanceImportModal({
 
     const hours = Number(extra.hours ?? stats.hours ?? 0) || 0
     const gioPlus = Number(extra.gioPlus ?? 0) || 0
+    const timing = calculateAttendanceTiming({
+      employee: sysEmp,
+      log: extra,
+      checkIn: checkInStr,
+      checkOut: checkOutStr
+    })
     const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7']
 
     return {
@@ -336,8 +272,10 @@ function AttendanceImportModal({
       gio: hours,
       congPlus: Number(extra.congPlus ?? 0) || 0,
       gioPlus,
-      lateMinutes: Number(extra.lateMinutes ?? stats.lateMinutes ?? 0) || 0,
-      earlyMinutes: Number(extra.earlyMinutes ?? stats.earlyMinutes ?? 0) || 0,
+      lateMinutes: timing.lateMinutes ?? 0,
+      earlyMinutes: timing.earlyMinutes ?? 0,
+      vaoTre: timing.lateMinutes ?? 0,
+      raSom: timing.earlyMinutes ?? 0,
       tc1: Number(extra.tc1 ?? 0) || 0,
       tc2: Number(extra.tc2 ?? 0) || 0,
       tc3: Number(extra.tc3 ?? 0) || 0,
@@ -366,8 +304,6 @@ function AttendanceImportModal({
     const gioIdx = headers.findIndex(h => h === 'giờ' || h === 'gio')
     const congPlusIdx = idxOf('công+', 'cong+')
     const gioPlusIdx = idxOf('giờ+', 'gio+')
-    const lateIdx = idxOf('vào trễ', 'vao tre', 'vào t')
-    const earlyIdx = idxOf('ra sớm', 'ra som')
     const tc1Idx = headers.findIndex(h => h === 'tc1')
     const tc2Idx = headers.findIndex(h => h === 'tc2')
     const tc3Idx = headers.findIndex(h => h === 'tc3')
@@ -400,13 +336,19 @@ function AttendanceImportModal({
       const dateStr = parseDateValue(dateRaw)
       if (!dateStr) continue
 
+      const rowContext = {
+        department: deptIdx >= 0 ? String(row[deptIdx] || '') : '',
+        position: posIdx >= 0 ? String(row[posIdx] || '') : '',
+        shiftName: caIdx >= 0 ? String(row[caIdx] || '') : ''
+      }
+
       const { checkIn: vao, checkOut: ra, punches } =
         collectAttendancePunches(row, punchColumns, parseTime)
       let stats
       if (vao && ra) {
-        stats = { ...calculateStats([vao, ra]), punches }
+        stats = { ...calculateStats([vao, ra], sysEmp, rowContext), punches }
       } else if (vao) {
-        stats = { ...calculateStats([vao]), punches }
+        stats = { ...calculateStats([vao], sysEmp, rowContext), punches }
       } else if (ra) {
         stats = {
           checkIn: null,
@@ -433,8 +375,8 @@ function AttendanceImportModal({
         employeeCode: String(empCode || sysEmp.employeeId || ''),
         employeeName: String(empName || sysEmp.ho_va_ten || ''),
         machineName: String(machineName || empName || sysEmp.ho_va_ten || ''),
-        department: deptIdx >= 0 ? String(row[deptIdx] || '') : '',
-        position: posIdx >= 0 ? String(row[posIdx] || '') : '',
+        department: rowContext.department,
+        position: rowContext.position,
         dayOfWeek: thuIdx >= 0 ? String(row[thuIdx] || '') : '',
         vao,
         ra,
@@ -442,12 +384,10 @@ function AttendanceImportModal({
         hours: gioIdx >= 0 ? num(row[gioIdx]) : undefined,
         congPlus: congPlusIdx >= 0 ? num(row[congPlusIdx]) : 0,
         gioPlus: gioPlusIdx >= 0 ? num(row[gioPlusIdx]) : 0,
-        lateMinutes: lateIdx >= 0 ? num(row[lateIdx]) : undefined,
-        earlyMinutes: earlyIdx >= 0 ? num(row[earlyIdx]) : undefined,
         tc1: tc1Idx >= 0 ? num(row[tc1Idx]) : 0,
         tc2: tc2Idx >= 0 ? num(row[tc2Idx]) : 0,
         tc3: tc3Idx >= 0 ? num(row[tc3Idx]) : 0,
-        shiftName: caIdx >= 0 ? String(row[caIdx] || '') : '',
+        shiftName: rowContext.shiftName,
         kyHieu: kyIdx >= 0 ? String(row[kyIdx] || '') : '',
         kyHieuPlus: kyPlusIdx >= 0 ? String(row[kyPlusIdx] || '') : '',
         tongGio: tongIdx >= 0 ? num(row[tongIdx]) : undefined
@@ -519,7 +459,7 @@ function AttendanceImportModal({
         empName
       )
 
-      const stats = calculateStats(times)
+      const stats = calculateStats(times, sysEmp)
       if (stats) {
         logs.push(buildLog(sysEmp, dateStr, stats, {
           employeeCode: String(empCode || sysEmp.employeeId || ''),
@@ -596,7 +536,7 @@ function AttendanceImportModal({
     Object.values(mergedData).forEach(item => {
       const { emp, day, times } = item
       if (!times || times.length === 0) return
-      const stats = calculateStats(times)
+      const stats = calculateStats(times, emp)
       if (!stats) return
 
       const dateObj = new Date(year, month - 1, day)
@@ -658,7 +598,7 @@ function AttendanceImportModal({
       const dateStr = parseDateValue(group.dateRaw)
       if (!dateStr) continue
 
-      const stats = calculateStats(group.times)
+      const stats = calculateStats(group.times, sysEmp)
       if (stats) {
         logs.push(buildLog(sysEmp, dateStr, stats, {
           employeeCode: String(group.empCode || sysEmp.employeeId || ''),
@@ -782,7 +722,10 @@ function AttendanceImportModal({
       }
 
       return selectedEmployee
-        ? applyEmployeeToAttendanceLog(preparedLog, selectedEmployee)
+        ? applyCalculatedAttendanceTiming(
+            applyEmployeeToAttendanceLog(preparedLog, selectedEmployee),
+            selectedEmployee
+          )
         : preparedLog
     })
 
@@ -823,7 +766,10 @@ function AttendanceImportModal({
       const logs = previous.logs.map(log => {
         if (log._sourceEmployeeKey !== sourceKey) return log
         if (selectedEmployee) {
-          return applyEmployeeToAttendanceLog(log, selectedEmployee)
+          return applyCalculatedAttendanceTiming(
+            applyEmployeeToAttendanceLog(log, selectedEmployee),
+            selectedEmployee
+          )
         }
 
         return {
@@ -1101,12 +1047,12 @@ function AttendanceImportModal({
 
           const existing = existingMap.get(key)
           if (existing && existing.id) {
-            const isEmployeeChanged =
-              String(existing.employeeId || '') !== String(log.employeeId || '') ||
-              String(existing.employeeCode || '') !== String(log.employeeCode || '') ||
-              String(existing.employeeName || '') !== String(log.employeeName || '')
-            if (isEmployeeChanged) {
-              logsToUpdate.push({ id: existing.id, data: sanitizeLog(log) })
+            const nextData = sanitizeLog(log)
+            const hasChanged = Object.entries(nextData).some(([field, value]) =>
+              JSON.stringify(existing[field] ?? null) !== JSON.stringify(value ?? null)
+            )
+            if (hasChanged) {
+              logsToUpdate.push({ id: existing.id, data: nextData })
             } else {
               skippedCount += 1
             }
@@ -1149,17 +1095,7 @@ function AttendanceImportModal({
     }
   }
 
-  const formatExportTime = (value) => {
-    if (!value) return ''
-    const raw = String(value)
-    if (/^\d{1,2}:\d{2}/.test(raw)) return raw.slice(0, 5)
-    const parsed = new Date(raw)
-    if (isNaN(parsed.getTime())) return raw
-    return parsed.toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+  const formatExportTime = value => formatAttendanceTime(value) || String(value || '')
 
   const downloadMatchedExcel = () => {
     if (!previewData?.logs?.length) return
@@ -1187,8 +1123,8 @@ function AttendanceImportModal({
         'Chức vụ': log.position || '',
         'Ngày': String(log.date || '').slice(0, 10),
         'Thứ': log.dayOfWeek || '',
-        'Vào': formatExportTime(log.checkIn || log.vao),
-        'Ra': formatExportTime(log.checkOut || log.ra),
+        'Vào': formatExportTime(log.vao || log.checkIn),
+        'Ra': formatExportTime(log.ra || log.checkOut),
         'Công': log.cong ?? '',
         'Giờ': log.hours ?? log.gio ?? '',
         'Công+': log.congPlus ?? '',
@@ -1550,8 +1486,8 @@ function AttendanceImportModal({
                         <td style={{ padding: '5px' }}>{l.employeeName || employees.find(e => e.id === l.employeeId)?.ho_va_ten || l.employeeId}</td>
                         <td style={{ padding: '5px' }}>{l.machineName || l.tenTheoMayChamCong || l.employeeName || '-'}</td>
                         <td style={{ padding: '5px' }}>{l.date}</td>
-                        <td style={{ padding: '5px' }}>{l.checkIn ? new Date(l.checkIn).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
-                        <td style={{ padding: '5px' }}>{l.checkOut ? new Date(l.checkOut).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
+                        <td style={{ padding: '5px' }}>{formatExportTime(l.vao || l.checkIn) || '-'}</td>
+                        <td style={{ padding: '5px' }}>{formatExportTime(l.ra || l.checkOut) || '-'}</td>
                         <td style={{ padding: '5px', textAlign: 'center' }}>{l.cong ?? '-'}</td>
                         <td style={{ padding: '5px' }}>{l.hours}</td>
                         <td style={{ padding: '5px' }}>{l.status}</td>

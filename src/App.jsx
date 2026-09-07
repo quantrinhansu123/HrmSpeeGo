@@ -22,6 +22,7 @@ const Tasks = lazy(() => import('./pages/Tasks'))
 
 const AppLayout = () => <Layout><Outlet /></Layout>
 const STAFF_ROLES = ['admin', 'hr', 'manager']
+const ATTENDANCE_ROLES = ['user', ...STAFF_ROLES]
 
 function App() {
   return (
@@ -30,10 +31,14 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/employee-login" element={<EmployeeLogin />} />
+          <Route element={<ProtectedRoute allowedRoles={ATTENDANCE_ROLES} />}>
+            <Route element={<AppLayout />}>
+              <Route path="/cham-cong-online" element={<OnlineAttendance />} />
+            </Route>
+          </Route>
           <Route element={<ProtectedRoute allowedRoles={['user']} />}>
             <Route element={<AppLayout />}>
               <Route path="/bang-cong" element={<MyAttendance />} />
-              <Route path="/cham-cong-online" element={<OnlineAttendance />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={STAFF_ROLES} />}>

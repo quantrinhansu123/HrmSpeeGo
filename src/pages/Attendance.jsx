@@ -22,6 +22,7 @@ import {
 import { TAX_CONFIG } from '../utils/constants'
 import { calculateProgressiveTax, formatMoney, normalizeString } from '../utils/helpers'
 import { downloadAttendanceFromGoldenTemplate } from '../utils/attendanceExcel'
+import { applyCalculatedAttendanceTiming } from '../utils/attendanceShift'
 
 const buildAttendanceEmployeeFilterKey = (name, code) => {
   const normalizedCode = normalizeString(code)
@@ -733,8 +734,8 @@ function Attendance() {
   )
 
   const dailyAttendanceMap = useMemo(
-    () => buildDailyAttendanceMap(attendanceLogs, filterAttendanceMonth),
-    [attendanceLogs, filterAttendanceMonth]
+    () => buildDailyAttendanceMap(attendanceLogs, filterAttendanceMonth, employees),
+    [attendanceLogs, employees, filterAttendanceMonth]
   )
 
   const paidLeaveStatsByEmployee = useMemo(() => {
@@ -915,7 +916,17 @@ function Attendance() {
       setEmployees(empList)
 
       // Process Logs
-      const logs = attendanceLogsData ? Object.entries(attendanceLogsData).map(([k, v]) => ({ ...v, id: k })) : []
+      const employeesByIdForTiming = new Map(
+        empList.map(employee => [String(employee.id), employee])
+      )
+      const logs = attendanceLogsData
+        ? Object.entries(attendanceLogsData).map(([k, v]) =>
+            applyCalculatedAttendanceTiming(
+              { ...v, id: k },
+              employeesByIdForTiming.get(String(v.employeeId || '')) || {}
+            )
+          )
+        : []
       setAttendanceLogs(logs ? Object.values(logs) : [])
 
       // Process Adjustments & Manuals
@@ -2115,8 +2126,8 @@ function Attendance() {
                       const position = log.position || log.chucVu || employee?.vi_tri || '-'
                       const dateStr = log.date ? String(log.date).slice(0, 10) : ''
                       const thu = log.dayOfWeek || log.thu || dayOfWeekFromDate(dateStr) || '-'
-                      const checkIn = formatTimeHM(log.checkIn || log.vao) || '-'
-                      const checkOut = formatTimeHM(log.checkOut || log.ra) || '-'
+                      const checkIn = formatTimeHM(log.vao || log.checkIn) || '-'
+                      const checkOut = formatTimeHM(log.ra || log.checkOut) || '-'
                       let hours = Number(log.hours ?? log.soGio ?? log.gio ?? 0)
                       if (isNaN(hours)) hours = 0
                       const gioPlus = Number(log.gioPlus ?? 0) || 0

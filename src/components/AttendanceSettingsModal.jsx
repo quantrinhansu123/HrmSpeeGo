@@ -51,7 +51,7 @@ function AttendanceSettingsModal({ isOpen, onClose }) {
         <div className="modal-header"><h2>Cài đặt giờ chấm công</h2><button className="modal-close" onClick={onClose} type="button">&times;</button></div>
         <form onSubmit={submit}>
           <div className="modal-body">
-            <p style={{ marginBottom: 18, color: '#64748b' }}>Giờ chuẩn dùng để hệ thống tự tính số phút đi muộn và về sớm.</p>
+            <p style={{ marginBottom: 18, color: '#64748b' }}>Giờ mặc định cho ca thường khi tính đi muộn/về sớm. Nhân viên Sale dùng ca 04:00–13:30; giờ ca ghi trong hồ sơ nhân viên được ưu tiên.</p>
             {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
             {loading ? <div style={{ padding: 24, textAlign: 'center' }}>Đang tải cài đặt...</div> : <>
               <div className="attendance-settings__grid">

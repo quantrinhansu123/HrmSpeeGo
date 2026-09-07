@@ -15,12 +15,13 @@ function Sidebar() {
     { path: '/tasks', icon: 'fas fa-tasks', label: 'Công việc' },
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
     { path: '/attendance', icon: 'fas fa-clock', label: 'Chấm công' },
+    { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' }
   ]
   const menuItems = user?.role === 'user'
     ? [
         { path: '/bang-cong', icon: 'fas fa-calendar-check', label: 'Bảng công' },
-        { path: '/cham-cong-online', icon: 'fas fa-mobile-screen-button', label: 'Chấm công online' }
+        { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
       ]
     : staffMenuItems
 
