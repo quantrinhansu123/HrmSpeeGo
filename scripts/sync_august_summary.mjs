@@ -4,6 +4,7 @@ import {
   buildAttendanceSummary,
   serializeAttendanceSummaryRows
 } from '../src/utils/attendanceSummary.js'
+import { normalizeAttendanceShiftSettings } from '../src/utils/attendanceShift.js'
 import { mapUserToApp } from '../src/utils/helpers.js'
 
 const envContent = fs.readFileSync('.env.local', 'utf8')
@@ -54,17 +55,45 @@ async function syncAugustSummary() {
     if (empId) manuals[empId] = r.data || {}
   })
 
-  // 4. Generate summary
+  // 4. Fetch settings
+  const { data: rawSettings } = await supabase
+    .from('hr_records')
+    .select('data')
+    .eq('id', 'attendanceSettings::default')
+    .maybeSingle()
+  const attendanceSettings = normalizeAttendanceShiftSettings(rawSettings?.data)
+  console.log('Attendance Shift Settings loaded:', JSON.stringify(attendanceSettings.shifts, null, 2))
+
+  // 5. Generate summary
   const targetMonth = '2026-08'
   const summaryRows = buildAttendanceSummary({
     attendanceLogs: logs,
     employees,
     month: targetMonth,
     attendanceAdjustments: adjustments,
-    manualWorkdays: manuals
+    manualWorkdays: manuals,
+    attendanceSettings
   })
 
   console.log(`Calculated summary for ${summaryRows.length} rows`)
+
+  let under30Total = 0
+  let over30Total = 0
+  let fineUnder30 = 0
+  let fineOver30 = 0
+
+  summaryRows.forEach(r => {
+    const u30 = Number(r.lateUnder30Count || 0) + Number(r.earlyUnder30Count || 0)
+    const o30 = Number(r.lateOver30Count || 0) + Number(r.earlyOver30Count || 0)
+    under30Total += u30
+    over30Total += o30
+    fineUnder30 += u30 * 50000
+    fineOver30 += o30 * 100000
+  })
+
+  console.log(`\nNew Summary Totals:`)
+  console.log(`- Muộn/sớm <30p: ${under30Total} (Phạt: ${fineUnder30.toLocaleString('vi-VN')} đ)`)
+  console.log(`- Muộn/sớm >=30p: ${over30Total} (Phạt: ${fineOver30.toLocaleString('vi-VN')} đ)`)
 
   const snapshot = {
     month: targetMonth,
@@ -74,7 +103,7 @@ async function syncAugustSummary() {
     rows: serializeAttendanceSummaryRows(summaryRows)
   }
 
-  // 5. Update attendanceMonthSummaries::2026-08 in Supabase
+  // 6. Update attendanceMonthSummaries::2026-08 in Supabase
   const recordId = `attendanceMonthSummaries::${targetMonth}`
   const { error: upsertErr } = await supabase.from('hr_records').upsert(
     {
@@ -91,11 +120,7 @@ async function syncAugustSummary() {
     throw upsertErr
   }
 
-  console.log(`Successfully updated ${recordId} in Supabase!`)
-  console.log('Sample rows:')
-  summaryRows.slice(0, 5).forEach((r, i) => {
-    console.log(`- ${r.employeeCode || '-'} | ${r.employeeName} | Công: ${r.workdays} | Muộn: ${r.lateCount}`)
-  })
+  console.log(`\nSuccessfully updated ${recordId} in Supabase!`)
 }
 
 syncAugustSummary().catch(console.error)

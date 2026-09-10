@@ -150,6 +150,13 @@ const employeeShiftFields = employee => [
 ]
 
 const employeeIsSale = (employee, log) => {
+  const position = normalizeString(
+    employee?.vi_tri || employee?.position || log?.position || log?.chucVu || ''
+  )
+  if (/xuat nhap khau|thu mua|ke toan|van hanh|admin|nhan su|\bhr\b|designer|content|media|leader/.test(position)) {
+    return false
+  }
+
   const department = normalizeString(
     employee?.bo_phan || employee?.department || log?.department || log?.phongBan || ''
   )
@@ -165,9 +172,21 @@ const employeeIsSale = (employee, log) => {
     log?.chucVu
   ].filter(Boolean).join(' '))
 
-  return department === 'trang' ||
+  const isSaleRole = department === 'trang' ||
     /(^|\s)(sale|sales)(\s|$)/.test(identity) ||
     identity.includes('kinh doanh')
+
+  if (!isSaleRole) return false
+
+  const checkIn = firstValue(log?.vao, log?.checkIn)
+  if (checkIn) {
+    const mins = attendanceTimeToMinutes(checkIn)
+    if (mins !== null && mins >= 6 * 60 + 30) {
+      return false
+    }
+  }
+
+  return true
 }
 
 export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) => {
