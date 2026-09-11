@@ -16,7 +16,8 @@ function Sidebar() {
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
     { path: '/attendance', icon: 'fas fa-clock', label: 'Chấm công' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
-    { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' }
+    { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
+    { path: '/bang-phat', icon: 'fas fa-file-invoice-dollar', label: 'Bảng phạt' }
   ]
   const menuItems = user?.role === 'user'
     ? [

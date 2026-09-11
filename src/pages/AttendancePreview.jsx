@@ -35,6 +35,7 @@ const penalties = row => {
   const absenceFine = absence * 200000
   return { under30, over30, missing, absence, lateFine, overFine, missingFine, absenceFine, total: lateFine + overFine + missingFine + absenceFine }
 }
+
 const TEAM_DEPARTMENTS = new Map([
   ['tuấn', 'MKT'],
   ['toàn', 'Kế toán'],
@@ -105,13 +106,15 @@ function AttendancePreview() {
       setGeneratedAt('')
       setSourceLogCount(0)
       setHasSnapshot(false)
-      return
+      return []
     }
-    setRows(groupRowsByDepartment(hydrateAttendanceSummaryRows(snapshot.rows)))
+    const nextRows = groupRowsByDepartment(hydrateAttendanceSummaryRows(snapshot.rows))
+    setRows(nextRows)
     setGeneratedAt(snapshot.generatedAt || '')
     setSourceLogCount(Number(snapshot.sourceLogCount || 0))
     setHasSnapshot(true)
     if (nextMonth) setMonth(nextMonth)
+    return nextRows
   }, [])
 
   const loadSummaryIndex = useCallback(async () => {

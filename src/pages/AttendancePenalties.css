@@ -1,0 +1,243 @@
+.attendance-penalties-page {
+  min-height: 100%;
+  padding: 24px;
+  color: #172033;
+  background: #eef3f9;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.attendance-penalties-page > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 20px 24px;
+  border-top: 4px solid #ff5b1a;
+  border-radius: 10px;
+  background: #0d427a;
+  color: #fff;
+  box-shadow: 0 5px 18px rgba(15, 45, 80, 0.14);
+}
+
+.attendance-penalties-page h1 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.attendance-penalties-page header p {
+  margin: 0;
+  color: #dceafa;
+  font-size: 13px;
+}
+
+.attendance-penalties-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.attendance-penalties-actions label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.attendance-penalties-actions input[type="month"],
+.attendance-penalties-actions select {
+  min-width: 118px;
+  padding: 9px 12px;
+  border: 1px solid #b6cee8;
+  border-radius: 6px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+}
+
+.attendance-penalties-actions button {
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attendance-penalties-actions button.is-primary {
+  background: #ff5b1a;
+  border-color: #ff5b1a;
+}
+
+.attendance-penalties-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.attendance-penalties-card {
+  border: 1px solid #8d98a7;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(15, 45, 80, 0.1);
+  overflow: hidden;
+}
+
+.attendance-penalties-scroll {
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+.attendance-penalties-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.attendance-penalties-table th,
+.attendance-penalties-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #d7dee8;
+  border-right: 1px solid #e5ebf2;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.attendance-penalties-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff0c8;
+  font-weight: 700;
+}
+
+.attendance-penalties-table td.name,
+.attendance-penalties-table td.content {
+  text-align: left;
+}
+
+.employee-name-suggest {
+  position: relative;
+  min-width: 220px;
+}
+
+.employee-name-suggest__menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #c5d0dc;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 45, 80, 0.16);
+}
+
+.employee-name-suggest__menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid #edf1f5;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.employee-name-suggest__menu button:hover,
+.employee-name-suggest__menu button.is-active {
+  background: #edf6ff;
+}
+
+.employee-name-suggest__empty {
+  padding: 10px;
+  color: #5a6472;
+  font-size: 12px;
+}
+
+.attendance-penalties-table input,
+.attendance-penalties-table select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #c5d0dc;
+  border-radius: 4px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.attendance-penalties-table td.fine,
+.attendance-penalties-table tfoot td.fine {
+  color: #b42318;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.attendance-penalties-table td.fine input {
+  text-align: right;
+  font-weight: 700;
+  color: #b42318;
+}
+
+.attendance-penalties-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.attendance-penalties-table tfoot td {
+  background: #fff8dc;
+  font-weight: 700;
+}
+
+.attendance-penalties-table .is-empty {
+  padding: 28px 12px !important;
+  color: #5a6472;
+  font-style: italic;
+}
+
+.attendance-penalties-table button.is-danger {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: #fee4e2;
+  color: #b42318;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attendance-penalties-table th:last-child,
+.attendance-penalties-table td:last-child {
+  width: 72px;
+}
+
+.attendance-penalties-state {
+  display: grid;
+  min-height: 60vh;
+  place-items: center;
+  color: #0d427a;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.attendance-penalties-state.is-error {
+  color: #b42318;
+}
+
+@media (max-width: 768px) {
+  .attendance-penalties-page { padding: 10px; }
+  .attendance-penalties-page > header { align-items: stretch; flex-direction: column; padding: 16px; }
+  .attendance-penalties-actions { flex-direction: column; align-items: stretch; }
+  .attendance-penalties-actions label { justify-content: space-between; }
+  .attendance-penalties-scroll { max-height: calc(100vh - 260px); }
+}

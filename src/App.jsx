@@ -7,6 +7,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 const Approvals = lazy(() => import('./pages/Approvals'))
 const Attendance = lazy(() => import('./pages/Attendance'))
 const AttendancePreview = lazy(() => import('./pages/AttendancePreview'))
+const AttendancePenalties = lazy(() => import('./pages/AttendancePenalties'))
 const Competency = lazy(() => import('./pages/Competency'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const EmployeeLogin = lazy(() => import('./pages/EmployeeLogin'))
@@ -55,6 +56,7 @@ function App() {
               <Route path="/approvals" element={<Approvals />} />
               <Route path="/attendance" element={<Attendance />} />
               <Route path="/bang-cong-preview" element={<AttendancePreview />} />
+              <Route path="/bang-phat" element={<AttendancePenalties />} />
               <Route path="/honor" element={<Navigate to="/bang-cong-preview" replace />} />
             </Route>
           </Route>

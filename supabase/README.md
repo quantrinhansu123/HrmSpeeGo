@@ -32,6 +32,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 - **Lương / phúc lợi:** `salaryGrades`, `employeeSalaries`, `promotionHistory`, `payrolls`
 - **Bảo hiểm / thuế:** `insuranceInfo`, `taxInfo`, `dependents`
 - **Chấm công:** `attendanceLogs`, `attendanceAdjustments`, `manualWorkdays`, `attendanceMonthSummaries` (snapshot bảng công theo tháng)
+- **Bảng phạt:** bảng Postgres riêng `attendance_penalties` (nhập tay theo ngày/nhân sự) — migration `20260911180000_attendance_penalties_table.sql`
 - **KPI:** `kpiTemplates`, `employeeKPIs`, `kpiConversions`, `kpiResults`
 - **Giao việc:** `tasks`, `taskLogs`
 - **Tuyển dụng:** `recruitmentPlans`, `candidates`, `candidateStatusLogs`
