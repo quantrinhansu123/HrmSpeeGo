@@ -1,10 +1,44 @@
 import { useEffect, useRef, useState } from 'react'
-import * as XLSX from 'xlsx'
-import EmployeeModal from '../components/EmployeeModal'
-import StatusHistoryView from '../components/StatusHistoryView'
 import EmployeeDirectory from '../components/EmployeeDirectory'
 import { supabase } from '../services/supabase'
-import { formatDateDisplay, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import { formatDateDisplay, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback, USERS_DIRECTORY_COLUMNS, getMissingUsersColumnFromError } from '../utils/helpers'
+
+const loadXlsx = () => import('xlsx')
+
+const fetchUsersDirectory = async () => {
+    let columns = USERS_DIRECTORY_COLUMNS.split(', ')
+    const pageSize = 1000
+
+    const fetchPage = (from) =>
+        supabase
+            .from('users')
+            .select(columns.join(','))
+            .order('name', { ascending: true })
+            .range(from, from + pageSize - 1)
+
+    for (let attempt = 0; attempt < 20; attempt++) {
+        const first = await fetchPage(0)
+        if (first.error) {
+            const missing = getMissingUsersColumnFromError(first.error)
+            if (!missing || !columns.includes(missing)) throw first.error
+            columns = columns.filter(column => column !== missing)
+            continue
+        }
+
+        const rows = [...(first.data || [])]
+        if (rows.length < pageSize) return rows
+
+        for (let from = pageSize; ; from += pageSize) {
+            const next = await fetchPage(from)
+            if (next.error) throw next.error
+            rows.push(...(next.data || []))
+            if (!next.data || next.data.length < pageSize) break
+        }
+        return rows
+    }
+
+    return []
+}
 
 const EMPLOYEE_EXCEL_HEADERS = [
     'STT',
@@ -39,6 +73,7 @@ function Employees() {
     const [filterStatus, setFilterStatus] = useState('')
     const [filterBirthMonth, setFilterBirthMonth] = useState('')
     const [filterContract, setFilterContract] = useState('')
+    const [filterShift, setFilterShift] = useState('')
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [selectedEmployee, setSelectedEmployee] = useState(null)
     const [isReadOnly, setIsReadOnly] = useState(false)
@@ -54,25 +89,30 @@ function Employees() {
 
     useEffect(() => {
         filterEmployees()
-    }, [employees, searchTerm, filterBranch, filterDept, filterStatus, filterBirthMonth, filterContract, activeTab])
+    }, [employees, searchTerm, filterBranch, filterDept, filterStatus, filterBirthMonth, filterContract, filterShift, activeTab])
 
     const loadEmployees = async () => {
         try {
             setLoading(true)
-            const { data, error } = await supabase
-                .from('users')
-                .select('*')
-
-            if (error) throw error
-
-            const mappedData = (data || []).map(u => mapUserToApp(u))
-            setEmployees(mappedData)
+            const data = await fetchUsersDirectory()
+            setEmployees((data || []).map(u => mapUserToApp(u)))
             setLoading(false)
         } catch (err) {
             console.error("Error loading employees:", err)
             setEmployees([])
             setLoading(false)
         }
+    }
+
+    const resolveEmployee = async (employee) => {
+        if (!employee?.id) return employee
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', employee.id)
+            .maybeSingle()
+        if (error || !data) return employee
+        return mapUserToApp(data)
     }
 
     const filterEmployees = () => {
@@ -85,12 +125,14 @@ function Employees() {
             if (!filterStatus && (trangThai === 'Nghỉ việc' || tinhTrang === 'Nghỉ việc')) return false
 
             const nameField = item.ho_va_ten || item.name || item.Tên || ""
+            const shiftName = String(item.ca_lam_viec || item.shift || '').trim()
             const matchSearch = !searchTerm ||
                 nameField.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (item.email && item.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 (item.sđt && String(item.sđt || '').includes(searchTerm)) ||
                 (item.sdt && String(item.sdt || '').includes(searchTerm)) ||
-                (item.employeeId && String(item.employeeId).toLowerCase().includes(searchTerm.toLowerCase()))
+                (item.employeeId && String(item.employeeId).toLowerCase().includes(searchTerm.toLowerCase())) ||
+                shiftName.toLowerCase().includes(searchTerm.toLowerCase())
 
             const matchBranch = !filterBranch
                 || (filterBranch === '__none__' ? !item.chi_nhanh : item.chi_nhanh === filterBranch)
@@ -101,6 +143,8 @@ function Employees() {
                 || trangThai === filterStatus
             const contractType = item.loai_hop_dong || item.contractType || ''
             const matchContract = !filterContract || contractType === filterContract
+            const matchShift = !filterShift
+                || (filterShift === '__none__' ? !shiftName : shiftName === filterShift)
 
             let matchExpiry = true
             if (activeTab === 'expiring') {
@@ -141,7 +185,7 @@ function Employees() {
                 }
             }
 
-            return matchSearch && matchBranch && matchDept && matchStatus && matchMonth && matchContract && matchExpiry
+            return matchSearch && matchBranch && matchDept && matchStatus && matchMonth && matchContract && matchShift && matchExpiry
         })
 
         setFilteredEmployees(filtered)
@@ -167,7 +211,8 @@ function Employees() {
         }
     }
 
-    const downloadTemplate = () => {
+    const downloadTemplate = async () => {
+        const XLSX = await loadXlsx()
         const ws = XLSX.utils.aoa_to_sheet([EMPLOYEE_EXCEL_HEADERS])
         ws['!cols'] = EMPLOYEE_EXCEL_HEADERS.map((h) => ({ wch: Math.max(16, h.length + 4) }))
         const wb = XLSX.utils.book_new()
@@ -198,12 +243,13 @@ function Employees() {
         emp.email || '',
     ])
 
-    const exportToExcel = () => {
+    const exportToExcel = async () => {
         if (filteredEmployees.length === 0) {
             alert('Không có dữ liệu để xuất!')
             return
         }
 
+        const XLSX = await loadXlsx()
         const rows = [
             EMPLOYEE_EXCEL_HEADERS,
             ...filteredEmployees.map((emp, idx) => employeeToExcelRow(emp, idx)),
@@ -265,6 +311,8 @@ function Employees() {
     const handleImportExcel = async (event) => {
         const file = event.target.files?.[0]
         if (!file) return
+
+        const XLSX = await loadXlsx()
 
         const normalizeHeader = (str) => {
             return String(str || '')
@@ -738,6 +786,8 @@ function Employees() {
         setFilterStatus={setFilterStatus}
         filterContract={filterContract}
         setFilterContract={setFilterContract}
+        filterShift={filterShift}
+        setFilterShift={setFilterShift}
         selectedEmployee={selectedEmployee}
         setSelectedEmployee={setSelectedEmployee}
         isModalOpen={isModalOpen}
@@ -749,6 +799,7 @@ function Employees() {
         onDownloadTemplate={downloadTemplate}
         onImport={handleImportExcel}
         onDelete={handleDelete}
+        onResolveEmployee={resolveEmployee}
     />
 
     /*

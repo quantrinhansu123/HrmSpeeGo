@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import XLSX from 'xlsx-js-style'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AttendanceImportModal from '../components/AttendanceImportModal'
 import AttendanceModal, { dayOfWeekFromDate, formatTimeHM } from '../components/AttendanceModal'
 import AttendanceSettingsModal from '../components/AttendanceSettingsModal'
@@ -10,7 +9,14 @@ import PayslipModal from '../components/PayslipModal'
 import SeedAttendanceDataButton from '../components/SeedAttendanceDataButton'
 import SeedPayrollDataButton from '../components/SeedPayrollDataButton'
 import TaxModal from '../components/TaxModal'
-import { fbDelete, fbGet, fbPush, fbUpdate } from '../services/firebase'
+import {
+  fbDelete,
+  fbGet,
+  fbGetAttendanceLogsByMonth,
+  fbGetEmployeesDirectory,
+  fbPush,
+  fbUpdate
+} from '../services/firebase'
 import {
   buildAttendanceSummary,
   buildDailyAttendanceMap
@@ -22,10 +28,16 @@ import {
 import { TAX_CONFIG } from '../utils/constants'
 import { calculateProgressiveTax, formatMoney, normalizeString } from '../utils/helpers'
 import { downloadAttendanceFromGoldenTemplate } from '../utils/attendanceExcel'
-import {
-  applyCalculatedAttendanceTiming,
-  normalizeAttendanceShiftSettings
-} from '../utils/attendanceShift'
+import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
+
+let XLSX = null
+const ensureXlsx = async () => {
+  if (!XLSX) {
+    const mod = await import('xlsx-js-style')
+    XLSX = mod.default || mod
+  }
+  return XLSX
+}
 
 const buildAttendanceEmployeeFilterKey = (name, code) => {
   const normalizedCode = normalizeString(code)
@@ -38,6 +50,39 @@ const buildAttendanceEmployeeFilterKey = (name, code) => {
 
 const DAY_LABELS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 const STANDARD_WORKDAYS = 26
+
+const currentMonthValue = () => new Date().toISOString().slice(0, 7)
+
+const buildRecentMonthOptions = (selected = '', count = 24) => {
+  const months = new Set()
+  const now = new Date()
+  for (let index = 0; index < count; index += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - index, 1)
+    months.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
+  }
+  if (selected) months.add(String(selected).slice(0, 7))
+  return Array.from(months).sort().reverse()
+}
+
+const normalizeEmployeeList = (empData) => {
+  if (!empData) return []
+  if (Array.isArray(empData)) {
+    return empData.filter(item => item !== null && item !== undefined)
+  }
+  if (typeof empData === 'object') {
+    return Object.entries(empData)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([id, value]) => ({ ...value, id }))
+  }
+  return []
+}
+
+const mapAttendanceLogs = (attendanceLogsData) => {
+  if (!attendanceLogsData) return []
+  return Object.entries(attendanceLogsData).map(([id, value]) => ({ ...value, id }))
+}
+
+const LOGS_PAGE_SIZE = 120
 
 const contractTypeForReport = (row) => {
   if (row.contractType) return row.contractType
@@ -177,6 +222,7 @@ export const injectAttendanceDropdowns = async (xlsxData, reportMeta) => {
 }
 
 const downloadAttendanceWorkbook = async (workbook, fileName, reportMeta) => {
+  await ensureXlsx()
   const workbookData = XLSX.write(workbook, {
     type: 'array',
     bookType: 'xlsx'
@@ -635,9 +681,40 @@ function Attendance() {
   const [filterPayrollStatus, setFilterPayrollStatus] = useState('')
   const [attendanceAdjustments, setAttendanceAdjustments] = useState({})
   const [manualWorkdays, setManualWorkdays] = useState({}) // New State for Manual Overrides
-  const [filterAttendanceMonth, setFilterAttendanceMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [filterAttendanceMonth, setFilterAttendanceMonth] = useState(currentMonthValue)
   const [filterAttendanceEmployee, setFilterAttendanceEmployee] = useState('')
   const [filterAttendanceEmployeeKey, setFilterAttendanceEmployeeKey] = useState('')
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [visibleLogCount, setVisibleLogCount] = useState(LOGS_PAGE_SIZE)
+  const [tabDataLoaded, setTabDataLoaded] = useState({
+    payroll: false,
+    insurance: false,
+    tax: false,
+    dependents: false,
+    approvals: false
+  })
+  const employeesRef = useRef([])
+  const attendanceSettingsRef = useRef(attendanceSettings)
+  const initialLoadDoneRef = useRef(false)
+  const tabDataLoadedRef = useRef(tabDataLoaded)
+  const filterMonthRef = useRef(filterAttendanceMonth)
+
+  useEffect(() => {
+    employeesRef.current = employees
+  }, [employees])
+
+  useEffect(() => {
+    attendanceSettingsRef.current = attendanceSettings
+  }, [attendanceSettings])
+
+  useEffect(() => {
+    filterMonthRef.current = filterAttendanceMonth
+  }, [filterAttendanceMonth])
+
+  const monthOptions = useMemo(
+    () => buildRecentMonthOptions(filterAttendanceMonth),
+    [filterAttendanceMonth]
+  )
 
   const employeesById = useMemo(
     () => new Map(employees.map(employee => [String(employee.id), employee])),
@@ -688,12 +765,6 @@ function Attendance() {
 
   const filteredAttendanceLogs = useMemo(
     () => attendanceLogs.filter(log => {
-      if (filterAttendanceMonth) {
-        const date = new Date(log.date || log.timestamp)
-        const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-        if (month !== filterAttendanceMonth) return false
-      }
-
       const employee = employeesById.get(String(log.employeeId))
       const employeeName =
         log.employeeName ||
@@ -731,24 +802,51 @@ function Attendance() {
     [
       attendanceLogs,
       employeesById,
-      filterAttendanceMonth,
       filterAttendanceEmployee,
       filterAttendanceEmployeeKey
     ]
   )
 
+  const sortedFilteredAttendanceLogs = useMemo(() => {
+    return filteredAttendanceLogs.slice().sort((a, b) => {
+      const empA = employeesById.get(String(a.employeeId))
+      const empB = employeesById.get(String(b.employeeId))
+      const nameA = empA?.ho_va_ten || empA?.name || a.employeeName || a.employeeId || ''
+      const nameB = empB?.ho_va_ten || empB?.name || b.employeeName || b.employeeId || ''
+      if (nameA !== nameB) return nameA.localeCompare(nameB, 'vi')
+      const dateA = new Date(a.date || a.timestamp).getTime()
+      const dateB = new Date(b.date || b.timestamp).getTime()
+      return dateA - dateB
+    })
+  }, [employeesById, filteredAttendanceLogs])
+
+  const visibleAttendanceLogs = useMemo(
+    () => sortedFilteredAttendanceLogs.slice(0, visibleLogCount),
+    [sortedFilteredAttendanceLogs, visibleLogCount]
+  )
+
+  useEffect(() => {
+    setVisibleLogCount(LOGS_PAGE_SIZE)
+  }, [filterAttendanceMonth, filterAttendanceEmployee, filterAttendanceEmployeeKey])
+
+  const needsWorkdaySummary = activeTab === 'workday_summary'
+
   const dailyAttendanceMap = useMemo(
-    () => buildDailyAttendanceMap(
-      attendanceLogs,
-      filterAttendanceMonth,
-      employees,
-      attendanceSettings
-    ),
-    [attendanceLogs, attendanceSettings, employees, filterAttendanceMonth]
+    () => {
+      if (!needsWorkdaySummary) return new Map()
+      return buildDailyAttendanceMap(
+        attendanceLogs,
+        filterAttendanceMonth,
+        employees,
+        attendanceSettings
+      )
+    },
+    [attendanceLogs, attendanceSettings, employees, filterAttendanceMonth, needsWorkdaySummary]
   )
 
   const paidLeaveStatsByEmployee = useMemo(() => {
     const stats = new Map()
+    if (!needsWorkdaySummary) return stats
 
     approvalRequests.forEach((request) => {
       if (!isPaidLeaveRequest(request)) return
@@ -786,10 +884,11 @@ function Attendance() {
     })
 
     return stats
-  }, [approvalRequests, employees, employeesById, filterAttendanceMonth])
+  }, [approvalRequests, employees, employeesById, filterAttendanceMonth, needsWorkdaySummary])
 
   const attendanceSummary = useMemo(
     () => {
+      if (!needsWorkdaySummary) return []
       const baseRows = buildAttendanceSummary({
       attendanceLogs,
       employees,
@@ -803,14 +902,14 @@ function Attendance() {
       )
 
       paidLeaveStatsByEmployee.forEach((leaveStats, employeeId) => {
-        const employee = leaveStats.employee || employeesById.get(employeeId)
+        const leaveStatsEmployee = leaveStats.employee || employeesById.get(employeeId)
         if (!rowsByEmployee.has(employeeId)) {
           rowsByEmployee.set(employeeId, {
             employeeId,
-            employeeCode: employee?.employeeId || employee?.username || '',
-            employeeName: employee?.ho_va_ten || employee?.name || '',
-            department: employee?.bo_phan || employee?.department || '',
-            branch: employee?.chi_nhanh || employee?.branch || '',
+            employeeCode: leaveStatsEmployee?.employeeId || leaveStatsEmployee?.username || '',
+            employeeName: leaveStatsEmployee?.ho_va_ten || leaveStatsEmployee?.name || '',
+            department: leaveStatsEmployee?.bo_phan || leaveStatsEmployee?.department || '',
+            branch: leaveStatsEmployee?.chi_nhanh || leaveStatsEmployee?.branch || '',
             attendanceDays: 0,
             workdays: 0,
             totalHours: 0,
@@ -845,7 +944,8 @@ function Attendance() {
       attendanceAdjustments,
       manualWorkdays,
       attendanceSettings,
-      paidLeaveStatsByEmployee
+      paidLeaveStatsByEmployee,
+      needsWorkdaySummary
     ]
   )
 
@@ -866,89 +966,41 @@ function Attendance() {
     loadData()
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    Promise.all([
-      fbGet(`hr/attendanceAdjustments/${filterAttendanceMonth}`),
-      fbGet(`hr/manualWorkdays/${filterAttendanceMonth}`)
-    ])
-      .then(([adjustments, manuals]) => {
-        if (cancelled) return
-        setAttendanceAdjustments(adjustments || {})
-        setManualWorkdays(manuals || {})
-      })
-      .catch((error) => {
-        console.error('Không tải được dữ liệu phép theo tháng:', error)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [filterAttendanceMonth])
-
-  const loadData = async () => {
+  const loadMonthScopedData = useCallback(async (targetMonth) => {
+    const month = String(targetMonth || '').trim() || currentMonthValue()
+    setLogsLoading(true)
     try {
-      setLoading(true)
-
-      // Load all data concurrently
-      const [
-        empData,
-        attendanceLogsData,
-        payrollsData,
-        insuranceData,
-        taxData,
-        dependentsData,
-        adjustments,
-        manuals,
-        approvalRequestsData,
-        storedAttendanceSettings
-      ] = await Promise.all([
-        fbGet('employees'),
-        fbGet('hr/attendanceLogs'),
-        fbGet('hr/payrolls'),
-        fbGet('hr/insuranceInfo'),
-        fbGet('hr/taxInfo'),
-        fbGet('hr/dependents'),
-        fbGet(`hr/attendanceAdjustments/${filterAttendanceMonth}`),
-        fbGet(`hr/manualWorkdays/${filterAttendanceMonth}`),
-        fbGet('hr/approvalRequests'),
-        fbGet('hr/attendanceSettings/default')
+      const [attendanceLogsData, adjustments, manuals] = await Promise.all([
+        fbGetAttendanceLogsByMonth(month),
+        fbGet(`hr/attendanceAdjustments/${month}`),
+        fbGet(`hr/manualWorkdays/${month}`)
       ])
-
-      const nextAttendanceSettings = normalizeAttendanceShiftSettings(storedAttendanceSettings)
-      setAttendanceSettings(nextAttendanceSettings)
-
-      // Process Employees
-      let empList = []
-      if (empData) {
-        if (Array.isArray(empData)) {
-          empList = empData.filter(item => item !== null && item !== undefined)
-        } else if (typeof empData === "object") {
-          empList = Object.entries(empData)
-            .filter(([k, v]) => v !== null && v !== undefined)
-            .map(([k, v]) => ({ ...v, id: k }))
-        }
-      }
-      setEmployees(empList)
-
-      // Process Logs
-      const employeesByIdForTiming = new Map(
-        empList.map(employee => [String(employee.id), employee])
-      )
-      const logs = attendanceLogsData
-        ? Object.entries(attendanceLogsData).map(([k, v]) =>
-            applyCalculatedAttendanceTiming(
-              { ...v, id: k },
-              employeesByIdForTiming.get(String(v.employeeId || '')) || {},
-              nextAttendanceSettings
-            )
-          )
-        : []
-      setAttendanceLogs(logs ? Object.values(logs) : [])
-
-      // Process Adjustments & Manuals
+      if (filterMonthRef.current !== month) return
+      setAttendanceLogs(mapAttendanceLogs(attendanceLogsData))
       setAttendanceAdjustments(adjustments || {})
       setManualWorkdays(manuals || {})
+    } catch (error) {
+      console.error('Không tải được chấm công theo tháng:', error)
+      if (filterMonthRef.current === month) {
+        setAttendanceLogs([])
+        setAttendanceAdjustments({})
+        setManualWorkdays({})
+      }
+    } finally {
+      setLogsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!initialLoadDoneRef.current) return
+    if (!filterAttendanceMonth) return
+    loadMonthScopedData(filterAttendanceMonth)
+  }, [filterAttendanceMonth, loadMonthScopedData])
+
+  const loadApprovals = useCallback(async () => {
+    if (tabDataLoadedRef.current.approvals) return
+    try {
+      const approvalRequestsData = await fbGet('hr/approvalRequests')
       setApprovalRequests(
         approvalRequestsData
           ? Object.entries(approvalRequestsData).map(([id, value]) => ({
@@ -957,27 +1009,172 @@ function Attendance() {
             }))
           : []
       )
+      setTabDataLoaded(prev => {
+        const next = { ...prev, approvals: true }
+        tabDataLoadedRef.current = next
+        return next
+      })
+    } catch (error) {
+      console.error('Không tải được đơn phép:', error)
+    }
+  }, [])
 
-      // Process Payrolls
-      const payrollList = payrollsData ? Object.entries(payrollsData).map(([k, v]) => ({ ...v, id: k })) : []
-      setPayrolls(payrollList)
+  const loadTabCollection = useCallback(async (tab) => {
+    if (tabDataLoadedRef.current[tab]) return
+    try {
+      if (tab === 'payroll') {
+        const payrollsData = await fbGet('hr/payrolls')
+        setPayrolls(
+          payrollsData
+            ? Object.entries(payrollsData).map(([id, value]) => ({ ...value, id }))
+            : []
+        )
+      } else if (tab === 'insurance') {
+        const insuranceData = await fbGet('hr/insuranceInfo')
+        setInsuranceInfo(
+          insuranceData
+            ? Object.entries(insuranceData).map(([id, value]) => ({ ...value, id }))
+            : []
+        )
+      } else if (tab === 'tax') {
+        const taxData = await fbGet('hr/taxInfo')
+        setTaxInfo(
+          taxData
+            ? Object.entries(taxData).map(([id, value]) => ({ ...value, id }))
+            : []
+        )
+      } else if (tab === 'dependents') {
+        const dependentsData = await fbGet('hr/dependents')
+        setDependents(
+          dependentsData
+            ? Object.entries(dependentsData).map(([id, value]) => ({ ...value, id }))
+            : []
+        )
+      }
+      setTabDataLoaded(prev => {
+        const next = { ...prev, [tab]: true }
+        tabDataLoadedRef.current = next
+        return next
+      })
+    } catch (error) {
+      console.error(`Không tải được dữ liệu tab ${tab}:`, error)
+    }
+  }, [])
 
-      // Process Insurance
-      const insuranceList = insuranceData ? Object.entries(insuranceData).map(([k, v]) => ({ ...v, id: k })) : []
-      setInsuranceInfo(insuranceList)
+  useEffect(() => {
+    if (
+      activeTab === 'payroll' ||
+      activeTab === 'insurance' ||
+      activeTab === 'tax' ||
+      activeTab === 'dependents'
+    ) {
+      loadTabCollection(activeTab)
+    }
+    if (activeTab === 'workday_summary') {
+      loadApprovals()
+    }
+  }, [activeTab, loadApprovals, loadTabCollection])
 
-      // Process Tax
-      const taxList = taxData ? Object.entries(taxData).map(([k, v]) => ({ ...v, id: k })) : []
-      setTaxInfo(taxList)
+  const loadData = async () => {
+    try {
+      setLoading(true)
+      setLogsLoading(true)
+      const month = filterMonthRef.current || currentMonthValue()
 
-      // Process Dependents
-      const dependentsList = dependentsData ? Object.entries(dependentsData).map(([k, v]) => ({ ...v, id: k })) : []
-      setDependents(dependentsList)
+      // Unlock shell quickly with directory + settings, then fill month logs.
+      const [empData, storedAttendanceSettings] = await Promise.all([
+        fbGetEmployeesDirectory(),
+        fbGet('hr/attendanceSettings/default')
+      ])
 
+      const nextAttendanceSettings = normalizeAttendanceShiftSettings(storedAttendanceSettings)
+      setAttendanceSettings(nextAttendanceSettings)
+      attendanceSettingsRef.current = nextAttendanceSettings
+
+      const empList = normalizeEmployeeList(empData)
+      employeesRef.current = empList
+      setEmployees(empList)
       setLoading(false)
+      initialLoadDoneRef.current = true
+
+      const [attendanceLogsData, adjustments, manuals] = await Promise.all([
+        fbGetAttendanceLogsByMonth(month),
+        fbGet(`hr/attendanceAdjustments/${month}`),
+        fbGet(`hr/manualWorkdays/${month}`)
+      ])
+
+      if (filterMonthRef.current === month) {
+        setAttendanceLogs(mapAttendanceLogs(attendanceLogsData))
+        setAttendanceAdjustments(adjustments || {})
+        setManualWorkdays(manuals || {})
+      }
+
+      const refreshJobs = []
+      if (tabDataLoadedRef.current.payroll) {
+        refreshJobs.push(
+          fbGet('hr/payrolls').then(payrollsData => {
+            setPayrolls(
+              payrollsData
+                ? Object.entries(payrollsData).map(([id, value]) => ({ ...value, id }))
+                : []
+            )
+          })
+        )
+      }
+      if (tabDataLoadedRef.current.insurance) {
+        refreshJobs.push(
+          fbGet('hr/insuranceInfo').then(insuranceData => {
+            setInsuranceInfo(
+              insuranceData
+                ? Object.entries(insuranceData).map(([id, value]) => ({ ...value, id }))
+                : []
+            )
+          })
+        )
+      }
+      if (tabDataLoadedRef.current.tax) {
+        refreshJobs.push(
+          fbGet('hr/taxInfo').then(taxData => {
+            setTaxInfo(
+              taxData
+                ? Object.entries(taxData).map(([id, value]) => ({ ...value, id }))
+                : []
+            )
+          })
+        )
+      }
+      if (tabDataLoadedRef.current.dependents) {
+        refreshJobs.push(
+          fbGet('hr/dependents').then(dependentsData => {
+            setDependents(
+              dependentsData
+                ? Object.entries(dependentsData).map(([id, value]) => ({ ...value, id }))
+                : []
+            )
+          })
+        )
+      }
+      if (tabDataLoadedRef.current.approvals) {
+        refreshJobs.push(
+          fbGet('hr/approvalRequests').then(approvalRequestsData => {
+            setApprovalRequests(
+              approvalRequestsData
+                ? Object.entries(approvalRequestsData).map(([id, value]) => ({
+                    ...value,
+                    id
+                  }))
+                : []
+            )
+          })
+        )
+      }
+      if (refreshJobs.length) await Promise.all(refreshJobs)
     } catch (error) {
       console.error('Error loading attendance data:', error)
+      initialLoadDoneRef.current = true
       setLoading(false)
+    } finally {
+      setLogsLoading(false)
     }
   }
 
@@ -1079,7 +1276,8 @@ function Attendance() {
   // --- START EXCEL FUNCTIONS ---
 
   // 1. PAYROLL EXCEL
-  const exportPayrollToExcel = () => {
+  const exportPayrollToExcel = async () => {
+    await ensureXlsx()
     if (filteredPayrolls.length === 0) {
       alert('Không có dữ liệu bảng lương để xuất!')
       return
@@ -1126,7 +1324,8 @@ function Attendance() {
 
 
   // 2. INSURANCE EXCEL
-  const exportInsuranceToExcel = () => {
+  const exportInsuranceToExcel = async () => {
+    await ensureXlsx()
     if (insuranceInfo.length === 0) {
       alert('Không có dữ liệu BHXH để xuất!')
       return
@@ -1151,7 +1350,8 @@ function Attendance() {
     XLSX.writeFile(wb, 'Danh_sach_BHXH.xlsx')
   }
 
-  const downloadInsuranceTemplate = () => {
+  const downloadInsuranceTemplate = async () => {
+    await ensureXlsx()
     const headers = ['Mã NV', 'Số sổ BHXH', 'Ngày tham gia (YYYY-MM-DD)', 'Mức lương đóng', 'Tỷ lệ NLĐ (%)', 'Trạng thái']
     const sample = ['NV001', '123456789', '2024-01-01', 5000000, 10.5, 'Đang tham gia']
     const ws = XLSX.utils.aoa_to_sheet([headers, sample])
@@ -1164,6 +1364,7 @@ function Attendance() {
   // We need a generic handle import function or specific ones. 
   // Let's make a generic helper or separate functions. Separate is safer for validation.
   const handleInsuranceImportFile = async (e) => {
+    await ensureXlsx()
     const file = e.target.files[0]
     if (!file) return
     try {
@@ -1199,7 +1400,8 @@ function Attendance() {
 
 
   // 3. TAX EXCEL
-  const exportTaxToExcel = () => {
+  const exportTaxToExcel = async () => {
+    await ensureXlsx()
     if (taxInfo.length === 0) {
       alert('Không có dữ liệu thuế để xuất!')
       return
@@ -1222,7 +1424,8 @@ function Attendance() {
     XLSX.writeFile(wb, 'Danh_sach_Thue_TNCN.xlsx')
   }
 
-  const downloadTaxTemplate = () => {
+  const downloadTaxTemplate = async () => {
+    await ensureXlsx()
     const headers = ['Mã NV', 'Mã số thuế', 'Số người phụ thuộc']
     const sample = ['NV001', '8000123456', 0]
     const ws = XLSX.utils.aoa_to_sheet([headers, sample])
@@ -1232,6 +1435,7 @@ function Attendance() {
   }
 
   const handleTaxImportFile = async (e) => {
+    await ensureXlsx()
     const file = e.target.files[0]
     if (!file) return
     try {
@@ -1261,7 +1465,8 @@ function Attendance() {
   }
 
   // 4. DEPENDENTS EXCEL
-  const exportDependentsToExcel = () => {
+  const exportDependentsToExcel = async () => {
+    await ensureXlsx()
     if (dependents.length === 0) {
       alert('Không có dữ liệu người phụ thuộc để xuất!')
       return
@@ -1285,7 +1490,8 @@ function Attendance() {
     XLSX.writeFile(wb, 'Danh_sach_Nguoi_Phu_Thuoc.xlsx')
   }
 
-  const downloadDependentsTemplate = () => {
+  const downloadDependentsTemplate = async () => {
+    await ensureXlsx()
     const headers = ['Mã NV', 'Tên người phụ thuộc', 'Mối quan hệ', 'Ngày sinh (YYYY-MM-DD)', 'Mã số thuế NPT']
     const sample = ['NV001', 'Nguyễn Văn B', 'Con', '2015-05-20', '']
     const ws = XLSX.utils.aoa_to_sheet([headers, sample])
@@ -1295,6 +1501,7 @@ function Attendance() {
   }
 
   const handleDependentsImportFile = async (e) => {
+    await ensureXlsx()
     const file = e.target.files[0]
     if (!file) return
     try {
@@ -1330,6 +1537,36 @@ function Attendance() {
     window.open('/bang-cong-preview', '_blank', 'noopener,noreferrer')
   }
 
+  const buildSummaryRowsForExport = useCallback(() => {
+    const baseRows = buildAttendanceSummary({
+      attendanceLogs,
+      employees,
+      month: filterAttendanceMonth,
+      attendanceAdjustments,
+      manualWorkdays,
+      attendanceSettings
+    })
+    const searchTerm = normalizeString(filterAttendanceEmployee)
+    return baseRows.filter(row =>
+      (!searchTerm ||
+        normalizeString(row.employeeName).includes(searchTerm) ||
+        normalizeString(row.employeeCode).includes(searchTerm) ||
+        normalizeString(row.department).includes(searchTerm)) &&
+      (!filterAttendanceEmployeeKey ||
+        buildAttendanceEmployeeFilterKey(row.employeeName, row.employeeCode) ===
+          filterAttendanceEmployeeKey)
+    )
+  }, [
+    attendanceAdjustments,
+    attendanceLogs,
+    attendanceSettings,
+    employees,
+    filterAttendanceEmployee,
+    filterAttendanceEmployeeKey,
+    filterAttendanceMonth,
+    manualWorkdays
+  ])
+
   // Export Attendance Data to Excel
   const handleExportAttendance = async () => {
     if (!filterAttendanceMonth) {
@@ -1338,8 +1575,9 @@ function Attendance() {
     }
 
     try {
+      const rows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
       await downloadAttendanceFromGoldenTemplate({
-        rows: filteredAttendanceSummary,
+        rows,
         month: filterAttendanceMonth,
         fileName: `BANG_CONG_${filterAttendanceMonth}.xlsx`
       })
@@ -1354,17 +1592,19 @@ function Attendance() {
       alert('Vui lòng chọn tháng cần xuất báo cáo.')
       return
     }
-    if (!filteredAttendanceSummary.length) {
+    const rows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
+    if (!rows.length) {
       alert('Không có dữ liệu tổng hợp trong tháng đã chọn.')
       return
     }
 
+    await ensureXlsx()
     const workbook = XLSX.utils.book_new()
     const reportMeta = appendAttendanceSummarySheet(
       workbook,
-      filteredAttendanceSummary,
+      rows,
       filterAttendanceMonth,
-      attendanceSummary
+      rows
     )
     try {
       await downloadAttendanceWorkbook(
@@ -1486,7 +1726,8 @@ function Attendance() {
     await fbUpdate(`hr/manualWorkdays/${filterAttendanceMonth}/${empId}`, { [day]: Number(value) })
   }
 
-  const handleBatchExportPayslips = () => {
+  const handleBatchExportPayslips = async () => {
+    await ensureXlsx()
     if (filteredPayrolls.length === 0) {
       alert('Không có bảng lương nào để xuất!')
       return
@@ -1549,7 +1790,8 @@ function Attendance() {
     XLSX.writeFile(wb, `Phieu_Luong_Hang_Loat_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  const downloadAttendanceTemplate = () => {
+  const downloadAttendanceTemplate = async () => {
+    await ensureXlsx()
     const headers = [
       'Mã N.Viên', 'Tên nhân viên', 'Tên theo máy chấm công', 'Phòng ban', 'Chức vụ', 'Ngày', 'Thứ',
       'Vào', 'Ra', 'Công', 'Giờ', 'Công+', 'Giờ+', 'Vào trễ', 'Ra sớm',
@@ -1564,7 +1806,7 @@ function Attendance() {
     XLSX.writeFile(wb, 'Mau_nhap_cham_cong.xlsx')
   }
 
-  if (loading) {
+  if (loading && !employees.length) {
     return <div className="loadingState">Đang tải dữ liệu...</div>
   }
 
@@ -1828,14 +2070,10 @@ function Attendance() {
               />
               <select
                 value={filterAttendanceMonth}
-                onChange={(e) => setFilterAttendanceMonth(e.target.value)}
+                onChange={(e) => setFilterAttendanceMonth(e.target.value || currentMonthValue())}
                 style={{ padding: '8px', borderRadius: '4px' }}
               >
-                <option value="">Chọn tháng</option>
-                {[...new Set(attendanceLogs.map(log => {
-                  const date = new Date(log.date || log.timestamp)
-                  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-                }))].sort().map(month => (
+                {monthOptions.map(month => (
                   <option key={month} value={month}>{month}</option>
                 ))}
               </select>
@@ -2072,17 +2310,16 @@ function Attendance() {
               </select>
               <select
                 value={filterAttendanceMonth}
-                onChange={(e) => setFilterAttendanceMonth(e.target.value)}
+                onChange={(e) => setFilterAttendanceMonth(e.target.value || currentMonthValue())}
                 style={{ padding: '8px', borderRadius: '4px' }}
               >
-                <option value="">Tất cả tháng</option>
-                {[...new Set(attendanceLogs.map(log => {
-                  const date = new Date(log.date || log.timestamp)
-                  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-                }))].sort().map(month => (
+                {monthOptions.map(month => (
                   <option key={month} value={month}>{month}</option>
                 ))}
               </select>
+              {logsLoading && (
+                <span style={{ color: '#0d427a', fontWeight: 600 }}>Đang tải tháng...</span>
+              )}
             </div>
           </div>
           <div style={{ overflowX: 'scroll', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', border: '1px solid #e0e0e0' }}>
@@ -2116,27 +2353,14 @@ function Attendance() {
                 </tr>
               </thead>
               <tbody>
-                {filteredAttendanceLogs.length > 0 ? (
-                  filteredAttendanceLogs
-                    .slice()
-                    .sort((a, b) => {
-                      // Sort by employee name first
-                      const empA = employees.find(e => e.id === a.employeeId)
-                      const empB = employees.find(e => e.id === b.employeeId)
-                      const nameA = empA?.ho_va_ten || empA?.name || a.employeeId || ''
-                      const nameB = empB?.ho_va_ten || empB?.name || b.employeeId || ''
-
-                      if (nameA !== nameB) {
-                        return nameA.localeCompare(nameB, 'vi')
-                      }
-
-                      // Then sort by date
-                      const dateA = new Date(a.date || a.timestamp).getTime()
-                      const dateB = new Date(b.date || b.timestamp).getTime()
-                      return dateA - dateB
-                    })
+                {logsLoading && !visibleAttendanceLogs.length ? (
+                  <tr>
+                    <td colSpan="24" className="empty-state">Đang tải chấm công tháng {filterAttendanceMonth}...</td>
+                  </tr>
+                ) : visibleAttendanceLogs.length > 0 ? (
+                  visibleAttendanceLogs
                     .map((log, idx) => {
-                      const employee = employees.find(e => e.id === log.employeeId)
+                      const employee = employeesById.get(String(log.employeeId))
                       const empCode = log.employeeCode || employee?.employeeId || employee?.username || log.employeeId || '-'
                       const empName = log.employeeName || employee?.ho_va_ten || employee?.name || '-'
                       const machineName = log.machineName || log.tenTheoMayChamCong || empName
@@ -2219,6 +2443,17 @@ function Attendance() {
               </tbody>
             </table>
           </div>
+          {sortedFilteredAttendanceLogs.length > visibleLogCount && (
+            <div style={{ padding: '12px', textAlign: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setVisibleLogCount(count => count + LOGS_PAGE_SIZE)}
+              >
+                Xem thêm ({visibleLogCount}/{sortedFilteredAttendanceLogs.length})
+              </button>
+            </div>
+          )}
         </div>
       )}
 

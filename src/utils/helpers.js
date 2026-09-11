@@ -72,6 +72,37 @@ export const calculateProgressiveTax = (assessableIncome) => {
   }
 }
 
+// List/directory query: skip documents, images, password (often huge JSON/base64).
+export const USERS_DIRECTORY_COLUMNS = [
+  'id',
+  'employee_id',
+  'username',
+  'email',
+  'name',
+  'phone',
+  'branch',
+  'department',
+  'position',
+  'employment_status',
+  'status',
+  'shift',
+  'role',
+  'join_date',
+  'official_date',
+  'dob',
+  'cccd',
+  'identity_issue_date',
+  'identity_issue_place',
+  'address',
+  'hometown',
+  'gender',
+  'marital_status',
+  'notes',
+  'salary_mechanism',
+  'total_salary',
+  'avatar_url'
+].join(', ')
+
 // Map Supabase DB columns (English) -> App State (Vietnamese)
 export const mapUserToApp = (user) => {
   if (!user) return null
@@ -105,7 +136,10 @@ export const mapUserToApp = (user) => {
       ? user.documents
       : (Array.isArray(user.files) ? user.files : []),
     images: Array.isArray(user.images) ? user.images : [],
-    // Preserve other potential fields or map them as needed
+    profileComplete: Array.isArray(user.documents),
+    ...(Object.prototype.hasOwnProperty.call(user, 'password')
+      ? { hasPassword: Boolean(user.password) }
+      : {}),
     role: user.role || 'user',
     username: user.username || ''
   }

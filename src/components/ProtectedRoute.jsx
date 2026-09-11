@@ -10,7 +10,7 @@ function ProtectedRoute({ allowedRoles, children }) {
     return <Navigate to={allowedRoles ? '/login' : '/employee-login'} state={{ from: location }} replace />
   }
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={user.role === 'user' ? '/bang-cong' : '/dashboard'} replace />
+    return <Navigate to={user.role === 'user' ? '/bang-cong' : '/employees'} replace />
   }
   return children || <Outlet />
 }

@@ -51,9 +51,24 @@ export const listPenaltyMonths = async () => {
     .from('attendance_penalties')
     .select('month')
     .order('month', { ascending: false })
+    .limit(2000)
 
   if (error) throw error
   return [...new Set((data || []).map(row => row.month).filter(Boolean))]
+}
+
+export const listPenaltyEmployeesSlim = async () => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, name, employee_id, username')
+    .order('name', { ascending: true })
+
+  if (error) throw error
+  return (data || []).map(row => ({
+    id: row.id,
+    name: row.name || '',
+    code: row.employee_id || row.username || ''
+  }))
 }
 
 export const getPenaltiesByMonth = async month => {

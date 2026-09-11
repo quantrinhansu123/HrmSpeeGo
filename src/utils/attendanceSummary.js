@@ -1,5 +1,9 @@
 import { buildSourceEmployeeKey } from './attendanceMatching.js'
-import { applyCalculatedAttendanceTiming } from './attendanceShift.js'
+import {
+  applyCalculatedAttendanceTiming,
+  formatAttendanceTime,
+  resolveAttendanceShift
+} from './attendanceShift.js'
 
 const numberValue = (value) => {
   const parsed = Number(value)
@@ -33,6 +37,13 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   let hasPunch = false
   let missingPunch = false
   let unapprovedAbsence = false
+  let checkIn = ''
+  let checkOut = ''
+  let shiftName = ''
+  const sampleLog = logs[0] || {}
+  const resolvedShift = resolveAttendanceShift(employee, sampleLog, attendanceSettings)
+  const standardCheckIn = formatAttendanceTime(resolvedShift?.start || resolvedShift?.standardCheckIn)
+  const standardCheckOut = formatAttendanceTime(resolvedShift?.end || resolvedShift?.standardCheckOut)
 
   logs.forEach(sourceLog => {
     const log = applyCalculatedAttendanceTiming(sourceLog, employee, attendanceSettings)
@@ -47,8 +58,13 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
       numberValue(log.tc3)
     lateMinutes += numberValue(log.lateMinutes ?? log.vaoTre)
     earlyMinutes += numberValue(log.earlyMinutes ?? log.raSom)
-    const hasCheckIn = Boolean(log.checkIn || log.vao)
-    const hasCheckOut = Boolean(log.checkOut || log.ra)
+    const logCheckIn = formatAttendanceTime(log.checkIn || log.vao)
+    const logCheckOut = formatAttendanceTime(log.checkOut || log.ra)
+    const hasCheckIn = Boolean(logCheckIn)
+    const hasCheckOut = Boolean(logCheckOut)
+    if (hasCheckIn && (!checkIn || logCheckIn < checkIn)) checkIn = logCheckIn
+    if (hasCheckOut && (!checkOut || logCheckOut > checkOut)) checkOut = logCheckOut
+    if (!shiftName) shiftName = log.shiftName || log.tenCa || resolvedShift?.name || ''
     const status = String(log.kyHieu || log.status || '').trim().toUpperCase()
     const logWorkdays =
       numberValue(log.cong) + numberValue(log.congPlus)
@@ -114,6 +130,11 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     onlineWorkdays: Math.round(onlineWorkdays * 100) / 100,
     offlineWorkdays: Math.round(offlineWorkdays * 100) / 100,
     hasPunch,
+    checkIn,
+    checkOut,
+    standardCheckIn,
+    standardCheckOut,
+    shiftName: shiftName || resolvedShift?.name || '',
     logs
   }
 }
@@ -213,8 +234,6 @@ export const buildAttendanceSummary = ({
       shift:
         employee?.ca_lam_viec ||
         employee?.shift ||
-        log.shiftName ||
-        log.tenCa ||
         '',
       employmentStatus:
         employee?.trang_thai ||
@@ -292,6 +311,21 @@ export const buildAttendanceSummary = ({
   })
 
   summaryByEmployee.forEach(row => {
+    const employee = employeesById.get(String(row.employeeId))
+    // Ca làm luôn lấy từ Hồ sơ nhân sự khi đã ghép được nhân viên.
+    if (employee) {
+      row.shift = employee.ca_lam_viec || employee.shift || ''
+      if (!row.employeeCode) {
+        row.employeeCode = employee.employeeId || employee.username || row.employeeCode
+      }
+      if (!row.employeeName) {
+        row.employeeName = employee.ho_va_ten || employee.name || row.employeeName
+      }
+      if (!row.department) {
+        row.department = employee.bo_phan || employee.department || row.department
+      }
+    }
+
     const permissionDays = String(attendanceAdjustments[row.employeeId] || '')
       .split(',')
       .map(value => Number.parseInt(value.trim(), 10))
@@ -365,7 +399,13 @@ const slimDayLogs = (logs = []) =>
   logs.map(log => ({
     kyHieu: log.kyHieu || '',
     kyHieuPlus: log.kyHieuPlus || '',
-    status: log.status || ''
+    status: log.status || '',
+    checkIn: log.checkIn || log.vao || '',
+    checkOut: log.checkOut || log.ra || '',
+    vao: log.vao || log.checkIn || '',
+    ra: log.ra || log.checkOut || '',
+    shiftName: log.shiftName || log.tenCa || '',
+    tenCa: log.tenCa || log.shiftName || ''
   }))
 
 /** Persist summary rows to hr_records (Map → plain object, slim logs). */
@@ -391,6 +431,11 @@ export const serializeAttendanceSummaryRows = (rows = []) =>
           onlineWorkdays: day.onlineWorkdays,
           offlineWorkdays: day.offlineWorkdays,
           hasPunch: Boolean(day.hasPunch),
+          checkIn: day.checkIn || '',
+          checkOut: day.checkOut || '',
+          standardCheckIn: day.standardCheckIn || '',
+          standardCheckOut: day.standardCheckOut || '',
+          shiftName: day.shiftName || '',
           logs: slimDayLogs(day.logs)
         }
       ])

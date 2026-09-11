@@ -229,8 +229,7 @@ function EmployeeModal({
       setImagesPreview(employee.images || [])
       setFilesPreview(initialDocs)
 
-      // Kiểm tra có mật khẩu trên DB (không đưa plaintext vào form)
-      if (employee.id) {
+      if (employee.id && employee.hasPassword === undefined) {
         supabase
           .from('users')
           .select('password')
@@ -543,6 +542,10 @@ function EmployeeModal({
         const dbPayload = mapAppToUser(payloadForm)
         if (nextPassword) {
           dbPayload.password = nextPassword
+        }
+        if (!employee.profileComplete) {
+          delete dbPayload.documents
+          delete dbPayload.images
         }
         const mutationResult = await runUsersMutationWithSchemaFallback(
           (payload) => supabase

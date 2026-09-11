@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { fbGet, fbListCollectionIds } from '../services/firebase'
 import {
   getPenaltiesByMonth,
+  listPenaltyEmployeesSlim,
   listPenaltyMonths,
-  migrateLegacyPenaltyMonth,
   savePenaltiesByMonth
 } from '../services/attendancePenaltiesDb'
 import { hydrateAttendanceSummaryRows } from '../utils/attendanceSummary'
@@ -124,28 +124,17 @@ function AttendancePenalties() {
   )
 
   const loadEmployees = useCallback(async () => {
-    const employeeData = await fbGet('employees')
-    const list = employeeData
-      ? Object.entries(employeeData).map(([id, value]) => ({
-          id,
-          name: value.ho_va_ten || value.name || '',
-          code: value.employeeId || value.employee_id || value.username || ''
-        }))
-      : []
-    list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'vi'))
+    const list = await listPenaltyEmployeesSlim()
     setEmployees(list)
     return list
   }, [])
 
-  const loadMonth = useCallback(async (targetMonth) => {
+  const loadMonth = useCallback(async (targetMonth, { showLoading = true } = {}) => {
     if (!targetMonth) return
-    setLoading(true)
+    if (showLoading) setLoading(true)
     setError('')
     try {
-      let nextRows = await getPenaltiesByMonth(targetMonth)
-      if (!nextRows.length) {
-        nextRows = (await migrateLegacyPenaltyMonth(targetMonth)) || []
-      }
+      const nextRows = await getPenaltiesByMonth(targetMonth)
       setRows(normalizePenaltyRows(nextRows))
       setGeneratedAt(nextRows.length ? new Date().toISOString() : '')
       setDirty(false)
@@ -161,7 +150,7 @@ function AttendancePenalties() {
       setRows([])
       setGeneratedAt('')
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [])
 
@@ -169,26 +158,46 @@ function AttendancePenalties() {
     let cancelled = false
     ;(async () => {
       setLoading(true)
+      setError('')
+      const initialMonth = currentMonthValue()
       try {
-        let penaltyMonths = []
-        try {
-          penaltyMonths = await listPenaltyMonths()
-        } catch (listError) {
-          const message = String(listError?.message || '')
+        const [penaltyMonthsResult, summaryIdsResult, employeesResult, monthRowsResult] = await Promise.allSettled([
+          listPenaltyMonths(),
+          fbListCollectionIds('attendanceMonthSummaries'),
+          listPenaltyEmployeesSlim(),
+          getPenaltiesByMonth(initialMonth)
+        ])
+
+        if (cancelled) return
+
+        if (penaltyMonthsResult.status === 'rejected') {
+          const message = String(penaltyMonthsResult.reason?.message || '')
           if (/attendance_penalties|schema cache|does not exist/i.test(message)) {
-            throw listError
+            throw penaltyMonthsResult.reason
           }
         }
-        const summaryIds = await fbListCollectionIds('attendanceMonthSummaries')
-        if (cancelled) return
-        const nextMonths = [...new Set([...penaltyMonths, ...summaryIds])]
+
+        const penaltyMonths = penaltyMonthsResult.status === 'fulfilled' ? penaltyMonthsResult.value : []
+        const summaryIds = summaryIdsResult.status === 'fulfilled' ? summaryIdsResult.value : []
+        const nextMonths = [...new Set([...penaltyMonths, ...summaryIds, initialMonth])]
           .filter(value => /^\d{4}-\d{2}$/.test(value))
           .sort()
           .reverse()
         setMonths(nextMonths)
-        await loadEmployees()
-        if (cancelled) return
-        await loadMonth(nextMonths[0] || currentMonthValue())
+
+        if (employeesResult.status === 'fulfilled') {
+          setEmployees(employeesResult.value)
+        }
+
+        if (monthRowsResult.status === 'fulfilled') {
+          setRows(normalizePenaltyRows(monthRowsResult.value))
+          setGeneratedAt(monthRowsResult.value.length ? new Date().toISOString() : '')
+        } else {
+          throw monthRowsResult.reason
+        }
+
+        setMonth(initialMonth)
+        setDirty(false)
       } catch (requestError) {
         console.error(requestError)
         const message = String(requestError?.message || '')
@@ -198,12 +207,13 @@ function AttendancePenalties() {
           } else {
             setError('Không thể tải dữ liệu bảng phạt.')
           }
-          setLoading(false)
         }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [loadEmployees, loadMonth])
+  }, [])
 
   const handleMonthChange = async (nextMonth) => {
     if (dirty && !confirm('Bạn có thay đổi chưa lưu. Đổi tháng sẽ mất thay đổi đó. Tiếp tục?')) {

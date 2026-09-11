@@ -449,7 +449,7 @@ function OnlineAttendance() {
           >
             ⚙️ Cài đặt ca
           </button>
-          <Link className="oa-btn-view" to={isAdminOrManager ? '/attendance' : '/bang-cong'}>
+          <Link className="oa-btn-view" to={isAdminOrManager ? '/bang-cong-preview' : '/bang-cong'}>
             Xem bảng công
           </Link>
         </div>

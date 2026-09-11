@@ -62,19 +62,28 @@ function parsePath(path) {
 }
 
 async function listCollection(collection) {
+  // Supabase/PostgREST mặc định max 1000 dòng/request — phải phân trang + order ổn định.
   const pageSize = 1000
   const rows = []
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from('hr_records')
-      .select('id, data')
+      .select('id, data', from === 0 ? { count: 'exact' } : undefined)
       .eq('collection', collection)
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1)
 
     if (error) throw error
     rows.push(...(data || []))
-    if (!data || data.length < pageSize) break
+    if (!data || data.length < pageSize) {
+      if (typeof count === 'number' && rows.length < count) {
+        console.warn(
+          `[listCollection:${collection}] thiếu dữ liệu: lấy ${rows.length}/${count}`
+        )
+      }
+      break
+    }
   }
 
   if (!rows.length) return null
@@ -154,8 +163,8 @@ async function deleteCollection(collection) {
   if (error) throw error
 }
 
-async function listEmployeesAsFirebaseMap() {
-  const { data, error } = await supabase.from('users').select('*')
+async function listEmployeesAsFirebaseMap(columns = '*') {
+  const { data, error } = await supabase.from('users').select(columns)
   if (error) throw error
   if (!data?.length) return null
 
@@ -171,6 +180,27 @@ async function listEmployeesAsFirebaseMap() {
   })
   return out
 }
+
+/** Directory fields only — skips password/documents/images blobs. */
+const EMPLOYEE_DIRECTORY_COLUMNS = [
+  'id',
+  'name',
+  'employee_id',
+  'username',
+  'email',
+  'phone',
+  'department',
+  'position',
+  'branch',
+  'employment_status',
+  'status',
+  'shift',
+  'role',
+  'join_date',
+  'official_date'
+].join(',')
+
+export const fbGetEmployeesDirectory = () => listEmployeesAsFirebaseMap(EMPLOYEE_DIRECTORY_COLUMNS)
 
 async function pushEmployee(payload) {
   const id = crypto.randomUUID()
@@ -254,7 +284,7 @@ export const fbGetAttendanceByEmployee = async (employeeId) => {
 
 /**
  * Load attendance logs for one YYYY-MM (filters by data.date prefix).
- * Falls back to client filter if date-only rows are missing.
+ * Paginates past Supabase's default 1000-row response cap.
  */
 export const fbGetAttendanceLogsByMonth = async (month) => {
   const period = String(month || '').trim()
@@ -262,30 +292,34 @@ export const fbGetAttendanceLogsByMonth = async (month) => {
 
   const pageSize = 1000
   const rows = []
+  let expectedTotal = null
+
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from('hr_records')
-      .select('id, data')
+      .select('id, data', from === 0 ? { count: 'exact' } : undefined)
       .eq('collection', 'attendanceLogs')
       .gte('data->>date', `${period}-01`)
       .lte('data->>date', `${period}-31`)
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1)
     if (error) throw error
+    if (from === 0 && typeof count === 'number') expectedTotal = count
     rows.push(...(data || []))
     if (!data || data.length < pageSize) break
   }
 
-  // Also pick timestamp-only logs that may lack data.date
-  if (!rows.length) {
-    const all = await listCollection('attendanceLogs')
-    if (!all) return null
-    const filtered = Object.fromEntries(
-      Object.entries(all).filter(([, log]) =>
-        String(log.date || log.timestamp || '').slice(0, 7) === period
-      )
+  if (
+    typeof expectedTotal === 'number' &&
+    expectedTotal > 0 &&
+    rows.length < expectedTotal
+  ) {
+    console.warn(
+      `[attendanceLogs:${period}] thiếu dữ liệu: lấy ${rows.length}/${expectedTotal}`
     )
-    return Object.keys(filtered).length ? filtered : null
   }
+
+  if (!rows.length) return null
 
   const prefix = 'attendanceLogs::'
   const out = {}

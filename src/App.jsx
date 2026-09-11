@@ -4,22 +4,14 @@ import Layout from './components/Layout'
 import LoadingSpinner from './components/LoadingSpinner'
 import ProtectedRoute from './components/ProtectedRoute'
 
-const Approvals = lazy(() => import('./pages/Approvals'))
-const Attendance = lazy(() => import('./pages/Attendance'))
 const AttendancePreview = lazy(() => import('./pages/AttendancePreview'))
 const AttendancePenalties = lazy(() => import('./pages/AttendancePenalties'))
-const Competency = lazy(() => import('./pages/Competency'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
 const EmployeeLogin = lazy(() => import('./pages/EmployeeLogin'))
 const Employees = lazy(() => import('./pages/Employees'))
-const GradingPage = lazy(() => import('./pages/GradingPage'))
-const KPI = lazy(() => import('./pages/KPI'))
+const FeatureComingSoon = lazy(() => import('./pages/FeatureComingSoon'))
 const Login = lazy(() => import('./pages/Login'))
 const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
-const Recruitment = lazy(() => import('./pages/Recruitment'))
-const Salary = lazy(() => import('./pages/Salary'))
-const Tasks = lazy(() => import('./pages/Tasks'))
 
 const AppLayout = () => <Layout><Outlet /></Layout>
 const STAFF_ROLES = ['admin', 'hr', 'manager']
@@ -44,20 +36,22 @@ function App() {
           </Route>
           <Route element={<ProtectedRoute allowedRoles={STAFF_ROLES} />}>
             <Route element={<AppLayout />}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/" element={<Navigate to="/employees" replace />} />
               <Route path="/employees" element={<Employees />} />
-              <Route path="/recruitment" element={<Recruitment />} />
-              <Route path="/salary" element={<Salary />} />
-              <Route path="/competency" element={<Competency />} />
-              <Route path="/kpi" element={<KPI />} />
-              <Route path="/grading/:employeeId?" element={<GradingPage />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/approvals" element={<Approvals />} />
-              <Route path="/attendance" element={<Attendance />} />
               <Route path="/bang-cong-preview" element={<AttendancePreview />} />
               <Route path="/bang-phat" element={<AttendancePenalties />} />
+              <Route path="/attendance" element={<Navigate to="/bang-cong-preview" replace />} />
               <Route path="/honor" element={<Navigate to="/bang-cong-preview" replace />} />
+
+              {/* Các tab còn lại: không tải DB, chỉ hiện thông báo demo */}
+              <Route path="/dashboard" element={<FeatureComingSoon />} />
+              <Route path="/recruitment" element={<FeatureComingSoon />} />
+              <Route path="/salary" element={<FeatureComingSoon />} />
+              <Route path="/competency" element={<FeatureComingSoon />} />
+              <Route path="/kpi" element={<FeatureComingSoon />} />
+              <Route path="/grading/:employeeId?" element={<FeatureComingSoon />} />
+              <Route path="/tasks" element={<FeatureComingSoon />} />
+              <Route path="/approvals" element={<FeatureComingSoon />} />
             </Route>
           </Route>
         </Routes>

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import EmployeeModal from './EmployeeModal'
-import StatusHistoryView from './StatusHistoryView'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { formatDateDisplay } from '../utils/helpers'
+
+const EmployeeModal = lazy(() => import('./EmployeeModal'))
+const StatusHistoryView = lazy(() => import('./StatusHistoryView'))
 
 const getName = (employee) => employee.ho_va_ten || employee.name || employee.Tên || 'Chưa cập nhật'
 const getTinhTrang = (employee) => String(employee?.tinh_trang || employee?.status || '').trim()
+const getShift = (employee) => String(employee?.ca_lam_viec || employee?.shift || '').trim()
 const isResigned = (employee) =>
     String(employee?.trang_thai || '').trim() === 'Nghỉ việc' || getTinhTrang(employee) === 'Nghỉ việc'
 
@@ -12,11 +14,13 @@ function EmployeeDirectory({
     employees, filteredEmployees, activeTab, setActiveTab, searchTerm, setSearchTerm,
     filterBranch, setFilterBranch,
     filterDept, setFilterDept, filterStatus, setFilterStatus, filterContract, setFilterContract,
+    filterShift = '', setFilterShift,
     selectedEmployee, setSelectedEmployee, isModalOpen, setIsModalOpen, isReadOnly, setIsReadOnly,
-    onReload, onExport, onDownloadTemplate, onImport, onDelete
+    onReload, onExport, onDownloadTemplate, onImport, onDelete, onResolveEmployee
 }) {
     const importInputRef = useRef(null)
     const [openMenu, setOpenMenu] = useState(null)
+    const [openingEmployee, setOpeningEmployee] = useState(false)
 
     const activeEmployees = useMemo(
         () => employees.filter(employee => !isResigned(employee)),
@@ -37,6 +41,8 @@ function EmployeeDirectory({
     const branches = [...new Set(activeEmployees.map(employee => employee.chi_nhanh).filter(Boolean))].sort()
     const departments = [...new Set(activeEmployees.map(employee => employee.bo_phan).filter(Boolean))].sort()
     const contracts = [...new Set(activeEmployees.map(employee => employee.loai_hop_dong || employee.contractType).filter(Boolean))].sort()
+    const shifts = [...new Set(activeEmployees.map(getShift).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
+    const noShiftCount = activeEmployees.filter(employee => !getShift(employee)).length
     const stats = [
         ['Tổng nhân sự', activeEmployees.length, 'fa-users', 'blue'],
         ['Nhân sự thử việc', activeEmployees.filter(e => getTinhTrang(e) === 'Thử việc').length, 'fa-user-clock', 'orange'],
@@ -49,11 +55,23 @@ function EmployeeDirectory({
         ['Sắp đến thâm niên', activeEmployees.filter(e => { const d = new Date(e.ngay_vao_lam); return !Number.isNaN(d.getTime()) && d.getMonth() === month }).length, 'fa-award', 'teal']
     ]
 
-    const openEmployee = (employee, readOnly = true) => {
+    const openEmployee = async (employee, readOnly = true) => {
+        if (openingEmployee) return
         setOpenMenu(null)
-        setSelectedEmployee(employee)
         setIsReadOnly(readOnly)
-        setIsModalOpen(true)
+        if (!employee) {
+            setSelectedEmployee(null)
+            setIsModalOpen(true)
+            return
+        }
+        setOpeningEmployee(true)
+        try {
+            const full = onResolveEmployee ? await onResolveEmployee(employee) : employee
+            setSelectedEmployee(full || employee)
+            setIsModalOpen(true)
+        } finally {
+            setOpeningEmployee(false)
+        }
     }
 
     useEffect(() => {
@@ -64,7 +82,7 @@ function EmployeeDirectory({
     }, [openMenu])
 
     return (
-        <div className="employees-page">
+        <div className={`employees-page${openingEmployee ? ' is-opening' : ''}`}>
             <header className="employees-hero">
                 <div>
                     <h1><i className="fas fa-users"></i> Quản lý nhân sự</h1>
@@ -98,7 +116,11 @@ function EmployeeDirectory({
                 <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}><i className="fas fa-clock-rotate-left"></i> Lịch sử biến động</button>
             </nav>
 
-            {activeTab === 'history' ? <StatusHistoryView employees={employees} onDataChange={onReload} /> : <>
+            {activeTab === 'history' ? (
+                <Suspense fallback={<div className="loadingState">Đang tải lịch sử...</div>}>
+                    <StatusHistoryView employees={employees} onDataChange={onReload} />
+                </Suspense>
+            ) : <>
                 <section className="employees-filter-card">
                     <label className="employees-search"><i className="fas fa-search"></i><input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Tìm theo họ tên, email, số điện thoại..." /></label>
                     <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
@@ -108,6 +130,11 @@ function EmployeeDirectory({
                     </select>
                     <select value={filterDept} onChange={e => setFilterDept(e.target.value)}><option value="">Tất cả phòng ban</option>{departments.map(value => <option key={value}>{value}</option>)}</select>
                     <select value={filterContract} onChange={e => setFilterContract(e.target.value)}><option value="">Tất cả hợp đồng</option>{contracts.map(value => <option key={value}>{value}</option>)}</select>
+                    <select value={filterShift} onChange={e => setFilterShift(e.target.value)}>
+                        <option value="">Tất cả ca</option>
+                        {shifts.map(value => <option key={value}>{value}</option>)}
+                        {noShiftCount > 0 && <option value="__none__">Chưa gán ca</option>}
+                    </select>
                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                         <option value="">Tất cả trạng thái</option>
                         <option value="Thử việc">Thử việc</option>
@@ -124,15 +151,16 @@ function EmployeeDirectory({
                     </div>
                     <div className="employees-table-wrap">
                         <table className="employees-table">
-                            <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Chức danh</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Tình trạng</th><th></th></tr></thead>
+                            <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Chức danh</th><th>Ca</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Tình trạng</th><th></th></tr></thead>
                             <tbody>{filteredEmployees.map((employee, index) => {
                                 const name = getName(employee)
                                 const status = getTinhTrang(employee)
                                 const avatar = employee.avatarDataUrl || employee.avatarUrl || employee.avatar
                                 const days = daysUntil(employee.ngay_het_han || employee.contractEndDate || employee.ngay_het_han_hop_dong)
                                 return <tr key={employee.id || index} onClick={() => openEmployee(employee)}>
-                                    <td><div className="employee-identity"><span className="employee-avatar">{avatar ? <img src={avatar} alt="" /> : name.charAt(0)}</span><span><strong>{name}</strong><small>{employee.email || employee.sdt || employee.sđt || 'Chưa có thông tin liên hệ'}</small></span></div></td>
+                                    <td><div className="employee-identity"><span className="employee-avatar">{avatar ? <img src={avatar} alt="" loading="lazy" decoding="async" /> : name.charAt(0)}</span><span><strong>{name}</strong><small>{employee.email || employee.sdt || employee.sđt || 'Chưa có thông tin liên hệ'}</small></span></div></td>
                                     <td>{employee.bo_phan || 'Chưa phân bổ'}</td><td>{employee.vi_tri || 'Chưa cập nhật'}</td>
+                                    <td>{getShift(employee) || 'Chưa gán ca'}</td>
                                     <td>{formatDateDisplay(employee.ngay_vao_lam) || '—'}</td>
                                     <td><span className="contract-cell">{employee.loai_hop_dong || employee.contractType || 'Chưa cập nhật'}{days !== null && days >= 0 && days <= 60 && <small>Còn {days} ngày</small>}</span></td>
                                     <td><span className={`employee-status ${status === 'Chính thức' ? 'success' : status === 'Thử việc' ? 'warning' : status === 'Nghỉ việc' ? 'danger' : ''}`}><i></i>{status === 'Nghỉ việc' ? 'Đã nghỉ' : status}</span></td>
@@ -190,7 +218,11 @@ function EmployeeDirectory({
                 </section>
             </>}
 
-            <EmployeeModal employee={selectedEmployee} isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setSelectedEmployee(null); setIsReadOnly(false) }} onSave={onReload} readOnly={isReadOnly} departmentOptions={departments} positionOptions={[...new Set(activeEmployees.map(e => e.vi_tri).filter(Boolean))]} />
+            {isModalOpen && (
+                <Suspense fallback={null}>
+                    <EmployeeModal employee={selectedEmployee} isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setSelectedEmployee(null); setIsReadOnly(false) }} onSave={onReload} readOnly={isReadOnly} departmentOptions={departments} positionOptions={[...new Set(activeEmployees.map(e => e.vi_tri).filter(Boolean))]} />
+                </Suspense>
+            )}
         </div>
     )
 }

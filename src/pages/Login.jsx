@@ -26,7 +26,7 @@ function Login() {
         return
       }
       if (STAFF_ROLES.includes(profile?.role)) {
-        const target = ['/', '/bang-cong', '/cham-cong-online'].includes(from) ? '/dashboard' : from
+        const target = ['/', '/bang-cong', '/cham-cong-online'].includes(from) ? '/employees' : from
         navigate(target, { replace: true })
         return
       }
