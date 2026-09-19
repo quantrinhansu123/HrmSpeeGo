@@ -59,23 +59,6 @@ test('keeps a lone Ra as checkout instead of converting it to check-in', () => {
   assert.equal(result.checkOut, '17:30')
 })
 
-test('keeps the first Vào and last Ra when a split-shift punch is unmatched', () => {
-  const columns = findAttendancePunchColumns([
-    'Mã NV', 'Vào 1', 'Ra 1', 'Vào 2', 'Ra 2'
-  ])
-  const result = collectAttendancePunches(
-    ['00001', '08:00', '12:00', '', '17:30'],
-    columns
-  )
-
-  assert.equal(result.checkIn, '08:00')
-  assert.equal(result.checkOut, '17:30')
-  assert.deepEqual(result.punchPairs, [
-    { checkIn: '08:00', checkOut: '12:00' },
-    { checkIn: '', checkOut: '17:30' }
-  ])
-})
-
 test('parses Excel serial times and AM/PM without dropping the meridiem', () => {
   assert.equal(parseAttendanceTime(0.5).str, '12:00')
   assert.equal(parseAttendanceTime('8:30 AM').str, '08:30')

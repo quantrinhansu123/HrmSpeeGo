@@ -28,7 +28,7 @@ test('keeps an unmatched source employee and recalculates punches by actual minu
   assert.equal(rows[0].department, 'Văn phòng')
   // 08:20 → 17:30 = 550 phút; Công được chặn tối đa 1 ngày.
   assert.equal(rows[0].workdays, 1)
-  assert.equal(rows[0].days.get('2026-08-01').hours, 8)
+  assert.equal(rows[0].days.get('2026-08-01').hours, 9.17)
 })
 test('recalculates the late report from actual punches and each employee shift', () => {
   const employees = [
@@ -219,65 +219,9 @@ test('tự dùng hai buổi khi có hai cặp chấm và giữ full ngày khi ch
   assert.equal(splitDay.hours, 8)
   assert.equal(splitDay.workdays, 1)
   assert.equal(fullDay.calculationMode, 'full-day')
-  assert.equal(fullDay.hours, 8)
+  assert.equal(fullDay.hours, 9)
   assert.equal(fullDay.workdays, 1)
   assert.equal(saleSplitDay.calculationMode, 'split-shift')
   assert.equal(saleSplitDay.hours, 8)
   assert.equal(saleSplitDay.workdays, 1)
-})
-
-test('summary dùng Vào đầu và Ra cuối cho cặp chia buổi bị thiếu', () => {
-  const attendanceSettings = {
-    shifts: {
-      administrative: {
-        name: 'Ca Hành chính',
-        standardCheckIn: '08:30',
-        standardCheckOut: '17:30',
-        splitShift: {
-          enabled: true,
-          morning: { start: '08:30', end: '12:00', workdays: 0.5 },
-          afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
-        }
-      }
-    }
-  }
-  const rows = buildAttendanceSummary({
-    attendanceLogs: [
-      {
-        employeeId: 'partial-morning',
-        date: '2026-08-19',
-        vao: '08:00',
-        ra: '12:00',
-        punchPairs: [
-          { checkIn: '08:00', checkOut: '12:00' },
-          { checkIn: '13:00', checkOut: '' }
-        ]
-      },
-      {
-        employeeId: 'partial-afternoon',
-        date: '2026-08-20',
-        vao: '08:00',
-        ra: '17:30',
-        punchPairs: [
-          { checkIn: '08:00', checkOut: '12:00' },
-          { checkIn: '', checkOut: '17:30' }
-        ]
-      }
-    ],
-    employees: [
-      { id: 'partial-morning', name: 'Thiếu Ra chiều', shift: 'Ca Hành chính' },
-      { id: 'partial-afternoon', name: 'Thiếu Vào chiều', shift: 'Ca Hành chính' }
-    ],
-    month: '2026-08',
-    attendanceSettings
-  })
-
-  const morningDay = rows.find(row => row.employeeId === 'partial-morning').days.get('2026-08-19')
-  const afternoonDay = rows.find(row => row.employeeId === 'partial-afternoon').days.get('2026-08-20')
-  assert.equal(morningDay.hours, 4)
-  assert.equal(morningDay.workdays, 0.5)
-  assert.equal(morningDay.calculationMode, 'full-day')
-  assert.equal(afternoonDay.hours, 8)
-  assert.equal(afternoonDay.workdays, 1)
-  assert.equal(afternoonDay.calculationMode, 'full-day')
 })

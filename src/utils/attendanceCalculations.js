@@ -73,86 +73,25 @@ const sessionInterval = session => {
 const overlapMinutes = (left, right) =>
   Math.max(0, Math.min(left.end, right.end) - Math.max(left.start, right.start))
 
-const normalizePunchPairs = punchPairs => (punchPairs || [])
-  .map(pair => ({
-    checkIn: firstPresent(pair?.checkIn),
-    checkOut: firstPresent(pair?.checkOut)
-  }))
-  .filter(pair => pair.checkIn || pair.checkOut)
-
-const buildSplitSessions = splitShift => [
-  { key: 'morning', label: 'Buổi sáng', ...splitShift?.morning },
-  { key: 'afternoon', label: 'Buổi chiều', ...splitShift?.afternoon }
-].map(session => ({
-  ...session,
-  interval: sessionInterval(session),
-  workdays: Math.min(1, Math.max(0, finiteNumber(session.workdays, 0.5)))
-}))
-
-/**
- * Tính fallback cho dữ liệu chia buổi bị thiếu một lượt Vào hoặc Ra.
- * Khi đó máy vẫn có thể cung cấp một Vào đầu và một Ra cuối, nên dùng
- * đúng khoảng đầu-cuối thay vì bỏ qua lượt chấm bị thiếu.
- */
-const calculatePartialSplitSpanWork = ({
-  punchPairs = [],
-  splitShift,
-  breakMinutes = 0
-} = {}) => {
-  if (!splitShift?.enabled) return null
-
-  const pairs = normalizePunchPairs(punchPairs)
-  const hasIncompletePair = pairs.some(pair => Boolean(pair.checkIn) !== Boolean(pair.checkOut))
-  if (!hasIncompletePair) return null
-
-  const checkIn = pairs.find(pair => pair.checkIn)?.checkIn
-  const checkOut = [...pairs].reverse().find(pair => pair.checkOut)?.checkOut
-  if (!checkIn || !checkOut) return null
-
-  const workedMinutes = calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
-  if (workedMinutes === null) return null
-
-  const sessions = buildSplitSessions(splitShift)
-  if (sessions.some(session => !session.interval)) return null
-
-  const start = attendanceTimeToMinutes(checkIn)
-  const rawEnd = attendanceTimeToMinutes(checkOut)
-  if (start === null || rawEnd === null) return null
-  const end = rawEnd < start ? rawEnd + 24 * 60 : rawEnd
-  const span = { start, end }
-  const coveredSessions = sessions.filter(session => overlapMinutes(span, session.interval) > 0)
-  const regularWorkdays = coveredSessions.length === 1
-    ? coveredSessions[0].workdays
-    : coveredSessions.length > 1
-      ? 1
-      : 0
-
-  return {
-    workedMinutes,
-    regularWorkdays,
-    calculationMode: 'full-day',
-    splitShiftBreakdown: []
-  }
-}
-
 /**
  * Tính công theo hai buổi khi ca bật chia buổi.
  * - Một cặp phủ cả sáng lẫn chiều vẫn dùng công thức full ngày.
- * - Từ hai cặp hợp lệ trở lên, hoặc một cặp chỉ nằm trong một buổi, tính trọn
- *   mức công tối đa đã cấu hình cho từng buổi.
+ * - Từ hai cặp hợp lệ trở lên, hoặc một cặp chỉ nằm trong một buổi, tính theo
+ *   tỷ lệ và mức công tối đa đã cấu hình cho từng buổi.
  */
 export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) => {
   if (!splitShift?.enabled) return null
-  const rawPairs = normalizePunchPairs(punchPairs)
-  // A missing Vào/Ra is handled by the first-to-last fallback in
-  // calculateAttendanceMetrics. Do not silently discard the unmatched punch
-  // and calculate only from the remaining complete pairs.
-  if (rawPairs.some(pair => Boolean(pair.checkIn) !== Boolean(pair.checkOut))) return null
-
-  const sessions = buildSplitSessions(splitShift)
+  const sessions = [
+    { key: 'morning', label: 'Buổi sáng', ...splitShift.morning },
+    { key: 'afternoon', label: 'Buổi chiều', ...splitShift.afternoon }
+  ].map(session => ({
+    ...session,
+    interval: sessionInterval(session),
+    workdays: Math.min(1, Math.max(0, finiteNumber(session.workdays, 0.5)))
+  }))
   if (sessions.some(session => !session.interval)) return null
 
-  const pairs = rawPairs.map(punchInterval).filter(Boolean)
+  const pairs = (punchPairs || []).map(punchInterval).filter(Boolean)
   if (!pairs.length) return null
   const overlaps = sessions.map(session =>
     pairs.reduce((total, pair) => total + overlapMinutes(pair, session.interval), 0)
@@ -163,20 +102,20 @@ export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) =>
 
   const breakdown = sessions.map((session, index) => {
     const creditedMinutes = Math.min(overlaps[index], session.interval.minutes)
+    const ratio = session.interval.minutes > 0
+      ? Math.min(creditedMinutes / session.interval.minutes, 1)
+      : 0
     return {
       key: session.key,
       label: session.label,
       minutes: creditedMinutes,
-      workdays: creditedMinutes > 0 ? session.workdays : 0
+      workdays: ratio * session.workdays
     }
   })
-  const attendedSessions = breakdown.filter(session => session.minutes > 0)
 
   return {
     workedMinutes: pairs.reduce((total, pair) => total + pair.minutes, 0),
-    regularWorkdays: attendedSessions.length > 1
-      ? 1
-      : attendedSessions.reduce((total, session) => total + session.workdays, 0),
+    regularWorkdays: Math.min(1, breakdown.reduce((total, session) => total + session.workdays, 0)),
     breakdown
   }
 }
@@ -204,14 +143,8 @@ export const calculateAttendanceMetrics = ({
   fallbackWorkdays
 } = {}) => {
   const standard = Math.max(1, finiteNumber(standardMinutes, STANDARD_WORK_MINUTES))
-  const partialSplitMetrics = calculatePartialSplitSpanWork({
-    punchPairs,
-    splitShift,
-    breakMinutes
-  })
   const splitMetrics = calculateSplitShiftWork({ punchPairs, splitShift })
-  const activeSplitMetrics = partialSplitMetrics || splitMetrics
-  const workedMinutes = activeSplitMetrics?.workedMinutes ?? calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
+  const workedMinutes = splitMetrics?.workedMinutes ?? calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
   const hasPunchPair = workedMinutes !== null
   const manual = manualOvertimeHours(log)
   const sourceHours = finiteNumber(
@@ -249,15 +182,12 @@ export const calculateAttendanceMetrics = ({
     workedMinutes,
     regularMinutes,
     overtimeMinutes: overtimeHours * 60,
-    // Giờ công chuẩn không vượt quá một ca chính. Phần vượt chuẩn được
-    // phản ánh riêng qua overtimeHours, nên ca 08:30–17:30 là 8 giờ công,
-    // không phải 9 giờ công.
-    hours: regularMinutes / 60,
-    regularWorkdays: activeSplitMetrics?.regularWorkdays ?? regularMinutes / standard,
+    hours: workedMinutes / 60,
+    regularWorkdays: splitMetrics?.regularWorkdays ?? regularMinutes / standard,
     overtimeHours,
     overtimeSource: manual.hasValue ? 'manual' : automaticAllowed ? 'automatic' : 'disabled',
-    calculationMode: partialSplitMetrics?.calculationMode || (splitMetrics ? 'split-shift' : 'full-day'),
-    splitShiftBreakdown: partialSplitMetrics?.splitShiftBreakdown || splitMetrics?.breakdown || []
+    calculationMode: splitMetrics ? 'split-shift' : 'full-day',
+    splitShiftBreakdown: splitMetrics?.breakdown || []
   }
 }
 

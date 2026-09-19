@@ -405,7 +405,7 @@ function HolidaySettings() {
                   />
                   <span>
                     <strong>Bật chia ca thành 2 buổi</strong>
-                    <small>Tự điền mốc mặc định để người dùng chỉnh lại. Ngày đủ hai cặp chấm vẫn giữ cách tính hiện tại; ngày thiếu một lượt Vào/Ra sẽ lấy Vào đầu đến Ra cuối.</small>
+                    <small>Không thay đổi chấm công full ngày. Khi có lượt ra/vào giữa ca, hệ thống tính riêng từng buổi.</small>
                   </span>
                 </label>
 
@@ -453,7 +453,7 @@ function HolidaySettings() {
                       ))}
                     </div>
                     <p className="holiday-settings-split-note">
-                      Các mốc giờ và công tối đa có thể sửa riêng cho từng ca. Có đủ hai cặp Vào/Ra thì hệ thống tính riêng từng buổi; nếu thiếu một lượt chấm thì dùng khoảng từ Vào đầu đến Ra cuối và giới hạn theo buổi.
+                      Các mốc giờ đều có thể sửa riêng cho từng ca. Có một cặp Vào/Ra phủ cả ngày thì vẫn dùng cách tính full ngày hiện tại; có hai cặp hoặc chỉ làm một buổi thì dùng cấu hình trên.
                     </p>
                   </>
                 )}
