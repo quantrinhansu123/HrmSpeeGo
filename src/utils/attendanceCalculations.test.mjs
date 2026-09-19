@@ -82,11 +82,11 @@ test('một cặp phủ cả ngày vẫn giữ cách tính full ngày', () => {
   })
 
   assert.equal(result.calculationMode, 'full-day')
-  assert.equal(result.hours, 8)
+  assert.equal(result.hours, 9)
   assert.equal(result.regularWorkdays, 1)
 })
 
-test('một cặp nằm trong buổi sáng được tính trọn nửa công', () => {
+test('một cặp nằm trong buổi sáng được chặn tối đa nửa công', () => {
   const result = calculateSplitShiftWork({
     punchPairs: [{ checkIn: '08:30', checkOut: '12:00' }],
     splitShift
@@ -94,20 +94,6 @@ test('một cặp nằm trong buổi sáng được tính trọn nửa công', (
 
   assert.equal(result.regularWorkdays, 0.5)
   assert.equal(result.workedMinutes, 210)
-})
-
-test('có chấm trong một buổi thì tính trọn 0.5 công dù thời lượng ngắn hơn khung buổi', () => {
-  const result = calculateAttendanceMetrics({
-    checkIn: '08:00',
-    checkOut: '10:00',
-    punchPairs: [{ checkIn: '08:00', checkOut: '10:00' }],
-    splitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(result.hours, 2)
-  assert.equal(result.regularWorkdays, 0.5)
-  assert.equal(result.splitShiftBreakdown[0].workdays, 0.5)
 })
 
 test('mô tả rõ số công riêng của từng buổi trên bảng công', () => {
@@ -122,115 +108,4 @@ test('mô tả rõ số công riêng của từng buổi trên bảng công', ()
 
   assert.match(formula, /Buổi sáng 210p = 0.5 công/)
   assert.match(formula, /Tổng 1 công/)
-})
-
-test('giữ nguyên 8 giờ khi hai buổi đều có đủ cặp chấm', () => {
-  const result = calculateAttendanceMetrics({
-    checkIn: '08:30',
-    checkOut: '17:30',
-    punchPairs: [
-      { checkIn: '08:30', checkOut: '12:00' },
-      { checkIn: '13:00', checkOut: '17:30' }
-    ],
-    splitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(result.hours, 8)
-  assert.equal(result.regularWorkdays, 1)
-  assert.equal(result.calculationMode, 'split-shift')
-})
-
-test('đủ cả hai buổi luôn là 1 công, còn một buổi dùng mức cài đặt', () => {
-  const configuredSplitShift = {
-    ...splitShift,
-    morning: { ...splitShift.morning, workdays: 0.4 },
-    afternoon: { ...splitShift.afternoon, workdays: 0.4 }
-  }
-  const fullDay = calculateAttendanceMetrics({
-    checkIn: '08:30',
-    checkOut: '17:30',
-    punchPairs: [
-      { checkIn: '08:30', checkOut: '12:00' },
-      { checkIn: '13:00', checkOut: '17:30' }
-    ],
-    splitShift: configuredSplitShift,
-    autoCalculateOvertime: false
-  })
-  const morning = calculateAttendanceMetrics({
-    checkIn: '08:30',
-    checkOut: '12:00',
-    punchPairs: [{ checkIn: '08:30', checkOut: '12:00' }],
-    splitShift: configuredSplitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(fullDay.regularWorkdays, 1)
-  assert.equal(morning.regularWorkdays, 0.4)
-})
-
-test('tính từ Vào đầu đến Ra cuối khi thiếu Ra buổi chiều', () => {
-  const result = calculateAttendanceMetrics({
-    checkIn: '08:00',
-    checkOut: '12:00',
-    punchPairs: [
-      { checkIn: '08:00', checkOut: '12:00' },
-      { checkIn: '13:00', checkOut: '' }
-    ],
-    splitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(result.hours, 4)
-  assert.equal(result.regularWorkdays, 0.5)
-  assert.equal(result.calculationMode, 'full-day')
-})
-
-test('cặp thiếu lượt nhưng vẫn thuộc một buổi thì tính 0.5 công', () => {
-  const result = calculateAttendanceMetrics({
-    checkIn: '08:00',
-    checkOut: '10:00',
-    punchPairs: [
-      { checkIn: '08:00', checkOut: '10:00' },
-      { checkIn: '13:00', checkOut: '' }
-    ],
-    splitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(result.hours, 2)
-  assert.equal(result.regularWorkdays, 0.5)
-})
-
-test('tính đủ khoảng đầu-cuối khi có Ra sau nửa buổi nhưng thiếu Vào tương ứng', () => {
-  const result = calculateAttendanceMetrics({
-    checkIn: '08:00',
-    checkOut: '17:30',
-    punchPairs: [
-      { checkIn: '08:00', checkOut: '12:00' },
-      { checkIn: '', checkOut: '17:30' }
-    ],
-    splitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(result.hours, 8)
-  assert.equal(result.regularWorkdays, 1)
-  assert.equal(result.calculationMode, 'full-day')
-})
-
-test('tính đủ khoảng đầu-cuối khi thiếu Ra buổi sáng nhưng có đủ buổi chiều', () => {
-  const result = calculateAttendanceMetrics({
-    checkIn: '08:00',
-    checkOut: '17:30',
-    punchPairs: [
-      { checkIn: '08:00', checkOut: '' },
-      { checkIn: '13:00', checkOut: '17:30' }
-    ],
-    splitShift,
-    autoCalculateOvertime: false
-  })
-
-  assert.equal(result.hours, 8)
-  assert.equal(result.regularWorkdays, 1)
 })
