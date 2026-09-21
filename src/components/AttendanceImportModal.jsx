@@ -1584,67 +1584,36 @@ function AttendanceImportModal({
                 <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} style={{ width: '100%', padding: '10px' }} />
               </div>
               <div className="form-group">
-                <label>2. Ảnh danh sách nhân sự (không bắt buộc)</label>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => setReferenceImage(e.target.files?.[0] || null)}
-                  disabled={aiAvailable === false}
-                  style={{ width: '100%', padding: '10px' }}
-                />
-                  <small style={{ color: '#6b7280' }}>
-                  {aiAvailable === false
-                    ? 'Chưa cấu hình GROQ_API_KEY trên production. Đối sánh tên/mã trong Excel vẫn hoạt động.'
-                    : 'Dùng khi cần AI đọc ảnh danh sách nhân sự để hỗ trợ các tên khó ghép.'}
-                </small>
-              </div>
-              <div style={{ marginTop: '-10px', marginBottom: '10px' }}>
-                <button
-                  type="button"
-                  className="btn btn-link"
-                  style={{ fontSize: '0.85rem', padding: 0 }}
-                  onClick={downloadNewTemplate}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '100%',
+                    minHeight: '62px',
+                    padding: '16px 18px',
+                    border: '2px dashed #f59e0b',
+                    borderRadius: '12px',
+                    background: '#fffaf0',
+                    cursor: 'pointer',
+                    fontSize: '1.05rem',
+                    fontWeight: 600,
+                    color: '#b45309',
+                    boxSizing: 'border-box',
+                    transition: 'all 0.2s ease'
+                  }}
                 >
-                  <i className="fas fa-download"></i> Tải file mẫu (đầy đủ cột chấm công)
-                </button>
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  padding: '12px',
-                  marginBottom: '12px',
-                  border: '1px solid #f59e0b',
-                  borderRadius: '6px',
-                  background: '#fffbeb'
-                }}
-              >
-                <div>
-                  <strong>Dữ liệu đã có trong Lumi</strong>
-                  <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
-                    Đổi mã máy chấm công sang mã nhân viên chuẩn trong hồ sơ Lumi.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-warning"
-                  onClick={handleReconcileExisting}
-                  disabled={!attendanceLogs.length}
-                >
-                  <i className="fas fa-link"></i>
-                  {` Khớp mã nhân viên (${attendanceLogs.length} dòng)`}
-                </button>
-              </div>
-              <div className="alert alert-info" style={{ marginTop: '15px', background: '#e8f5e9', padding: '10px', borderRadius: '4px' }}>
-                <small>
-                  <strong>Quy tắc đối sánh:</strong><br />
-                  • Mã máy và mã Lumi được giữ riêng; kết quả dùng mã nhân viên chuẩn của hồ sơ Lumi.<br />
-                  • Ghép được tên có dấu/không dấu, viết liền, khác hoa thường và thiếu tên đệm phổ biến.<br />
-                  • Tên chắc chắn được tự ghép; tên mơ hồ bắt buộc người dùng chọn lại trước khi ghi CSDL.<br />
-                  • Hệ thống giữ tên/mã nguồn để kiểm tra và chống import trùng.
-                </small>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                  />
+                  <span>
+                    <i className="fas fa-file-excel" style={{ marginRight: '10px' }}></i>
+                    Tải Excel lên
+                  </span>
+                </label>
               </div>
             </>
           ) : (
