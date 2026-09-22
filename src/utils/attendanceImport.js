@@ -11,6 +11,68 @@ export const normalizeAttendanceHeader = value =>
 
 const normalizeHeader = normalizeAttendanceHeader
 
+export const expandAttendanceMergedCells = (rows = [], merges = []) => {
+  const expanded = rows.map(row => [...(row || [])])
+  merges.forEach(range => {
+    const startRow = Number(range?.s?.r)
+    const endRow = Number(range?.e?.r)
+    const startColumn = Number(range?.s?.c)
+    const endColumn = Number(range?.e?.c)
+    if (![startRow, endRow, startColumn, endColumn].every(Number.isInteger)) return
+    const value = expanded[startRow]?.[startColumn]
+    if (value === undefined || value === null || value === '') return
+    for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+      if (!expanded[rowIndex]) expanded[rowIndex] = []
+      for (let columnIndex = startColumn; columnIndex <= endColumn; columnIndex += 1) {
+        if (
+          expanded[rowIndex][columnIndex] === undefined ||
+          expanded[rowIndex][columnIndex] === null ||
+          expanded[rowIndex][columnIndex] === ''
+        ) {
+          expanded[rowIndex][columnIndex] = value
+        }
+      }
+    }
+  })
+  return expanded
+}
+
+export const buildAttendanceHeaderSignature = (headers = []) => {
+  const normalized = headers
+    .map(normalizeAttendanceHeader)
+    .filter(Boolean)
+    .sort((left, right) => left.localeCompare(right))
+  return normalized.length ? `attendance-v1:${normalized.join('|')}` : ''
+}
+
+export const buildAttendanceTemplateBindings = (headers = [], bindings = {}) =>
+  Object.fromEntries(
+    Object.entries(bindings)
+      .map(([field, index]) => [field, normalizeAttendanceHeader(headers[Number(index)])])
+      .filter(([, header]) => Boolean(header))
+  )
+
+export const resolveAttendanceTemplateBindings = (headers = [], template = {}) => {
+  const normalizedHeaders = headers.map(normalizeAttendanceHeader)
+  const labels = template.bindingHeaders || template.bindings || {}
+  const resolved = {}
+
+  for (const [field, labelRaw] of Object.entries(labels)) {
+    const label = normalizeAttendanceHeader(labelRaw)
+    const matches = normalizedHeaders
+      .map((header, index) => header === label ? index : -1)
+      .filter(index => index >= 0)
+    if (matches.length !== 1) return null
+    resolved[field] = matches[0]
+  }
+  for (const [field, indexRaw] of Object.entries(template.bindingColumns || {})) {
+    if (resolved[field] != null) continue
+    const index = Number(indexRaw)
+    if (Number.isInteger(index) && index >= 0 && index < headers.length) resolved[field] = index
+  }
+  return Object.keys(resolved).length ? resolved : null
+}
+
 const HEADER_ALIASES = Object.freeze({
   code: [
     'ma nguon', 'ma may', 'ma cham cong', 'ma n vien', 'ma nhan vien',
@@ -24,7 +86,7 @@ const HEADER_ALIASES = Object.freeze({
   machineName: ['ten theo may', 'ten may', 'ten cham cong', 'ten tu may file', 'ten nguon'],
   department: ['phong ban nguon', 'phong ban', 'bo phan', 'department', 'team'],
   position: ['chuc vu nguon', 'chuc vu', 'vi tri', 'position', 'job title'],
-  date: ['ngay cham cong', 'ngay cong', 'attendance date', 'work date', 'ngay', 'date'],
+  date: ['ngay cham cong', 'attendance date', 'work date', 'ngay lam', 'ngay', 'date'],
   weekday: ['thu trong tuan', 'day of week', 'weekday', 'thu'],
   workdays: ['tong cong', 'ngay cong', 'so cong', 'workdays', 'workday', 'cong'],
   hours: ['so gio', 'hours worked', 'work hours', 'hours', 'gio'],
@@ -38,7 +100,8 @@ const HEADER_ALIASES = Object.freeze({
   earlyMinutes: ['ra som', 've som', 'early minutes'],
   overtime1: ['tc1', 'tang ca 1', 'ot1'],
   overtime2: ['tc2', 'tang ca 2', 'ot2'],
-  overtime3: ['tc3', 'tang ca 3', 'ot3']
+  overtime3: ['tc3', 'tang ca 3', 'ot3'],
+  eventTime: ['thoi gian cham', 'gio cham', 'punch time', 'scan time', 'thoi gian', 'time']
 })
 
 const headerMatchScore = (header, alias) => {
@@ -62,6 +125,8 @@ export const mapAttendanceColumns = (headers = []) => {
     let bestScore = 0
     normalized.forEach((header, index) => {
       if (['workdays', 'hours', 'symbol'].includes(field) && header.includes(' plus')) return
+      if (field === 'date' && /^(?:ngay cong|so ngay cong|tong ngay cong)$/.test(header)) return
+      if (field === 'hours' && /^(?:tong|total)\s/.test(header)) return
       aliases.forEach((alias, aliasIndex) => {
         const score = headerMatchScore(header, alias) - aliasIndex / 100
         if (score > bestScore) {
@@ -76,13 +141,14 @@ export const mapAttendanceColumns = (headers = []) => {
   return result
 }
 
-export const extractAttendanceDay = cell => {
+export const extractAttendanceDay = (cell, options = {}) => {
   if (cell === null || cell === undefined || cell === '') return null
 
   if (typeof cell === 'number') {
     if (Number.isInteger(cell) && cell >= 1 && cell <= 31) return { day: cell }
     if (cell >= 35000 && cell <= 65000) {
-      const date = new Date(Math.round((cell - 25569) * 86400 * 1000))
+      const epochOffset = options.date1904 ? 24107 : 25569
+      const date = new Date(Math.round((cell - epochOffset) * 86400 * 1000))
       return {
         day: date.getUTCDate(),
         month: date.getUTCMonth() + 1,
@@ -127,11 +193,11 @@ const attendanceHeaderSignals = row => {
   return Object.values(columns).filter(index => index >= 0).length
 }
 
-const buildMatrixCandidate = (rows, rowIndex) => {
+const buildMatrixCandidate = (rows, rowIndex, options = {}) => {
   const row = rows[rowIndex] || []
   const columns = []
   row.forEach((cell, index) => {
-    const info = extractAttendanceDay(cell)
+    const info = extractAttendanceDay(cell, options)
     if (info) columns.push({ ...info, idx: index })
   })
 
@@ -150,7 +216,10 @@ const buildMatrixCandidate = (rows, rowIndex) => {
   const nearbyHeaderSignals = Array.from({ length: 5 }, (_, offset) => rowIndex - 3 + offset)
     .filter(index => index >= 0 && index < rows.length)
     .reduce((max, index) => Math.max(max, attendanceHeaderSignals(rows[index] || [])), 0)
-  const valid = uniqueDays.length >= 5 && isMonotonic && consecutiveRatio >= 0.8 && hasSafeRepeats
+  const ownHeaderSignals = attendanceHeaderSignals(row)
+  const enoughDays = uniqueDays.length >= 5 || (uniqueDays.length >= 1 && ownHeaderSignals >= 1)
+  const valid = enoughDays && isMonotonic &&
+    (uniqueDays.length === 1 || consecutiveRatio >= 0.8) && hasSafeRepeats
   const score = valid
     ? 10000 + uniqueDays.length * 100 + nearbyHeaderSignals * 20 - (columns.length - uniqueDays.length) * 2
     : 0
@@ -168,10 +237,10 @@ const buildMatrixCandidate = (rows, rowIndex) => {
 }
 
 /** Find a real 1..31 header sequence, not a numeric employee data row. */
-export const findMatrixDayHeader = (rows = [], maxRows = 60) => {
+export const findMatrixDayHeader = (rows = [], maxRows = 60, options = {}) => {
   let best = null
   for (let rowIndex = 0; rowIndex < Math.min(rows.length, maxRows); rowIndex++) {
-    const candidate = buildMatrixCandidate(rows, rowIndex)
+    const candidate = buildMatrixCandidate(rows, rowIndex, options)
     if (candidate.valid && (!best || candidate.score > best.score)) best = candidate
   }
   return best
@@ -187,7 +256,8 @@ const listHeaderCandidate = (rows, rowIndex) => {
   const hasIdentity = columns.code >= 0 || columns.name >= 0
   const hasDate = columns.date >= 0
   const hasAttendanceValue = punches.allIndexes.length > 0 || numberedPunches > 0 ||
-    columns.workdays >= 0 || columns.hours >= 0 || columns.symbol >= 0
+    columns.workdays >= 0 || columns.hours >= 0 || columns.symbol >= 0 ||
+    columns.eventTime >= 0
   const valid = hasIdentity && hasDate && hasAttendanceValue
   const signalCount = Object.values(columns).filter(index => index >= 0).length
   const score = valid
@@ -219,8 +289,8 @@ export const findAttendanceListHeader = (rows = [], maxRows = 60) => {
 }
 
 /** Score one worksheet so instruction/summary tabs do not beat the attendance tab. */
-export const analyzeAttendanceSheet = (rows = []) => {
-  const matrix = findMatrixDayHeader(rows)
+export const analyzeAttendanceSheet = (rows = [], options = {}) => {
+  const matrix = findMatrixDayHeader(rows, 60, options)
   const list = findAttendanceListHeader(rows)
   const best = matrix && (!list || matrix.score >= list.score) ? matrix : list
   return {
@@ -236,7 +306,7 @@ export const parseAttendanceTime = (timeRaw) => {
 
   if (typeof timeRaw === 'number') {
     const fraction = timeRaw > 1 ? timeRaw % 1 : timeRaw
-    if (fraction <= 0 || fraction >= 1) return null
+    if (fraction < 0 || fraction >= 1) return null
     const totalMinutes = Math.round(fraction * 24 * 60) % (24 * 60)
     const h = Math.floor(totalMinutes / 60)
     const m = totalMinutes % 60
@@ -269,17 +339,122 @@ export const parseAttendanceTime = (timeRaw) => {
     : null
 }
 
-export const parseAttendanceDate = (dateRaw) => {
+const validUtcDate = (year, month, day) => {
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+}
+
+export const parseAttendanceDecimal = value => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  let normalized = String(value ?? '').trim().replace(/\s+/g, '')
+  if (normalized.includes(',') && normalized.includes('.')) {
+    normalized = normalized.lastIndexOf(',') > normalized.lastIndexOf('.')
+      ? normalized.replace(/\./g, '').replace(',', '.')
+      : normalized.replace(/,/g, '')
+  } else {
+    normalized = normalized.replace(',', '.')
+  }
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return null
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const hasExcelTimeNumberFormat = numberFormat => {
+  const format = String(numberFormat || '')
+    .toLowerCase()
+    .replace(/"[^"]*"/g, '')
+    .replace(/\\./g, '')
+  return /(?:\[h\]|\bh{1,2}\b|h{1,2}:m{1,2}|m{1,2}:s{1,2})/.test(format) &&
+    !/(?:d{1,4}|y{1,4})/.test(format)
+}
+
+/**
+ * Classify one day cell in a matrix timesheet before attempting time parsing.
+ * A numeric fraction is a time only when Excel explicitly formats that cell as time.
+ */
+export const classifyMatrixAttendanceCell = (value, options = {}) => {
+  if (value === null || value === undefined || String(value).trim() === '') return null
+
+  const standardMinutes = Number(options.standardMinutes) || 480
+  const mode = options.mode === 'hours' ? 'hours' : 'workdays'
+  const raw = String(value).trim()
+  const explicitClockValues = raw.match(/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AP]\.?M\.?)?/gi) || []
+  const times = explicitClockValues
+    .map(parseAttendanceTime)
+    .filter(Boolean)
+    .map(item => item.str)
+
+  if (times.length > 0) return { kind: 'punch', times, raw }
+  if (typeof value === 'number' && value >= 0 && value < 1 && hasExcelTimeNumberFormat(options.numberFormat)) {
+    const parsed = parseAttendanceTime(value)
+    return parsed ? { kind: 'punch', times: [parsed.str], raw } : null
+  }
+
+  const upper = normalizeAttendanceHeader(raw).toUpperCase()
+  const numeric = parseAttendanceDecimal(value)
+  if (numeric !== null) {
+    if (mode === 'hours') {
+      const hours = Math.max(0, numeric)
+      return {
+        kind: 'value',
+        workdays: Math.min((hours * 60) / standardMinutes, 1),
+        hours,
+        symbol: raw,
+        status: hours > 0 ? `${hours}h` : 'Nghỉ'
+      }
+    }
+    const workdays = Math.max(0, numeric)
+    return {
+      kind: 'value',
+      workdays,
+      hours: Math.round(workdays * standardMinutes / 60 * 100) / 100,
+      symbol: raw,
+      status: workdays >= 1 ? 'Đủ' : workdays > 0 ? 'Nửa ngày' : 'Nghỉ'
+    }
+  }
+
+  const fullDaySymbols = new Set(['X', 'D', 'DU', 'CO MAT', 'PRESENT'])
+  const absentSymbols = new Set(['KP', 'OFF', 'V', 'NGHI', 'ABSENT'])
+  if (fullDaySymbols.has(upper)) {
+    return {
+      kind: 'value', workdays: 1, hours: standardMinutes / 60,
+      symbol: raw, status: 'Đủ'
+    }
+  }
+  if (absentSymbols.has(upper)) {
+    return { kind: 'value', workdays: 0, hours: 0, symbol: raw, status: 'Nghỉ' }
+  }
+  if (upper.startsWith('P')) {
+    const leaveValue = parseAttendanceDecimal(raw.slice(1)) ?? 1
+    return {
+      kind: 'value', workdays: leaveValue, hours: leaveValue * standardMinutes / 60,
+      symbol: raw, status: 'Phép'
+    }
+  }
+
+  return { kind: 'unknown', raw, symbol: raw }
+}
+
+export const parseAttendanceDate = (dateRaw, options = {}) => {
   if (dateRaw === null || dateRaw === undefined || dateRaw === '') return null
 
   if (typeof dateRaw === 'number') {
-    const date = new Date(Math.round((dateRaw - 25569) * 86400 * 1000))
+    const epochOffset = options.date1904 ? 24107 : 25569
+    const date = new Date(Math.round((dateRaw - epochOffset) * 86400 * 1000))
     return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10)
   }
 
   const value = String(dateRaw).trim()
   if (!value) return null
-  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10)
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/)
+  if (iso) {
+    const year = Number(iso[1])
+    const month = Number(iso[2])
+    const day = Number(iso[3])
+    return validUtcDate(year, month, day) ? `${iso[1]}-${iso[2]}-${iso[3]}` : null
+  }
 
   const match = value.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
   if (match) {
@@ -288,12 +463,7 @@ export const parseAttendanceDate = (dateRaw) => {
     const year = Number(match[3])
     const month = first > 12 ? second : second > 12 ? first : second
     const day = first > 12 ? first : second > 12 ? second : first
-    const date = new Date(Date.UTC(year, month - 1, day))
-    if (
-      date.getUTCFullYear() !== year ||
-      date.getUTCMonth() !== month - 1 ||
-      date.getUTCDate() !== day
-    ) return null
+    if (!validUtcDate(year, month, day)) return null
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
   }
 
@@ -308,10 +478,10 @@ export const parseAttendanceDate = (dateRaw) => {
 export const findAttendancePunchColumns = (headers = []) =>
   headers.reduce((columns, header, index) => {
     const normalized = normalizeHeader(header)
-    if (/^(?:vao|check in|checkin|time in)\s*\d*$/.test(normalized)) {
+    if (/^(?:(?:gio\s+)?vao|check in|checkin|time in)\s*\d*$/.test(normalized)) {
       columns.checkInIndexes.push(index)
       columns.allIndexes.push(index)
-    } else if (/^(?:ra|check out|checkout|time out)\s*\d*$/.test(normalized)) {
+    } else if (/^(?:(?:gio\s+)?ra|check out|checkout|time out)\s*\d*$/.test(normalized)) {
       columns.checkOutIndexes.push(index)
       columns.allIndexes.push(index)
     }

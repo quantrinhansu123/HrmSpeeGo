@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { mapAppToUser, mapUserToApp } from '../utils/helpers'
+import { loadEmployeeDirectory } from './employeeDirectory'
 
 /**
  * Supabase-backed storage with the same API as the old Firebase helpers.
@@ -181,26 +182,20 @@ async function listEmployeesAsFirebaseMap(columns = '*') {
   return out
 }
 
-/** Directory fields only — skips password/documents/images blobs. */
-const EMPLOYEE_DIRECTORY_COLUMNS = [
-  'id',
-  'name',
-  'employee_id',
-  'username',
-  'email',
-  'phone',
-  'department',
-  'position',
-  'branch',
-  'employment_status',
-  'status',
-  'shift',
-  'role',
-  'join_date',
-  'official_date'
-].join(',')
-
-export const fbGetEmployeesDirectory = () => listEmployeesAsFirebaseMap(EMPLOYEE_DIRECTORY_COLUMNS)
+/** Directory fields only — paginated and shared with the Employees page. */
+export const fbGetEmployeesDirectory = async () => {
+  const { rows } = await loadEmployeeDirectory()
+  if (!rows.length) return null
+  return Object.fromEntries(rows.map(row => {
+    const app = mapUserToApp(row) || {}
+    return [row.id, {
+      ...app,
+      id: row.id,
+      name: app.ho_va_ten || row.name || '',
+      status: app.trang_thai || row.employment_status || ''
+    }]
+  }))
+}
 
 async function pushEmployee(payload) {
   const id = crypto.randomUUID()

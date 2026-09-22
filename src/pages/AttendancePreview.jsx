@@ -239,6 +239,8 @@ function AttendancePreview() {
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [importEmployees, setImportEmployees] = useState([])
   const [importLogs, setImportLogs] = useState([])
+  const [importEmployeeMappings, setImportEmployeeMappings] = useState({})
+  const [importMappingTemplates, setImportMappingTemplates] = useState({})
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [manualWorkdays, setManualWorkdays] = useState({})
   const [manualSavingKey, setManualSavingKey] = useState('')
@@ -370,6 +372,13 @@ function AttendancePreview() {
     return nextRows
   }, [])
 
+  useEffect(() => {
+    setDetailRow(previous => {
+      if (!previous) return previous
+      return rows.find(row => String(row.employeeId) === String(previous.employeeId)) || null
+    })
+  }, [rows])
+
   const loadConfirmations = useCallback(async (targetMonth) => {
     if (!targetMonth) {
       setConfirmations({})
@@ -477,8 +486,10 @@ function AttendancePreview() {
     await loadMonthSnapshot(nextMonth)
   }
 
-  const handleOpenExcelDetail = async () => {
-    const targetMonth = month || currentMonthValue()
+  const handleOpenExcelDetail = async (requestedMonth = '') => {
+    const targetMonth = typeof requestedMonth === 'string' && /^\d{4}-\d{2}$/.test(requestedMonth)
+      ? requestedMonth
+      : (month || currentMonthValue())
     setIsExcelDetailOpen(true)
     setExcelLogsLoading(true)
     setExcelSearch('')
@@ -643,36 +654,51 @@ function AttendancePreview() {
   }, [excelPage, excelTotalPages])
 
   const handleOpenImport = async () => {
+    setImportEmployees([])
+    setImportLogs([])
+    setImportEmployeeMappings({})
+    setImportMappingTemplates({})
     try {
-      const [empData, logsData, storedSettings] = await Promise.all([
+      const [empData, logsData, storedSettings, storedMappings, storedMappingTemplates] = await Promise.all([
         fbGetEmployeesDirectory(companyId),
         // Nạp toàn bộ log để chống tạo bản ghi trùng khi file có tháng khác
         // tháng đang chọn trên màn hình (tháng sẽ được nhận diện từ file).
         fbGet('hr/attendanceLogs', companyId),
-        fbGet('hr/attendanceSettings/default', companyId)
+        fbGet('hr/attendanceSettings/default', companyId),
+        fbGet('hr/attendanceEmployeeMappings/default', companyId),
+        fbGet('hr/attendanceImportMappingTemplates/default', companyId)
       ])
       setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
-      if (empData) {
-        setImportEmployees(
-          Array.isArray(empData)
-            ? empData
-            : Object.entries(empData).map(([id, value]) => ({ ...value, id }))
-        )
-      }
-      if (logsData) {
-        setImportLogs(
-          Array.isArray(logsData)
-            ? logsData
-            : Object.entries(logsData).map(([id, value]) => ({ ...value, id }))
-        )
-      }
+      setImportEmployees(
+        Array.isArray(empData)
+          ? empData
+          : Object.entries(empData || {}).map(([id, value]) => ({ ...value, id }))
+      )
+      setImportLogs(
+        Array.isArray(logsData)
+          ? logsData
+          : Object.entries(logsData || {}).map(([id, value]) => ({ ...value, id }))
+      )
+      setImportEmployeeMappings(
+        storedMappings && typeof storedMappings === 'object' ? storedMappings : {}
+      )
+      setImportMappingTemplates(
+        storedMappingTemplates && typeof storedMappingTemplates === 'object'
+          ? storedMappingTemplates
+          : {}
+      )
     } catch (err) {
       console.warn('Không thể nạp trước dữ liệu nhân sự để import:', err)
+      alert('Không tải được đầy đủ danh mục nhân viên. Vui lòng thử mở Import lại. Dữ liệu chưa được phân tích hoặc ghi vào hệ thống.')
+      return
     }
     setIsImportOpen(true)
   }
 
-  const saveMonthSummary = useCallback(async (targetMonth, { silent = false } = {}) => {
+  const saveMonthSummary = useCallback(async (
+    targetMonth,
+    { silent = false, apply = true } = {}
+  ) => {
     if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
       throw new Error('Tháng không hợp lệ. Dùng định dạng YYYY-MM.')
     }
@@ -685,8 +711,10 @@ function AttendancePreview() {
       fbGet('hr/attendanceSettings/default', companyId)
     ])
     const nextAttendanceSettings = normalizeAttendanceShiftSettings(storedSettings)
-    setAttendanceSettings(nextAttendanceSettings)
-    setManualWorkdays(nextManuals || {})
+    if (apply) {
+      setAttendanceSettings(nextAttendanceSettings)
+      setManualWorkdays(nextManuals || {})
+    }
     const employeeList = employeeData
       ? Object.entries(employeeData).map(([id, value]) => ({ ...value, id }))
       : []
@@ -713,7 +741,7 @@ function AttendancePreview() {
       rows: serializeAttendanceSummaryRows(filteredSummaryRows)
     }
     await fbSet(`hr/attendanceMonthSummaries/${targetMonth}`, snapshot, companyId)
-    applySnapshot(snapshot, targetMonth)
+    if (apply) applySnapshot(snapshot, targetMonth)
     setSummaryMonths(prev => {
       const next = new Set(prev)
       next.add(targetMonth)
@@ -770,22 +798,40 @@ function AttendancePreview() {
     }
   }
 
-  const handleImportComplete = async (importedMonth = '') => {
+  const handleImportComplete = async (result = '') => {
     setIsImportOpen(false)
-    const targetMonth = importedMonth || month || currentMonthValue()
+    const primaryMonth = typeof result === 'string'
+      ? result
+      : result?.primaryMonth
+    const targetMonth = primaryMonth || month || currentMonthValue()
+    const affectedMonths = Array.from(new Set([
+      ...(Array.isArray(result?.affectedMonths) ? result.affectedMonths : []),
+      targetMonth
+    ])).filter(value => /^\d{4}-\d{2}$/.test(value))
     setSummarizing(true)
     setError('')
     try {
-      await saveMonthSummary(targetMonth, { silent: true })
+      for (const affectedMonth of affectedMonths) {
+        await saveMonthSummary(affectedMonth, {
+          silent: true,
+          apply: affectedMonth === targetMonth
+        })
+      }
       await loadSummaryIndex()
       if (isExcelDetailOpen) {
-        await handleOpenExcelDetail()
+        await handleOpenExcelDetail(targetMonth)
       }
-      alert(`Đã đồng bộ Excel và lưu bảng công tháng ${targetMonth}.`)
+      alert(`Đã đồng bộ Excel và lưu bảng công tháng ${affectedMonths.join(', ')}.`)
+      return { summaryStatus: 'complete', affectedMonths }
     } catch (requestError) {
       console.error('Lưu bảng công sau import thất bại:', requestError)
       alert('Import xong nhưng chưa lưu được bảng công: ' + (requestError.message || requestError))
       await loadMonthSnapshot(targetMonth)
+      return {
+        summaryStatus: 'failed',
+        affectedMonths,
+        error: requestError.message || String(requestError)
+      }
     } finally {
       setSummarizing(false)
     }
@@ -1319,6 +1365,8 @@ function AttendancePreview() {
         onSave={handleImportComplete}
         employees={importEmployees}
         attendanceLogs={importLogs}
+        employeeMappings={importEmployeeMappings}
+        importMappingTemplates={importMappingTemplates}
         attendanceSettings={attendanceSettings}
         companyId={companyId}
         companyName={companyName}

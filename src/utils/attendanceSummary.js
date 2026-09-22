@@ -77,7 +77,10 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   const standardCheckOut = formatAttendanceTime(resolvedShift?.end || resolvedShift?.standardCheckOut)
 
   logs.forEach(sourceLog => {
-    const log = applyCalculatedAttendanceTiming(sourceLog, employee, attendanceSettings)
+    const preservesSourceValues = ['source-value', 'matrix-value'].includes(sourceLog.calculationMode)
+    const log = preservesSourceValues
+      ? sourceLog
+      : applyCalculatedAttendanceTiming(sourceLog, employee, attendanceSettings)
     const logHours = numberValue(log.hours ?? log.soGio ?? log.gio ?? log.tongGio ?? (
       numberValue(log.hours ?? log.soGio ?? log.gio) +
       numberValue(log.gioPlus)
@@ -88,11 +91,13 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     const hasCheckIn = Boolean(logCheckIn)
     const hasCheckOut = Boolean(logCheckOut)
     const isSyntheticPunch = Boolean(log.syntheticPunch || log.isDerivedFromCode)
+    const useSourceValues = ['source-value', 'matrix-value'].includes(log.calculationMode)
+    if (useSourceValues) calculationMode = log.calculationMode
     if (!isSyntheticPunch) {
       lateMinutes += numberValue(log.lateMinutes ?? log.vaoTre)
       earlyMinutes += numberValue(log.earlyMinutes ?? log.raSom)
     }
-    if (!isSyntheticPunch && hasCheckIn && hasCheckOut) {
+    if (!isSyntheticPunch && !useSourceValues && hasCheckIn && hasCheckOut) {
       actualPunches.push({ checkIn: logCheckIn, checkOut: logCheckOut })
     }
     if (!isSyntheticPunch && hasCheckIn && (!checkIn || logCheckIn < checkIn)) checkIn = logCheckIn
@@ -135,7 +140,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
 
     // Khi có Vào/Ra thật, Công phải được tính lại từ số phút; chỉ giữ cong
     // nguồn cho dòng mã công không có cặp punch.
-    if (hasNumericValue(log.cong) && (!hasCheckIn || !hasCheckOut || isSyntheticPunch)) {
+    if (hasNumericValue(log.cong) && (useSourceValues || !hasCheckIn || !hasCheckOut || isSyntheticPunch)) {
       workdays += numberValue(log.cong)
       hasSourceWorkday = true
     }

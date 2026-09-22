@@ -82,6 +82,16 @@ export const buildSourceEmployeeKey = (code, name) => {
   return `${normalizedCode || 'no-code'}::${normalizedName || 'no-name'}`
 }
 
+export const buildAttendanceMappingKey = (code, name, namespace = 'excel') => {
+  const normalizedCode = compactEmployeeIdentity(code)
+  const normalizedName = compactEmployeeIdentity(name)
+  const stableCode = normalizedCode && !/^row\d+$/i.test(normalizedCode)
+    ? normalizedCode
+    : ''
+  return [compactEmployeeIdentity(namespace) || 'excel', stableCode || 'no-code', normalizedName || 'no-name']
+    .join('::')
+}
+
 const scoreCandidate = (sourceCode, sourceName, employee) => {
   const sourceNameCompact = compactEmployeeIdentity(sourceName)
   const candidateNameCompact = compactEmployeeIdentity(employeeName(employee))
@@ -272,15 +282,24 @@ export const buildAttendanceRecordKey = (log) => {
     log.machineName ||
     log.tenTheoMayChamCong ||
     ''
-  const employeeIdentity = sourceCode || sourceName
-    ? buildSourceEmployeeKey(sourceCode, sourceName)
-    : String(log.employeeId || '')
+  const linkedEmployeeId = String(log.employeeId || '').trim()
+  const employeeIdentity = linkedEmployeeId && !linkedEmployeeId.startsWith('external:')
+    ? `employee:${linkedEmployeeId}`
+    : `source:${buildSourceEmployeeKey(sourceCode, sourceName)}`
   const date = String(log.date || '').slice(0, 10)
-  const checkIn = String(log.checkIn || log.vao || '')
-  const checkOut = String(log.checkOut || log.ra || '')
-  const shift = String(log.shiftName || log.tenCa || '')
+  const shift = String(log.shiftName || log.tenCa || log.importEventKey || 'day')
 
-  return [employeeIdentity, date, checkIn, checkOut, shift]
+  return [employeeIdentity, date, shift]
     .map(value => normalizeEmployeeIdentity(value))
     .join('|')
+}
+
+export const buildAttendanceStorageId = log => {
+  const input = buildAttendanceRecordKey(log)
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `excel_${(hash >>> 0).toString(36)}`
 }

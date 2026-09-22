@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { matchAttendanceEmployee } from './attendanceMatching.js'
+import {
+  buildAttendanceRecordKey,
+  buildAttendanceStorageId,
+  matchAttendanceEmployee
+} from './attendanceMatching.js'
 
 test('does not auto-match a machine code collision when employee names differ', () => {
   const wrongEmployee = {
@@ -132,4 +136,20 @@ test('uses the preferred branch to resolve duplicate exact names', () => {
 
   assert.equal(match.employee?.id, 'profile-hcm')
   assert.equal(match.status, 'matched')
+})
+
+test('attendance identity stays stable when corrected punch times change', () => {
+  const first = {
+    employeeId: 'user-1', date: '2026-08-01', vao: '08:00', ra: '17:00', shiftName: 'Ca ngày'
+  }
+  const corrected = { ...first, vao: '08:15', ra: '17:30' }
+
+  assert.equal(buildAttendanceRecordKey(first), buildAttendanceRecordKey(corrected))
+  assert.equal(buildAttendanceStorageId(first), buildAttendanceStorageId(corrected))
+})
+
+test('attendance identity keeps different employees and shifts separate', () => {
+  const base = { employeeId: 'user-1', date: '2026-08-01', shiftName: 'Ca ngày' }
+  assert.notEqual(buildAttendanceRecordKey(base), buildAttendanceRecordKey({ ...base, employeeId: 'user-2' }))
+  assert.notEqual(buildAttendanceRecordKey(base), buildAttendanceRecordKey({ ...base, shiftName: 'Ca đêm' }))
 })

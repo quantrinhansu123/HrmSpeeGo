@@ -2,12 +2,18 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   analyzeAttendanceSheet,
+  buildAttendanceHeaderSignature,
+  buildAttendanceTemplateBindings,
+  classifyMatrixAttendanceCell,
   collectAttendancePunches,
+  expandAttendanceMergedCells,
   findMatrixDayHeader,
   findAttendancePunchColumns,
   mapAttendanceColumns,
   parseAttendanceDate,
-  parseAttendanceTime
+  parseAttendanceDecimal,
+  parseAttendanceTime,
+  resolveAttendanceTemplateBindings
 } from './attendanceImport.js'
 
 test('finds numbered punch pairs in the August attendance export', () => {
@@ -107,7 +113,7 @@ test('maps reordered Vietnamese and English attendance headers', () => {
     date: 2,
     weekday: -1,
     workdays: -1,
-    hours: 7,
+    hours: -1,
     extraWorkdays: 6,
     extraHours: -1,
     shift: -1,
@@ -118,7 +124,92 @@ test('maps reordered Vietnamese and English attendance headers', () => {
     earlyMinutes: -1,
     overtime1: -1,
     overtime2: -1,
-    overtime3: -1
+    overtime3: -1,
+    eventTime: -1
+  })
+})
+
+test('does not assign Ngày công or Tổng giờ to two different meanings', () => {
+  const columns = mapAttendanceColumns(['Mã NV', 'Ngày công', 'Tổng giờ'])
+
+  assert.equal(columns.date, -1)
+  assert.equal(columns.workdays, 1)
+  assert.equal(columns.hours, -1)
+  assert.equal(columns.totalHours, 2)
+})
+
+test('recognizes a single event-time column as attendance data', () => {
+  const result = analyzeAttendanceSheet([
+    ['Mã NV', 'Ngày', 'Thời gian'],
+    ['00001', '01/08/2026', '08:00']
+  ])
+
+  assert.equal(result.kind, 'list')
+  assert.ok(result.score > 0)
+})
+
+test('validates ISO dates and supports midnight and the Excel 1904 epoch', () => {
+  assert.equal(parseAttendanceDate('2026-02-31'), null)
+  assert.equal(parseAttendanceTime(0).str, '00:00')
+  assert.equal(parseAttendanceDate(44773, { date1904: true }), '2026-08-01')
+})
+
+test('finds matrix day headers that use the Excel 1904 date system', () => {
+  const result = findMatrixDayHeader([
+    ['Mã NV', 'Họ tên', 44773, 44774, 44775, 44776],
+    ['NV01', 'Nguyễn Văn A', 1, 1, 0.5, 0]
+  ], 60, { date1904: true })
+
+  assert.deepEqual(result.days, [1, 2, 3, 4])
+  assert.equal(result.columns[0].year, 2026)
+  assert.equal(result.columns[0].month, 8)
+})
+
+test('recognizes Giờ vào and Giờ ra punch headers', () => {
+  assert.deepEqual(findAttendancePunchColumns(['Mã NV', 'Giờ vào', 'Giờ ra']), {
+    checkInIndexes: [1],
+    checkOutIndexes: [2],
+    allIndexes: [1, 2]
+  })
+})
+
+test('classifies matrix decimals before Excel time fractions', () => {
+  assert.equal(parseAttendanceDecimal('0,5'), 0.5)
+  assert.equal(parseAttendanceDecimal('1.234,5'), 1234.5)
+  assert.equal(parseAttendanceDecimal('1,234.5'), 1234.5)
+  assert.equal(parseAttendanceDecimal('8abc'), null)
+  assert.deepEqual(classifyMatrixAttendanceCell(0.5), {
+    kind: 'value', workdays: 0.5, hours: 4, symbol: '0.5', status: 'Nửa ngày'
+  })
+  assert.deepEqual(classifyMatrixAttendanceCell(0.5, { numberFormat: 'hh:mm' }), {
+    kind: 'punch', times: ['12:00'], raw: '0.5'
+  })
+  assert.deepEqual(classifyMatrixAttendanceCell('08:00 - 17:30'), {
+    kind: 'punch', times: ['08:00', '17:30'], raw: '08:00 - 17:30'
+  })
+})
+
+test('preserves matrix symbols without inventing punches', () => {
+  assert.deepEqual(classifyMatrixAttendanceCell('P0.5'), {
+    kind: 'value', workdays: 0.5, hours: 4, symbol: 'P0.5', status: 'Phép'
+  })
+  assert.deepEqual(classifyMatrixAttendanceCell('OFF'), {
+    kind: 'value', workdays: 0, hours: 0, symbol: 'OFF', status: 'Nghỉ'
+  })
+})
+
+test('restores a confirmed mapping after columns are reordered', () => {
+  const original = ['Mã chấm công', 'Tên người lao động', 'Ngày làm', 'Số công']
+  const bindings = { code: 0, name: 1, date: 2, workdays: 3 }
+  const template = { bindingHeaders: buildAttendanceTemplateBindings(original, bindings) }
+  const reordered = ['Số công', 'Ngày làm', 'Tên người lao động', 'Mã chấm công']
+
+  assert.equal(
+    buildAttendanceHeaderSignature(original),
+    buildAttendanceHeaderSignature(reordered)
+  )
+  assert.deepEqual(resolveAttendanceTemplateBindings(reordered, template), {
+    code: 3, name: 2, date: 1, workdays: 0
   })
 })
 
@@ -144,6 +235,33 @@ test('accepts paired day columns but rejects a non-consecutive numeric summary r
   const result = findMatrixDayHeader(rows)
   assert.equal(result.rowIndex, 0)
   assert.deepEqual(result.days, Array.from({ length: 10 }, (_, index) => index + 1))
+})
+
+test('accepts a short 1-to-4-day matrix when the row also contains identity headers', () => {
+  const oneDay = findMatrixDayHeader([
+    ['Mã NV', 'Họ tên', 1],
+    ['NV01', 'Nguyễn Văn A', 0.5]
+  ])
+  const fourDays = findMatrixDayHeader([
+    ['Mã NV', 'Họ tên', 1, 2, 3, 4],
+    ['NV01', 'Nguyễn Văn A', 1, 1, 0.5, 0]
+  ])
+
+  assert.deepEqual(oneDay.days, [1])
+  assert.deepEqual(fourDays.days, [1, 2, 3, 4])
+})
+
+test('expands merged day headers so grouped Vào/Ra columns keep their parent day', () => {
+  const rows = expandAttendanceMergedCells([
+    ['Mã NV', 'Họ tên', 1, '', 2, ''],
+    ['', '', 'Vào', 'Ra', 'Vào', 'Ra']
+  ], [
+    { s: { r: 0, c: 2 }, e: { r: 0, c: 3 } },
+    { s: { r: 0, c: 4 }, e: { r: 0, c: 5 } }
+  ])
+
+  assert.deepEqual(rows[0], ['Mã NV', 'Họ tên', 1, 1, 2, 2])
+  assert.deepEqual(findMatrixDayHeader(rows).days, [1, 2])
 })
 
 test('scores an attendance detail sheet above a reconciliation sheet', () => {

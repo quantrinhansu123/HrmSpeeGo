@@ -3,44 +3,10 @@ import EmployeeDirectory from '../components/EmployeeDirectory'
 import { supabase } from '../services/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCompanyIdForUser } from '../utils/companyContext'
-import { formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback, USERS_DIRECTORY_COLUMNS, getMissingUsersColumnFromError } from '../utils/helpers'
+import { formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import { fetchUsersDirectory } from '../services/employeeDirectory'
 
 const loadXlsx = () => import('xlsx')
-
-const fetchUsersDirectory = async () => {
-    let columns = USERS_DIRECTORY_COLUMNS.split(', ')
-    const pageSize = 1000
-
-    const fetchPage = (from) =>
-        supabase
-            .from('users')
-            .select(columns.join(','))
-            .order('name', { ascending: true })
-            .range(from, from + pageSize - 1)
-
-    for (let attempt = 0; attempt < 20; attempt++) {
-        const first = await fetchPage(0)
-        if (first.error) {
-            const missing = getMissingUsersColumnFromError(first.error)
-            if (!missing || !columns.includes(missing)) throw first.error
-            columns = columns.filter(column => column !== missing)
-            continue
-        }
-
-        const rows = [...(first.data || [])]
-        if (rows.length < pageSize) return rows
-
-        for (let from = pageSize; ; from += pageSize) {
-            const next = await fetchPage(from)
-            if (next.error) throw next.error
-            rows.push(...(next.data || []))
-            if (!next.data || next.data.length < pageSize) break
-        }
-        return rows
-    }
-
-    return []
-}
 
 const EMPLOYEE_EXCEL_HEADERS = [
     'STT',

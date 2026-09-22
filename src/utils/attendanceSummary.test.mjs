@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAttendanceSummary } from './attendanceSummary.js'
+import { buildAttendanceSummary, summarizeAttendanceDay } from './attendanceSummary.js'
 
 test('keeps an unmatched source employee and recalculates punches by actual minutes', () => {
   const rows = buildAttendanceSummary({
@@ -280,4 +280,26 @@ test('summary dùng Vào đầu và Ra cuối cho cặp chia buổi bị thiếu
   assert.equal(afternoonDay.hours, 8)
   assert.equal(afternoonDay.workdays, 1)
   assert.equal(afternoonDay.calculationMode, 'full-day')
+})
+
+test('giữ Công và Giờ nguồn khi import chọn chế độ theo Excel', () => {
+  const summary = summarizeAttendanceDay([
+    {
+      employeeId: 'nv-source',
+      date: '2026-08-01',
+      vao: '08:00',
+      ra: '18:00',
+      cong: 0.5,
+      hours: 4,
+      lateMinutes: 7,
+      earlyMinutes: 3,
+      calculationMode: 'source-value'
+    }
+  ])
+
+  assert.equal(summary.regularWorkdaysExact, 0.5)
+  assert.equal(summary.hoursExact, 4)
+  assert.equal(summary.lateMinutes, 7)
+  assert.equal(summary.earlyMinutes, 3)
+  assert.equal(summary.calculationMode, 'source-value')
 })
