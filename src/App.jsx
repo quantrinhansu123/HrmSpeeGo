@@ -16,7 +16,9 @@ const Login = lazy(() => import('./pages/Login'))
 const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
 
-const AppLayout = () => <Layout><Outlet /></Layout>
+import ErrorBoundary from './components/ErrorBoundary'
+
+const AppLayout = () => <Layout><ErrorBoundary><Outlet /></ErrorBoundary></Layout>
 const STAFF_ROLES = [...CORE_STAFF_ROLES]
 const ATTENDANCE_ROLES = ['user', ...STAFF_ROLES]
 

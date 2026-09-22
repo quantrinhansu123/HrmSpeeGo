@@ -7,6 +7,8 @@ import {
   serializeAttendanceSummaryRows
 } from '../utils/attendanceSummary'
 import AttendanceImportModal from '../components/AttendanceImportModal'
+import ResetAttendanceModal from '../components/ResetAttendanceModal'
+import { supabase } from '../services/supabase'
 import { dayOfWeekFromDate, formatTimeHM } from '../components/AttendanceModal'
 import {
   formatAttendanceTime,
@@ -251,6 +253,7 @@ function AttendancePreview() {
   const [excelPage, setExcelPage] = useState(1)
   const [excelPageSize, setExcelPageSize] = useState(EXCEL_DETAIL_PAGE_SIZE)
   const [detailViewMode, setDetailViewMode] = useState('matrix')
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false)
   const canEditWorkdays = canManageAttendance(user)
 
   const daysInSelectedMonth = useMemo(() => {
@@ -851,6 +854,141 @@ function AttendancePreview() {
     }
   }
 
+  const handleResetAttendance = async ({
+    scope,
+    targetMonth,
+    clearConfirmations = true,
+    clearManuals = true
+  }) => {
+    if (scope === 'month') {
+      if (!targetMonth) throw new Error('Vui lòng chọn tháng cần xóa.')
+
+      // 1. Xóa các bản ghi attendanceLogs của tháng này trong hr_records
+      const { data: logRows, error: logFetchErr } = await supabase
+        .from('hr_records')
+        .select('id')
+        .eq('collection', 'attendanceLogs')
+        .gte('data->>date', `${targetMonth}-01`)
+        .lte('data->>date', `${targetMonth}-31\uffff`)
+
+      if (logFetchErr) {
+        console.error('Lỗi truy vấn attendanceLogs:', logFetchErr)
+        throw logFetchErr
+      }
+
+      if (logRows?.length) {
+        const ids = logRows.map(r => r.id)
+        const batchSize = 50
+        for (let i = 0; i < ids.length; i += batchSize) {
+          const batch = ids.slice(i, i + batchSize)
+          const { error: delErr } = await supabase
+            .from('hr_records')
+            .delete()
+            .in('id', batch)
+          if (delErr) throw delErr
+        }
+      }
+
+      // 2. Xóa snapshot tổng hợp tháng
+      const { error: sumErr } = await supabase
+        .from('hr_records')
+        .delete()
+        .eq('id', `attendanceMonthSummaries::${targetMonth}`)
+      if (sumErr) console.warn('Lỗi xóa snapshot:', sumErr)
+
+      // 3. Xóa điều chỉnh công
+      await supabase
+        .from('hr_records')
+        .delete()
+        .eq('id', `attendanceAdjustments::${targetMonth}`)
+
+      // 4. Xóa xác nhận nếu chọn
+      if (clearConfirmations) {
+        await supabase
+          .from('hr_records')
+          .delete()
+          .eq('id', `attendanceMonthConfirmations::${targetMonth}`)
+      }
+
+      // 5. Xóa chỉnh sửa công tay nếu chọn
+      if (clearManuals) {
+        await supabase
+          .from('hr_records')
+          .delete()
+          .eq('collection', 'manualWorkdays')
+          .or(`id.eq.manualWorkdays::${targetMonth},id.like.manualWorkdays::${targetMonth}__%`)
+      }
+
+      // 6. Xóa bảng phạt tháng liên quan nếu có
+      try {
+        await supabase
+          .from('hr_records')
+          .delete()
+          .eq('id', `attendanceMonthPenalties::${targetMonth}`)
+      } catch (err) {
+        console.warn('Lỗi khi xóa attendanceMonthPenalties:', err)
+      }
+
+      try {
+        await supabase
+          .from('attendance_penalties')
+          .delete()
+          .eq('month', targetMonth)
+      } catch (err) {
+        console.warn('Lỗi khi xóa attendance_penalties:', err)
+      }
+
+      // Cập nhật state
+      setSummaryMonths(prev => prev.filter(m => m !== targetMonth))
+      if (month === targetMonth) {
+        applySnapshot(null, targetMonth)
+        setConfirmations({})
+        setManualWorkdays({})
+        setExcelLogs([])
+      }
+
+      alert(`Đã xóa toàn bộ bảng công tháng ${targetMonth} thành công (${logRows?.length || 0} bản ghi chấm công chi tiết). Bạn có thể tải lại file Excel mới ngay bây giờ!`)
+    } else {
+      // Scope === 'all': Xóa toàn bộ dữ liệu bảng công của tất cả các tháng
+      const collectionsToDelete = [
+        'attendanceLogs',
+        'attendanceMonthSummaries',
+        'attendanceAdjustments'
+      ]
+      if (clearConfirmations) collectionsToDelete.push('attendanceMonthConfirmations')
+      if (clearManuals) collectionsToDelete.push('manualWorkdays')
+      collectionsToDelete.push('attendanceMonthPenalties')
+
+      const { error: delErr } = await supabase
+        .from('hr_records')
+        .delete()
+        .in('collection', collectionsToDelete)
+
+      if (delErr) {
+        console.error('Lỗi khi xóa toàn bộ hr_records:', delErr)
+        throw delErr
+      }
+
+      try {
+        await supabase
+          .from('attendance_penalties')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000')
+      } catch (err) {
+        console.warn('Lỗi khi xóa attendance_penalties:', err)
+      }
+
+      // Reset toàn bộ state
+      setSummaryMonths([])
+      applySnapshot(null, month)
+      setConfirmations({})
+      setManualWorkdays({})
+      setExcelLogs([])
+
+      alert('Đã xóa toàn bộ dữ liệu bảng công của tất cả các tháng thành công! Bạn có thể tải lại file Excel mới ngay bây giờ.')
+    }
+  }
+
   const departmentRowSpans = useMemo(() => getConsecutiveDepartmentRowSpans(rows), [rows])
   const calendar = useMemo(() => {
     const [year, monthNumber] = String(month || '').split('-').map(Number)
@@ -1031,6 +1169,17 @@ function AttendancePreview() {
             Tải PDF
           </button>
         )}
+        {canEditWorkdays && (
+          <button
+            type="button"
+            className="attendance-preview-reset-btn"
+            onClick={() => setIsResetModalOpen(true)}
+            disabled={summarizing}
+            title="Xóa dữ liệu bảng công để đẩy lại file Excel mới"
+          >
+            <i className="fas fa-trash-can"></i> Xóa bảng công
+          </button>
+        )}
       </div>
     </header>
 
@@ -1173,6 +1322,18 @@ function AttendancePreview() {
         attendanceSettings={attendanceSettings}
         companyId={companyId}
         companyName={companyName}
+      />
+    )}
+    {isResetModalOpen && (
+      <ResetAttendanceModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onConfirm={handleResetAttendance}
+        currentMonth={month}
+        totalEmployees={rows.length}
+        sourceLogCount={sourceLogCount}
+        hasSnapshot={hasSnapshot}
+        allSavedMonths={summaryMonths}
       />
     )}
     {detailRow && (
