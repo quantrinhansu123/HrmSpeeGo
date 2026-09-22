@@ -870,18 +870,30 @@ function AttendanceImportModal({
               employees,
               matchBranch
             )
+        const canCreateNewEmployee =
+          !metadata.isReconcileMode &&
+          !smartMatch.employee &&
+          Boolean(String(sourceName || '').trim()) &&
+          !smartMatch.candidates.some(candidate => candidate.exactName)
 
         groups.set(sourceKey, {
           key: sourceKey,
           sourceCode: String(sourceCode || '').trim(),
           sourceName: String(sourceName || '').replace(/\s+/g, ' ').trim(),
           rowCount: 0,
-          selectedEmployeeId: smartMatch.employee?.id || '',
+          selectedEmployeeId: smartMatch.employee?.id || (canCreateNewEmployee ? '__create__' : ''),
           suggestedEmployeeId: smartMatch.suggestedEmployee?.id || '',
           confidence: smartMatch.confidence,
           gap: smartMatch.gap,
-          method: smartMatch.method,
-          status: smartMatch.status,
+          method: canCreateNewEmployee
+            ? 'Không có hồ sơ trùng tên - sẽ tạo mới'
+            : smartMatch.method,
+          status: canCreateNewEmployee ? 'create' : smartMatch.status,
+          matchMethod: smartMatch.method,
+          matchStatus: smartMatch.status,
+          sourceDepartment: String(log.department || log.phongBan || '').trim(),
+          sourcePosition: String(log.position || log.chucVu || '').trim(),
+          sourceShift: String(log.shiftName || log.tenCa || '').trim(),
           candidates: smartMatch.candidates
         })
       }
@@ -934,23 +946,32 @@ function AttendanceImportModal({
     setPreviewData(previous => {
       if (!previous) return previous
       const isSkipped = employeeId === '__skip__'
+      const isCreate = employeeId === '__create__'
       const selectedEmployee = employeesById.get(String(employeeId))
       const matchGroups = previous.matchGroups.map(group =>
         group.key === sourceKey
           ? {
               ...group,
-              selectedEmployeeId: isSkipped ? '__skip__' : selectedEmployee?.id || '',
+              selectedEmployeeId: isSkipped
+                ? '__skip__'
+                : isCreate
+                  ? '__create__'
+                  : selectedEmployee?.id || '',
               confidence: selectedEmployee ? 1 : group.confidence,
               method: isSkipped
                 ? 'Không có hồ sơ trong Lumi - bỏ qua'
+                : isCreate
+                  ? 'Không có hồ sơ trùng tên - sẽ tạo mới'
                 : selectedEmployee
                   ? method
-                  : group.method,
+                  : group.matchMethod || group.method,
               status: isSkipped
                 ? 'skipped'
+                : isCreate
+                  ? 'create'
                 : selectedEmployee
                   ? 'matched'
-                  : group.status
+                  : group.matchStatus || 'unmatched'
             }
           : group
       )
@@ -1332,7 +1353,10 @@ function AttendanceImportModal({
   const executeImport = async () => {
     if (!previewData || !previewData.logs) return
     const unresolvedCount = previewData.matchGroups.filter(
-      group => !group.selectedEmployeeId && group.status !== 'skipped'
+      group =>
+        !group.selectedEmployeeId &&
+        group.status !== 'skipped' &&
+        group.status !== 'create'
     ).length
     if (unresolvedCount > 0) {
       alert(
@@ -1348,13 +1372,79 @@ function AttendanceImportModal({
       const BATCH_SIZE = 50
       let count = 0
       let skippedCount = 0
+      let createdEmployeeCount = 0
       const sanitizeLog = (log) =>
         Object.fromEntries(
           Object.entries(log).filter(([key]) => key !== 'id' && !key.startsWith('_'))
         )
 
+      const groupsToCreate = previewData.matchGroups.filter(
+        group => group.status === 'create' && group.selectedEmployeeId === '__create__'
+      )
+      const createdEmployeesBySourceKey = new Map()
+      const usedEmployeeCodes = new Set(
+        employees
+          .flatMap(employee => [
+            employee.employeeId,
+            employee.employee_id,
+            employee.username,
+            employee.code
+          ])
+          .map(normalizeEmployeeIdentity)
+          .filter(Boolean)
+      )
+      const codeSeed = Date.now().toString(36).toUpperCase()
+
+      for (let index = 0; index < groupsToCreate.length; index += 1) {
+        const group = groupsToCreate[index]
+        const sourceCode = String(group.sourceCode || '').trim()
+        const normalizedSourceCode = normalizeEmployeeIdentity(sourceCode)
+        const canUseSourceCode =
+          normalizedSourceCode &&
+          !/^row\d+$/i.test(sourceCode) &&
+          !usedEmployeeCodes.has(normalizedSourceCode)
+        let codeSequence = index + 1
+        let employeeCode = canUseSourceCode
+          ? sourceCode
+          : `CC${codeSeed}${String(codeSequence).padStart(2, '0')}`
+
+        while (usedEmployeeCodes.has(normalizeEmployeeIdentity(employeeCode))) {
+          codeSequence += 1
+          employeeCode = `CC${codeSeed}${String(codeSequence).padStart(2, '0')}`
+        }
+        usedEmployeeCodes.add(normalizeEmployeeIdentity(employeeCode))
+
+        const newEmployee = {
+          employeeId: employeeCode,
+          username: employeeCode,
+          ho_va_ten: group.sourceName,
+          chi_nhanh: matchBranch || '',
+          bo_phan: group.sourceDepartment || '',
+          vi_tri: group.sourcePosition || '',
+          ca_lam_viec: group.sourceShift || '',
+          trang_thai: 'Thử việc',
+          tinh_trang: 'Đang làm',
+          role: 'user',
+          ...(activeCompanyId ? { company_id: activeCompanyId } : {})
+        }
+        const created = await fbPush('employees', newEmployee, activeCompanyId)
+        const employeeWithId = { ...newEmployee, id: created.name }
+        createdEmployeesBySourceKey.set(group.key, employeeWithId)
+        createdEmployeeCount += 1
+      }
+
+      const logsForImport = previewData.logs.map(log => {
+        const createdEmployee = createdEmployeesBySourceKey.get(log._sourceEmployeeKey)
+        if (!createdEmployee) return log
+        return applyCalculatedAttendanceTiming(
+          applyEmployeeToAttendanceLog(log, createdEmployee),
+          createdEmployee,
+          attendanceSettings
+        )
+      })
+
       if (previewData.isReconcileMode) {
-        const changedLogs = previewData.logs.filter(
+        const changedLogs = logsForImport.filter(
           log =>
             log.id &&
             String(log.employeeId || '') !== String(log._originalEmployeeId || '')
@@ -1386,7 +1476,7 @@ function AttendanceImportModal({
         const logsToInsert = []
         const logsToUpdate = []
 
-        previewData.logs.forEach(log => {
+        logsForImport.forEach(log => {
           if (skippedSourceKeys.has(log._sourceEmployeeKey)) {
             skippedCount += 1
             return
@@ -1435,7 +1525,7 @@ function AttendanceImportModal({
         const updateMsg = logsToUpdate.length ? ` Cập nhật lại ${logsToUpdate.length} dòng theo nhân sự mới chọn.` : ''
         alert(
           `Đã import ${count} dòng mới.${updateMsg}` +
-          `${unresolvedCount ? ` ${unresolvedCount} nhân viên được giữ theo mã/tên nguồn để đối soát sau.` : ''}` +
+          `${createdEmployeeCount ? ` Đã tạo ${createdEmployeeCount} hồ sơ nhân viên mới từ file.` : ''}` +
           `${skippedCount ? ` Bỏ qua ${skippedCount} dòng đã có.` : ''}`
         )
       }
@@ -1535,13 +1625,19 @@ function AttendanceImportModal({
 
   const matchedEmployeeCount =
     previewData?.matchGroups?.filter(
-      group => group.selectedEmployeeId && group.status !== 'skipped'
+      group =>
+        group.selectedEmployeeId &&
+        group.status !== 'skipped' &&
+        group.status !== 'create'
     ).length || 0
+  const newEmployeeCount =
+    previewData?.matchGroups?.filter(group => group.status === 'create').length || 0
   const skippedEmployeeCount =
     previewData?.matchGroups?.filter(group => group.status === 'skipped').length || 0
   const unresolvedEmployeeCount =
     (previewData?.matchGroups?.length || 0) -
     matchedEmployeeCount -
+    newEmployeeCount -
     skippedEmployeeCount
 
   return (
@@ -1630,6 +1726,11 @@ function AttendanceImportModal({
                 <li style={{ color: '#15803d' }}>
                   <strong>Đã ghép với Lumi:</strong> {matchedEmployeeCount}
                 </li>
+                {newEmployeeCount > 0 && (
+                  <li style={{ color: '#0369a1' }}>
+                    <strong>Sẽ tạo hồ sơ mới từ file:</strong> {newEmployeeCount}
+                  </li>
+                )}
                 <li style={{ color: unresolvedEmployeeCount ? '#b91c1c' : '#15803d' }}>
                   <strong>Cần kiểm tra:</strong> {unresolvedEmployeeCount}
                 </li>
@@ -1720,6 +1821,8 @@ function AttendanceImportModal({
                       const selectedEmployee = employeesById.get(String(group.selectedEmployeeId))
                       const statusColor = group.status === 'skipped'
                         ? '#6b7280'
+                        : group.status === 'create'
+                          ? '#0369a1'
                         : group.selectedEmployeeId
                           ? '#15803d'
                         : group.status === 'review'
@@ -1738,6 +1841,8 @@ function AttendanceImportModal({
                             <strong>
                               {selectedEmployee
                                 ? getCanonicalEmployeeCode(selectedEmployee) || '-'
+                                : group.status === 'create'
+                                  ? 'Tạo mới'
                                 : group.status === 'skipped'
                                   ? 'Bỏ qua'
                                   : 'Chưa khớp'}
@@ -1754,6 +1859,7 @@ function AttendanceImportModal({
                               }}
                             >
                               <option value="">-- Chọn nhân viên Lumi --</option>
+                              <option value="__create__">-- Tạo hồ sơ mới từ tên trong file --</option>
                               <option value="__skip__">-- Không có trong Lumi (bỏ qua) --</option>
                               {employeesForMatching.map(employee => (
                                 <option key={employee.id} value={employee.id}>
@@ -1764,9 +1870,10 @@ function AttendanceImportModal({
                                 </option>
                               ))}
                             </select>
-                            {!group.selectedEmployeeId && suggestedEmployee && (
+                            {(!group.selectedEmployeeId || group.status === 'create') && suggestedEmployee && (
                               <div style={{ color: '#b45309', marginTop: '3px' }}>
-                                Gợi ý: {suggestedEmployee.ho_va_ten || suggestedEmployee.name}
+                                Gợi ý gần nhất: {suggestedEmployee.ho_va_ten || suggestedEmployee.name}
+                                {group.status === 'create' ? ' (chọn nếu đây là cùng một người)' : ''}
                               </div>
                             )}
                           </td>
@@ -1777,6 +1884,8 @@ function AttendanceImportModal({
                             <strong>
                               {group.status === 'skipped'
                                 ? 'Sẽ bỏ qua'
+                                : group.status === 'create'
+                                  ? 'Sẽ tạo mới'
                                 : group.selectedEmployeeId
                                   ? 'Đã ghép'
                                   : 'Cần chọn'}
@@ -1853,7 +1962,7 @@ function AttendanceImportModal({
                   disabled={loading}
                   title={
                     unresolvedEmployeeCount > 0
-                      ? 'Cần ghép hoặc bỏ qua toàn bộ nhân viên trước khi ghi CSDL'
+                      ? 'Cần ghép, tạo mới hoặc bỏ qua toàn bộ nhân viên trước khi ghi CSDL'
                       : ''
                   }
                 >
