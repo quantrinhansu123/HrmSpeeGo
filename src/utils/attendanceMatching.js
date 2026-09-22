@@ -157,22 +157,23 @@ export const rankEmployeeMatches = (
   branch = ''
 ) => {
   const normalizedBranch = normalizeEmployeeIdentity(branch)
-  const branchEmployees = normalizedBranch
-    ? employees.filter(employee =>
+  return employees
+    .map(employee => ({
+      ...scoreCandidate(sourceCode, sourceName, employee),
+      // Chi nhánh chỉ là tiêu chí ưu tiên. Không được loại hồ sơ ở chi nhánh
+      // khác/rỗng vì dữ liệu danh mục và file máy chấm công thường không đồng bộ
+      // cách ghi chi nhánh.
+      branchMatch: Boolean(normalizedBranch) &&
         normalizeEmployeeIdentity(employee.chi_nhanh || employee.branch || '') ===
-        normalizedBranch
-      )
-    : employees
-  const candidates = branchEmployees.length > 0 ? branchEmployees : employees
-
-  return candidates
-    .map(employee => scoreCandidate(sourceCode, sourceName, employee))
+          normalizedBranch
+    }))
     .sort((left, right) =>
       right.score - left.score ||
       Number(right.exactCode && right.exactName) -
         Number(left.exactCode && left.exactName) ||
       Number(right.exactName) - Number(left.exactName) ||
       Number(right.exactCode) - Number(left.exactCode) ||
+      Number(right.branchMatch) - Number(left.branchMatch) ||
       Number(right.givenNameCompatible) - Number(left.givenNameCompatible)
     )
 }
@@ -188,7 +189,14 @@ export const matchAttendanceEmployee = (
   const second = ranked[1] || null
   const confidence = best?.score || 0
   const gap = best ? Math.max(0, confidence - (second?.score || 0)) : 0
-  const uniqueExactName = best?.exactName && !second?.exactName
+  const exactNameCandidates = ranked.filter(candidate => candidate.exactName)
+  const exactNameCandidatesInBranch = exactNameCandidates.filter(
+    candidate => candidate.branchMatch
+  )
+  const uniqueExactName = Boolean(best?.exactName) && (
+    exactNameCandidates.length === 1 ||
+    (best.branchMatch && exactNameCandidatesInBranch.length === 1)
+  )
   const autoMatched =
     Boolean(best) &&
     (

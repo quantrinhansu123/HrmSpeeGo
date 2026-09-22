@@ -79,3 +79,57 @@ test('does not choose arbitrarily when multiple profiles have the same full name
   assert.equal(match.employee, null)
   assert.equal(match.status, 'review')
 })
+
+test('matches an exact name even when its profile is outside the preferred branch', () => {
+  const employees = [
+    {
+      id: 'profile-hn',
+      employeeId: 'LU101',
+      ho_va_ten: 'Nguyễn Việt Khánh',
+      chi_nhanh: 'Hà Nội'
+    },
+    {
+      id: 'profile-hcm',
+      employeeId: 'LU102',
+      ho_va_ten: 'Nguyễn Nam Khánh',
+      chi_nhanh: 'HCM'
+    }
+  ]
+
+  const match = matchAttendanceEmployee(
+    'ROW11',
+    'Nguyễn Việt Khánh',
+    employees,
+    'HCM'
+  )
+
+  assert.equal(match.employee?.id, 'profile-hn')
+  assert.equal(match.confidence, 1)
+})
+
+test('uses the preferred branch to resolve duplicate exact names', () => {
+  const employees = [
+    {
+      id: 'profile-hn',
+      employeeId: 'LU201',
+      ho_va_ten: 'Nguyễn Thị Lan Anh',
+      chi_nhanh: 'Hà Nội'
+    },
+    {
+      id: 'profile-hcm',
+      employeeId: 'LU202',
+      ho_va_ten: 'Nguyễn Thị Lan Anh',
+      chi_nhanh: 'HCM'
+    }
+  ]
+
+  const match = matchAttendanceEmployee(
+    'ROW23',
+    'Nguyễn Thị Lan Anh',
+    employees,
+    'HCM'
+  )
+
+  assert.equal(match.employee?.id, 'profile-hcm')
+  assert.equal(match.status, 'matched')
+})

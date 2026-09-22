@@ -52,7 +52,7 @@ function AttendanceImportModal({
   const [aiAvailable, setAiAvailable] = useState(null)
   const [previewData, setPreviewData] = useState(null)
   const [importMonth, setImportMonth] = useState(new Date().toISOString().slice(0, 7)) // YYYY-MM
-  const [matchBranch, setMatchBranch] = useState('HCM')
+  const [matchBranch, setMatchBranch] = useState('')
 
   const availableBranches = useMemo(
     () => Array.from(new Set(
@@ -70,20 +70,22 @@ function AttendanceImportModal({
 
   const employeesForMatching = useMemo(() => {
     const normalizedBranch = normalizeEmployeeIdentity(matchBranch)
-    const inBranch = normalizedBranch
-      ? employees.filter(employee =>
-          normalizeEmployeeIdentity(employee.chi_nhanh || employee.branch || '') ===
-          normalizedBranch
-        )
-      : employees
-    return (inBranch.length ? inBranch : employees)
+    const isInPreferredBranch = employee =>
+      Boolean(normalizedBranch) &&
+      normalizeEmployeeIdentity(employee.chi_nhanh || employee.branch || '') ===
+        normalizedBranch
+
+    return employees
       .slice()
-      .sort((left, right) =>
-        String(left.ho_va_ten || left.name || '').localeCompare(
+      .sort((left, right) => {
+        const branchOrder = Number(isInPreferredBranch(right)) -
+          Number(isInPreferredBranch(left))
+        if (branchOrder) return branchOrder
+        return String(left.ho_va_ten || left.name || '').localeCompare(
           String(right.ho_va_ten || right.name || ''),
           'vi'
         )
-      )
+      })
   }, [employees, matchBranch])
 
   useEffect(() => {
@@ -1556,7 +1558,7 @@ function AttendanceImportModal({
           {!previewData ? (
             <>
               <div className="form-group">
-                <label>Chi nhánh dùng để đối sánh nhân sự</label>
+                <label>Chi nhánh ưu tiên khi trùng tên</label>
                 <select
                   value={matchBranch}
                   onChange={(e) => setMatchBranch(e.target.value)}
