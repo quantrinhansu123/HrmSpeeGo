@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  analyzeAttendanceSheet,
   collectAttendancePunches,
+  findMatrixDayHeader,
   findAttendancePunchColumns,
+  mapAttendanceColumns,
   parseAttendanceDate,
   parseAttendanceTime
 } from './attendanceImport.js'
@@ -87,4 +90,74 @@ test('prefers Vietnamese day/month order for ambiguous text dates', () => {
   assert.equal(parseAttendanceDate('01/08/2026'), '2026-08-01')
   assert.equal(parseAttendanceDate('8/27/2026'), '2026-08-27')
   assert.equal(parseAttendanceDate(46235), '2026-08-01')
+})
+
+test('maps reordered Vietnamese and English attendance headers', () => {
+  const headers = [
+    'Check-out', 'HỌ VÀ TÊN', 'Attendance Date', 'Employee Code',
+    'Check-in', 'Bộ phận', 'Công+', 'Tổng giờ'
+  ]
+
+  assert.deepEqual(mapAttendanceColumns(headers), {
+    code: 3,
+    name: 1,
+    machineName: -1,
+    department: 5,
+    position: -1,
+    date: 2,
+    weekday: -1,
+    workdays: -1,
+    hours: 7,
+    extraWorkdays: 6,
+    extraHours: -1,
+    shift: -1,
+    symbol: -1,
+    extraSymbol: -1,
+    totalHours: 7,
+    lateMinutes: -1,
+    earlyMinutes: -1,
+    overtime1: -1,
+    overtime2: -1,
+    overtime3: -1
+  })
+})
+
+test('chooses the real matrix header instead of a numeric employee row', () => {
+  const rows = [
+    ['BẢNG CÔNG T8/2026'],
+    ['Họ tên', 'Bộ phận', ...Array.from({ length: 31 }, (_, index) => index + 1)],
+    ['Nguyễn Văn A', 'Sale', ...Array(25).fill(1), 2, 6, 21, 21, 26, 26]
+  ]
+
+  const result = findMatrixDayHeader(rows)
+  assert.equal(result.rowIndex, 1)
+  assert.deepEqual(result.days, Array.from({ length: 31 }, (_, index) => index + 1))
+})
+
+test('accepts paired day columns but rejects a non-consecutive numeric summary row', () => {
+  const pairedDays = Array.from({ length: 10 }, (_, index) => [index + 1, index + 1]).flat()
+  const rows = [
+    ['Mã NV', 'Tên NV', ...pairedDays],
+    ['NV01', 'Nguyễn Văn A', 1, 1, 1, 1, 2, 6, 21, 21, 26, 26]
+  ]
+
+  const result = findMatrixDayHeader(rows)
+  assert.equal(result.rowIndex, 0)
+  assert.deepEqual(result.days, Array.from({ length: 10 }, (_, index) => index + 1))
+})
+
+test('scores an attendance detail sheet above a reconciliation sheet', () => {
+  const reconciliationRows = [
+    ['Mã máy', 'Tên từ máy/file', 'Mã NV Lumi', 'Kết quả'],
+    ['001', 'Nguyễn Văn A', 'NV01', 'Đã ghép']
+  ]
+  const detailRows = [
+    ['Ghi chú xuất dữ liệu'],
+    ['Employee Code', 'Employee Name', 'Work Date', 'Time In', 'Time Out'],
+    ['NV01', 'Nguyễn Văn A', '2026-08-01', '08:00', '17:00']
+  ]
+
+  assert.equal(analyzeAttendanceSheet(reconciliationRows).score, 0)
+  assert.equal(analyzeAttendanceSheet(detailRows).kind, 'list')
+  assert.ok(analyzeAttendanceSheet(detailRows).score > 0)
 })
