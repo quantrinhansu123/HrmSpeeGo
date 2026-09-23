@@ -1,6 +1,7 @@
 import {
   buildAttendanceRecordKey,
-  buildAttendanceStorageId
+  buildAttendanceStorageId,
+  buildSourceEmployeeKey
 } from '../utils/attendanceMatching.js'
 
 export const sanitizeAttendanceImportLog = log =>
@@ -61,6 +62,13 @@ export const planAttendanceImport = ({
     seenIncoming.add(key)
 
     let candidates = existingByKey.get(key) || []
+    if (!candidates.length && log.importFormat === 'attendance-detail-list') {
+      const sourceKey = buildSourceEmployeeKey(log.sourceEmployeeCode, log.sourceEmployeeName)
+      candidates = (existingByDay.get(dayIdentity(log)) || []).filter(existing =>
+        isExcelManagedLog(existing) &&
+        buildSourceEmployeeKey(existing.sourceEmployeeCode, existing.sourceEmployeeName) === sourceKey
+      )
+    }
     const hasStableShift = Boolean(log.shiftName || log.tenCa || log.importEventKey)
     if (!candidates.length && !hasStableShift) {
       candidates = existingByDay.get(dayIdentity(log)) || []

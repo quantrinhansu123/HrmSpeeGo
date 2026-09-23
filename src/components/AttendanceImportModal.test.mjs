@@ -6,6 +6,7 @@ import { webcrypto } from 'node:crypto'
 import test from 'node:test'
 import { build } from 'esbuild'
 import XLSX from 'xlsx-js-style'
+import { planAttendanceImport } from '../services/attendanceImportService.js'
 
 // Exercise the actual modal handlers without a browser or a database. Hooks and
 // JSX are represented as plain objects; all persistence is replaced by spies.
@@ -50,7 +51,8 @@ const makeHarness = (employees, employeeMappings = {}) => {
   const props = { employees, employeeMappings, isOpen: true, onClose() {}, onSave() {} }
   return {
     writes,
-    render() { hooks.index = 0; return Modal(props) }
+    render() { hooks.index = 0; return Modal(props) },
+    detailPreview() { return hooks.values.find(value => value?.isDetailedAttendanceList) }
   }
 }
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...tree.children.flatMap(nodes)]
@@ -79,6 +81,29 @@ const upload = async (harness, bytes) => {
   tree = harness.render()
   await findButton(tree, 'Phân tích').props.onClick()
   return harness.render()
+}
+
+const makeDetailWorkbook = () => {
+  const headers = [
+    'Mã N.Viên', 'Tên nhân viên', 'Phòng ban', 'Chức vụ', 'Ngày', 'Thứ',
+    'Vào 1', 'Ra 1', 'Vào 2', 'Ra 2', 'Vào 3', 'Ra 3', 'Công', 'Giờ',
+    'Công+', 'Giờ+', 'Vào Trễ', 'Ra sớm', 'TC1', 'TC2', 'TC3',
+    'Tên ca', 'Kí hiệu', 'Kí hiệu+', 'Tổng giờ'
+  ]
+  const row = (date, checkIn, checkOut, workdays, hours) => [
+    '00026', 'Nguyễn Mỹ Hạnh', 'Văn phòng', '-----', date, 'Bảy',
+    checkIn, checkOut, '', '', '', '', workdays, hours,
+    0, 0, 130, 0, 0.5, 0, 0, 'HC', 'Tr+', '', hours + 0.5
+  ]
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['CHI TIẾT CHẤM CÔNG'], ['Từ ngày 01/08/2026 đến ngày 31/08/2026'],
+    headers,
+    row(46242, '09:40', '17:36', 0.73, 5.83),
+    row(46243, '', '', 1, 8),
+    row(46244, '08:00', '', 1, 8)
+  ]), 'Xuất lưới')
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
 }
 
 globalThis.crypto ||= webcrypto
@@ -169,7 +194,57 @@ test('replacement workbook with full-date columns previews its single sheet and 
   assert.equal(harness.writes.length, 0)
 })
 
-test('daily-detail workbook previews 34 employees and all 1054 source rows without writes', {
+test('daily-detail workbook uses punch times, not source totals or late/overtime values', async () => {
+  const harness = makeHarness([{
+    id: 'profile-26', employeeId: '00026', ho_va_ten: 'Nguyễn Mỹ Hạnh',
+    bo_phan: 'Văn phòng', ca_lam_viec: '09:00-18:00'
+  }])
+  const tree = await upload(harness, makeDetailWorkbook())
+  const preview = harness.detailPreview()
+  assert.ok(preview)
+  assert.equal(preview.count, 3, 'days without punches must replace previously imported source workdays with zero')
+  assert.match(textOf(tree), /Giờ vào.*Giờ ra.*Công tính từ giờ/)
+  assert.match(textOf(tree), /1 dòng không có giờ vào\/ra: tính 0 công, 0 giờ/)
+  const complete = preview.logs.find(log => log.date === '2026-08-08')
+  assert.equal(complete.vao, '09:40')
+  assert.equal(complete.ra, '17:36')
+  assert.equal(complete.calculationMode, 'punches')
+  assert.equal(complete.importFormat, 'attendance-detail-list')
+  assert.ok(Math.abs(complete.hours - 476 / 60) < 0.001)
+  assert.ok(Math.abs(complete.cong - 476 / 480) < 0.001)
+  assert.equal(complete.tc1, 0)
+  assert.equal(complete.congPlus, 0)
+  assert.equal(complete.sourceWorkdays, null)
+  assert.equal(complete.sourceHours, null)
+  assert.equal(complete.sourceValues.lateMinutes, null)
+  assert.equal(complete.sourceSymbol, '')
+  assert.equal(complete.overtimeAutoDisabled, false)
+  assert.equal(complete.lateMinutes, 40, 'late minutes must use the employee shift, not Excel 130')
+  assert.equal(complete.earlyMinutes, 24)
+  const partial = preview.logs.find(log => log.date === '2026-08-10')
+  assert.equal(partial.vao, '08:00')
+  assert.equal(partial.ra, '')
+  assert.equal(partial.cong, 0)
+  assert.equal(partial.hours, 0)
+  const noPunch = preview.logs.find(log => log.date === '2026-08-09')
+  assert.equal(noPunch.cong, 0)
+  assert.equal(noPunch.hours, 0)
+  assert.equal(noPunch.lateMinutes, 0)
+  assert.equal(noPunch.tc1, 0)
+  assert.equal(noPunch.sourceValues.workdays, null)
+  const previousImport = preview.logs.map((log, index) => ({
+    ...log, id: `old-${index}`, importFormat: undefined,
+    sourceType: 'excel-import', calculationMode: 'source-value',
+    shiftName: 'HC', tenCa: 'HC', cong: 0.73, hours: 5.83,
+    lateMinutes: 130, tc1: 0.5
+  }))
+  const reimport = planAttendanceImport({ incomingLogs: preview.logs, existingLogs: previousImport })
+  assert.equal(reimport.inserts.length, 0)
+  assert.equal(reimport.updates.length, 3)
+  assert.equal(harness.writes.length, 0)
+})
+
+test('daily-detail workbook previews 34 employees and zeros no-punch days without writes', {
   skip: !process.env.DETAIL_ATTENDANCE_FILE
 }, async () => {
   const bytes = readFileSync(process.env.DETAIL_ATTENDANCE_FILE)
@@ -181,6 +256,17 @@ test('daily-detail workbook previews 34 employees and all 1054 source rows witho
   assert.equal(nodes(tables[1]).filter(node => node.type === 'tbody')[0].children.length, 1054)
   assert.match(textOf(tables[0]), /Đặng Thùy Liên/)
   assert.match(textOf(tables[0]), /Hồ Ngọc Phú/)
-  assert.match(textOf(tables[1]), /01\/08\/2026.*0.9/)
+  assert.match(textOf(tables[1]), /01\/08\/2026.*08:20.*17:53/)
+  const row = harness.detailPreview().logs.find(log => log.provenance.row === 786)
+  assert.equal(row.sourceEmployeeName, 'Nguyễn Mỹ Hạnh')
+  assert.equal(row.vao, '09:40')
+  assert.equal(row.ra, '17:36')
+  assert.equal(row.sourceWorkdays, null)
+  assert.equal(row.tc1, 0)
+  const noPunch = harness.detailPreview().logs.find(log => log.provenance.row === 5)
+  assert.equal(noPunch.cong, 0)
+  assert.equal(noPunch.hours, 0)
+  assert.equal(noPunch.sourceWorkdays, null)
+  assert.match(harness.detailPreview().warnings[0], /469 dòng không có giờ vào\/ra/)
   assert.equal(harness.writes.length, 0)
 })

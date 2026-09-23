@@ -411,6 +411,7 @@ function AttendanceImportModal({
       sourceSymbol: extra.sourceSymbol ?? extra.kyHieu ?? '',
       derivedHours: Boolean(extra.derivedHours),
       calculationMode,
+      ...(extra.importFormat ? { importFormat: extra.importFormat } : {}),
       sourceValues: extra.sourceValues || {
         workdays: extra.sourceWorkdays ?? extra.cong ?? null,
         hours: extra.sourceHours ?? extra.hours ?? null,
@@ -426,7 +427,7 @@ function AttendanceImportModal({
       workedMinutes: metrics.workedMinutes,
       regularMinutes: metrics.regularMinutes,
       overtimeMinutes: metrics.overtimeMinutes,
-      overtimeAutoDisabled: true,
+      overtimeAutoDisabled: extra.overtimeAutoDisabled ?? true,
       syntheticPunch: Boolean(extra.syntheticPunch),
       punches: stats.punches || [],
       punchPairs
@@ -460,6 +461,7 @@ function AttendanceImportModal({
 
     const logs = []
     const skipped = []
+    let rowsWithoutPunches = 0
     const num = (value, fallback = 0) => parseAttendanceDecimal(value) ?? fallback
 
     for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
@@ -490,11 +492,17 @@ function AttendanceImportModal({
 
       const { checkIn: vao, checkOut: ra, punches, punchPairs } =
         collectAttendancePunches(row, punchColumns, parseTime)
+      if (parserOptions.deterministicDetail && !vao && !ra) {
+        rowsWithoutPunches += 1
+      }
+      const statsContext = parserOptions.deterministicDetail
+        ? { department: rowContext.department, position: rowContext.position }
+        : rowContext
       let stats
       if (vao && ra) {
-        stats = { ...calculateStats([vao, ra], sysEmp, rowContext), punches, punchPairs }
+        stats = { ...calculateStats([vao, ra], sysEmp, statsContext), punches, punchPairs }
       } else if (vao) {
-        stats = { ...calculateStats([vao], sysEmp, rowContext), punches, punchPairs }
+        stats = { ...calculateStats([vao], sysEmp, statsContext), punches, punchPairs }
       } else if (ra) {
         stats = {
           checkIn: null,
@@ -505,6 +513,18 @@ function AttendanceImportModal({
           earlyMinutes: 0,
           punches,
           punchPairs
+        }
+      } else if (parserOptions.deterministicDetail) {
+        stats = {
+          checkIn: null,
+          checkOut: null,
+          hours: 0,
+          regularWorkdays: 0,
+          status: '',
+          lateMinutes: 0,
+          earlyMinutes: 0,
+          punches: [],
+          punchPairs: []
         }
       } else {
         stats = {
@@ -519,6 +539,26 @@ function AttendanceImportModal({
           punches: [],
           punchPairs: []
         }
+      }
+
+      if (parserOptions.deterministicDetail) {
+        // File chi tiết chỉ cung cấp lần chấm giờ. Công, Giờ, Muộn, TC và
+        // ký hiệu trong Excel là kết quả tính theo quy tắc của bên xuất file.
+        logs.push(buildLog(sysEmp, dateStr, stats, {
+          employeeCode: String(empCode || sysEmp.employeeId || ''),
+          employeeName: String(empName || sysEmp.ho_va_ten || ''),
+          machineName: String(machineName || empName || sysEmp.ho_va_ten || ''),
+          department: rowContext.department,
+          position: rowContext.position,
+          dayOfWeek: thuIdx >= 0 ? String(row[thuIdx] || '') : '',
+          vao,
+          ra,
+          importFormat: 'attendance-detail-list',
+          calculationMode: 'punches',
+          overtimeAutoDisabled: false,
+          provenance: { row: i + 1 }
+        }))
+        continue
       }
 
       logs.push(buildLog(sysEmp, dateStr, stats, {
@@ -566,7 +606,13 @@ function AttendanceImportModal({
       }))
     }
 
-    return { logs, skipped }
+    return {
+      logs,
+      skipped,
+      warnings: rowsWithoutPunches > 0
+        ? [`Có ${rowsWithoutPunches} dòng không có giờ vào/ra: tính 0 công, 0 giờ; không lấy Công/Giờ từ Excel để thay thế.`]
+        : []
+    }
   }
 
   /** Format mới: Mã NV | Tên NV | Phòng ban | Ngày | Lần 1 ... Lần 7 */
@@ -1756,6 +1802,7 @@ function AttendanceImportModal({
             isMatrixMode: format === 'matrix',
             detectedDays,
             skipped: result.skipped,
+            warnings: result.warnings || [],
             blockingIssues: result.skipped,
             isReconcileMode: false,
             importMonth: detectedImportMonth,
@@ -2402,7 +2449,7 @@ function AttendanceImportModal({
           {!previewData ? (
             <>
               <div style={{ padding: '10px 12px', marginBottom: '12px', background: '#eff6ff', borderRadius: '6px', color: '#1e40af' }}>
-                Chỉ hỗ trợ file Excel có cấu trúc “Bảng công tháng”. Tháng/năm được đọc trực tiếp từ nội dung sheet.
+                Hỗ trợ Excel “Bảng công tháng” hoặc “Chi tiết chấm công”. Với file chi tiết, chỉ giờ vào/ra được dùng để tính công; không lấy số Công, Giờ, Muộn hay TC trong Excel.
               </div>
               {SUPPORTED_ATTENDANCE_IMPORT_MODE !== 'monthly_matrix_only' && <div className="form-group">
                 <label>Chi nhánh ưu tiên khi trùng tên</label>
@@ -2558,7 +2605,9 @@ function AttendanceImportModal({
               </div>
 
               <div style={{ marginTop: '10px' }}>
-                <strong>Khớp nhân viên theo Họ tên + Bộ phận:</strong>
+                <strong>{previewData.isDetailedAttendanceList
+                  ? 'Khớp nhân viên theo Mã + Họ tên:'
+                  : 'Khớp nhân viên theo Họ tên + Bộ phận:'}</strong>
                 {selectionIssues.length > 0 && (
                   <div role="alert" style={{ color: '#b91c1c', marginTop: '6px' }}>
                     {selectionIssues.slice(0, 5).map((issue, index) => <div key={index}>{issue}</div>)}
@@ -2677,8 +2726,13 @@ function AttendanceImportModal({
                       <th style={{ padding: '5px' }}>Bộ phận</th>
                       <th style={{ padding: '5px' }}>Ca</th>
                       <th style={{ padding: '5px' }}>Ngày</th>
-                      <th style={{ padding: '5px' }}>Giá trị công</th>
-                      <th style={{ padding: '5px' }}>Work unit</th>
+                      {previewData.isDetailedAttendanceList ? (
+                        <>
+                          <th style={{ padding: '5px' }}>Giờ vào</th>
+                          <th style={{ padding: '5px' }}>Giờ ra</th>
+                        </>
+                      ) : <th style={{ padding: '5px' }}>Giá trị công</th>}
+                      <th style={{ padding: '5px' }}>{previewData.isDetailedAttendanceList ? 'Công tính từ giờ' : 'Work unit'}</th>
                       <th style={{ padding: '5px' }}>Match status</th>
                     </tr>
                   </thead>
@@ -2701,7 +2755,12 @@ function AttendanceImportModal({
                           <td style={{ padding: '5px' }}>{(log._sourceDepartment ?? log.department) || '-'}</td>
                           <td style={{ padding: '5px' }}>{log.shiftName || '-'}</td>
                           <td style={{ padding: '5px' }}>{previewDate(log.date)}</td>
-                          <td style={{ padding: '5px', textAlign: 'center' }}>{String(log.rawAttendanceValue ?? log.sourceSymbol ?? '')}</td>
+                          {previewData.isDetailedAttendanceList ? (
+                            <>
+                              <td style={{ padding: '5px', textAlign: 'center' }}>{log.vao || '-'}</td>
+                              <td style={{ padding: '5px', textAlign: 'center' }}>{log.ra || '-'}</td>
+                            </>
+                          ) : <td style={{ padding: '5px', textAlign: 'center' }}>{String(log.rawAttendanceValue ?? log.sourceSymbol ?? '')}</td>}
                           <td style={{ padding: '5px', textAlign: 'center' }}>{log.cong ?? '-'}</td>
                           <td style={{ padding: '5px' }}>{matchStatus}</td>
                         </tr>

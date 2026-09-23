@@ -36,6 +36,37 @@ test('corrected punches update the same imported attendance row', () => {
   assert.equal(plan.updates[0].id, 'old-id')
 })
 
+test('detail re-import replaces old Excel totals even when the app shift differs from the source shift', () => {
+  const existing = imported({
+    sourceEmployeeName: 'Nguyễn Mỹ Hạnh', shiftName: 'HC',
+    cong: 0.73, hours: 5.83, lateMinutes: 130, tc1: 0.5
+  })
+  const incoming = imported({
+    id: undefined, sourceEmployeeName: 'Nguyễn Mỹ Hạnh',
+    shiftName: 'Ca hành chính', importFormat: 'attendance-detail-list',
+    calculationMode: 'punches', vao: '09:40', ra: '17:36',
+    cong: 476 / 480, hours: 476 / 60, lateMinutes: 100, tc1: 0,
+    sourceWorkdays: null, sourceHours: null
+  })
+  const plan = planAttendanceImport({ incomingLogs: [incoming], existingLogs: [existing] })
+  assert.equal(plan.inserts.length, 0)
+  assert.equal(plan.updates.length, 1)
+  assert.equal(plan.updates[0].id, 'old-id')
+  assert.equal(plan.updates[0].data.tc1, 0)
+  assert.equal(plan.updates[0].data.sourceWorkdays, null)
+})
+
+test('detail re-import does not take a different source employee on the same day', () => {
+  const existing = imported({ sourceEmployeeCode: 'M02', sourceEmployeeName: 'Người khác' })
+  const incoming = imported({
+    id: undefined, sourceEmployeeName: 'Nguyễn Mỹ Hạnh',
+    shiftName: 'Ca hành chính', importFormat: 'attendance-detail-list'
+  })
+  const plan = planAttendanceImport({ incomingLogs: [incoming], existingLogs: [existing] })
+  assert.equal(plan.updates.length, 0)
+  assert.equal(plan.inserts.length, 1)
+})
+
 test('does not overwrite an attendance record from another source', () => {
   const existing = {
     id: 'manual-id', employeeId: 'employee-1', date: '2026-08-01', shiftName: 'Ca ngày', vao: '08:00'
