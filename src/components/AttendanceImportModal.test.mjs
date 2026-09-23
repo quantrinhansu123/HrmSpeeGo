@@ -154,3 +154,33 @@ test('actual supplied workbook requires sheet selection and previews August only
   assert.match(textOf(tables[0]), /Tô Châu/)
   assert.equal(harness.writes.length, 0)
 })
+
+test('replacement workbook with full-date columns previews its single sheet and 34 employees', {
+  skip: !process.env.NEW_ATTENDANCE_FILE
+}, async () => {
+  const bytes = readFileSync(process.env.NEW_ATTENDANCE_FILE)
+  const harness = makeHarness([])
+  const tree = await upload(harness, bytes)
+  const tables = nodes(tree).filter(node => node.type === 'table')
+  assert.equal(nodes(tables[0]).filter(node => node.type === 'select').length, 34)
+  assert.equal(nodes(tables[1]).filter(node => node.type === 'tbody')[0].children.length, 1054)
+  assert.match(textOf(tables[0]), /Nguyễn Minh Nhựt/)
+  assert.match(textOf(tables[0]), /Mai Văn Tuấn/)
+  assert.equal(harness.writes.length, 0)
+})
+
+test('daily-detail workbook previews 34 employees and all 1054 source rows without writes', {
+  skip: !process.env.DETAIL_ATTENDANCE_FILE
+}, async () => {
+  const bytes = readFileSync(process.env.DETAIL_ATTENDANCE_FILE)
+  const harness = makeHarness([])
+  const tree = await upload(harness, bytes)
+  assert.match(textOf(tree), /Chi tiết chấm công theo ngày/)
+  const tables = nodes(tree).filter(node => node.type === 'table')
+  assert.equal(nodes(tables[0]).filter(node => node.type === 'select').length, 34)
+  assert.equal(nodes(tables[1]).filter(node => node.type === 'tbody')[0].children.length, 1054)
+  assert.match(textOf(tables[0]), /Đặng Thùy Liên/)
+  assert.match(textOf(tables[0]), /Hồ Ngọc Phú/)
+  assert.match(textOf(tables[1]), /01\/08\/2026.*0.9/)
+  assert.equal(harness.writes.length, 0)
+})

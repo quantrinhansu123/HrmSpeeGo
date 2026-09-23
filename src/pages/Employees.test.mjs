@@ -174,3 +174,37 @@ test('actual supplied workbook imports exactly 40 August names, not the hidden 6
     assert.equal(app.db.rows[0].name, 'Nguyễn Đức Anh')
     assert.equal(app.db.rows[39].name, 'Tô Châu')
 })
+
+test('replacement workbook previews and imports its 34 employees from the only sheet', {
+    skip: !process.env.NEW_ATTENDANCE_FILE
+}, async () => {
+    const app = harness()
+    await app.upload(readFileSync(process.env.NEW_ATTENDANCE_FILE))
+    const preview = app.preview().props.preview
+    assert.equal(preview.selectedSheetName, 'Trang tính1')
+    assert.equal(preview.sheets.length, 1)
+    assert.equal(preview.sheets[0].employeeCount, 34)
+    assert.equal(preview.sheets[0].records[0].name, 'Nguyễn Minh Nhựt')
+    assert.equal(preview.sheets[0].records[33].name, 'Mai Văn Tuấn')
+    assert.equal(app.db.writes.length, 0)
+    await app.preview().props.onConfirm()
+    assert.equal(app.db.writes.length, 34, app.alerts.join('\n'))
+    assert.equal(app.db.rows[0].name, 'Nguyễn Minh Nhựt')
+    assert.equal(app.db.rows[33].name, 'Mai Văn Tuấn')
+})
+
+test('daily-detail workbook deduplicates 1054 days into 34 personnel profiles', {
+    skip: !process.env.DETAIL_ATTENDANCE_FILE
+}, async () => {
+    const app = harness()
+    await app.upload(readFileSync(process.env.DETAIL_ATTENDANCE_FILE))
+    const preview = app.preview().props.preview
+    assert.equal(preview.selectedSheetName, 'Xuất lưới')
+    assert.equal(preview.sheets[0].isDetailedAttendanceList, true)
+    assert.equal(preview.sheets[0].employeeCount, 34)
+    assert.equal(preview.sheets[0].records[0].name, 'Đặng Thùy Liên')
+    assert.equal(preview.sheets[0].records[33].name, 'Hồ Ngọc Phú')
+    assert.equal(app.db.writes.length, 0)
+    await app.preview().props.onConfirm()
+    assert.equal(app.db.writes.length, 34, app.alerts.join('\n'))
+})

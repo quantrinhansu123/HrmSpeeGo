@@ -28,9 +28,9 @@ export default function EmployeeImportPreview({ preview, employees, companyId, o
                         <p><strong>Sheet: {sheet.sheetName} — {sheet.employeeCount} dòng nhân sự</strong>
                             {sheet.yearMonth ? ` — Tháng ${sheet.yearMonth}` : ''}</p>
                         {sheet.hidden && <p style={{ color: '#b45309' }}>Bạn đang chọn sheet ẩn. Kiểm tra đúng kỳ trước khi xác nhận.</p>}
-                        {sheet.isMonthlyMatrix
+                        {sheet.isMonthlyMatrix || sheet.isDetailedAttendanceList
                             ? <p>Sẽ thêm mới: {plan.createCount}; đã có, giữ nguyên hồ sơ: {plan.existingCount}.
-                                Chỉ đọc danh sách nhân viên, không nhập công hoặc các thống kê cuối sheet.</p>
+                                Chỉ đọc danh sách nhân viên duy nhất, không nhập công vào hồ sơ Nhân sự.</p>
                             : <p>Hồ sơ có mã NV đã tồn tại sẽ được cập nhật theo luồng import nhân sự hiện tại.</p>}
                         <p>Không xóa người ngoài sheet đã chọn. Tổng nhân sự trên hệ thống có thể lớn hơn số người trong file.</p>
                         {plan.errors.length > 0 && <div role="alert" style={{ color: '#b91c1c' }}>

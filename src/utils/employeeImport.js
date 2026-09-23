@@ -1,5 +1,10 @@
 import { detectMonthlyAttendanceMatrix } from './monthlyAttendanceMatrix.js'
-import { matchMonthlyAttendanceEmployee, normalizeEmployeeIdentity } from './attendanceMatching.js'
+import { detectAttendanceDetailList } from './attendanceDetailList.js'
+import {
+    matchDetailedAttendanceEmployee,
+    matchMonthlyAttendanceEmployee,
+    normalizeEmployeeIdentity
+} from './attendanceMatching.js'
 
 export const normalizeEmployeeImportHeader = value => String(value ?? '')
     .toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -11,14 +16,15 @@ const pick = (record, keys) => keys.map(key => record[key]).find(value => String
 /** Keep the original row coordinates and restrict monthly sheets to their employee table. */
 export const prepareEmployeeImportSheet = ({ sheetName, rows = [], hidden = false }) => {
     const matrix = detectMonthlyAttendanceMatrix(rows)
-    const headerRowIndex = matrix.matched ? matrix.headerRowIndex : rows.slice(0, 60).findIndex(row =>
+    const detail = matrix.matched ? null : detectAttendanceDetailList(rows)
+    const headerRowIndex = matrix.matched ? matrix.headerRowIndex : detail?.matched ? detail.headerRowIndex : rows.slice(0, 60).findIndex(row =>
         row.some(value => NAME_HEADERS.includes(normalizeEmployeeImportHeader(value)))
     )
     if (headerRowIndex < 0) return null
     const headers = rows[headerRowIndex].map(normalizeEmployeeImportHeader)
-    const indexes = matrix.matched ? matrix.employeeRowIndexes
+    const indexes = matrix.matched ? matrix.employeeRowIndexes : detail?.matched ? detail.dataRowIndexes
         : rows.map((_, index) => index).filter(index => index > headerRowIndex)
-    const records = indexes.map(index => {
+    let records = indexes.map(index => {
         const values = Object.fromEntries(headers.map((header, column) => [header, rows[index]?.[column] ?? '']))
         return {
             rowIndex: index, row: rows[index],
@@ -28,10 +34,18 @@ export const prepareEmployeeImportSheet = ({ sheetName, rows = [], hidden = fals
             employeeCode: String(pick(values, ['ma_nhan_vien', 'ma_nv', 'employee_id'])).trim()
         }
     }).filter(record => record.name)
+    if (detail?.matched) {
+        records = [...new Map(records.map(record => [
+            normalizeEmployeeIdentity(record.employeeCode) || normalizeEmployeeIdentity(record.name),
+            record
+        ])).values()]
+    }
     return {
         sheetName, hidden: Boolean(hidden), headers, headerRowIndex, records,
-        isMonthlyMatrix: matrix.matched, yearMonth: matrix.yearMonth,
-        errors: matrix.matched ? matrix.errors : [],
+        isMonthlyMatrix: matrix.matched,
+        isDetailedAttendanceList: Boolean(detail?.matched),
+        yearMonth: matrix.yearMonth || detail?.yearMonth || '',
+        errors: matrix.matched ? matrix.errors : detail?.errors || [],
         employeeCount: records.length
     }
 }
@@ -42,6 +56,17 @@ export const planEmployeeSheetImport = (sheet, employees, companyId) => {
     const errors = [...sheet.errors]
     const seen = new Set()
     const records = sheet.records.map(record => {
+        if (sheet.isDetailedAttendanceList) {
+            const match = matchDetailedAttendanceEmployee(
+                record.employeeCode, record.name, employees, companyId
+            )
+            if (match.employee) return { ...record, action: 'existing', existingId: match.employee.id }
+            if (match.status === 'review') {
+                errors.push(`${record.name}: mã hoặc họ tên xung đột với hồ sơ hiện có; cần kiểm tra trước khi nhập.`)
+                return { ...record, action: 'review' }
+            }
+            return { ...record, action: 'create' }
+        }
         if (!sheet.isMonthlyMatrix) return { ...record, action: record.employeeCode ? 'upsert' : 'create' }
         const identity = `${normalizeEmployeeIdentity(record.name)}::${normalizeEmployeeIdentity(record.department)}`
         if (seen.has(identity)) {

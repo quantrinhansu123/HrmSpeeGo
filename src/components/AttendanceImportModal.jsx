@@ -9,6 +9,7 @@ import {
   buildSourceEmployeeKey,
   getCanonicalEmployeeCode,
   matchAttendanceEmployee,
+  matchDetailedAttendanceEmployee,
   matchMonthlyAttendanceEmployee,
   normalizeEmployeeIdentity,
   scopeAttendanceEmployeesByCompany,
@@ -39,6 +40,7 @@ import {
   extractMonthlyAttendanceMatrix,
   SUPPORTED_ATTENDANCE_IMPORT_MODE
 } from '../utils/monthlyAttendanceMatrix'
+import { analyzeAttendanceDetailSheets } from '../utils/attendanceDetailList'
 import {
   applyCalculatedAttendanceTiming,
   calculateAttendanceTiming,
@@ -469,7 +471,7 @@ function AttendanceImportModal({
       if ((!empCode && !empName) || (dateRaw === '' || dateRaw == null)) continue
 
       const sysEmp = attachSourceIdentity(
-        findEmployee(empCode, empName) || buildFallbackEmployee(empCode, empName, i),
+        (parserOptions.deterministicDetail ? null : findEmployee(empCode, empName)) || buildFallbackEmployee(empCode, empName, i),
         empCode,
         empName
       )
@@ -542,6 +544,7 @@ function AttendanceImportModal({
         lateMinutes: lateIdx >= 0 ? num(row[lateIdx]) : undefined,
         earlyMinutes: earlyIdx >= 0 ? num(row[earlyIdx]) : undefined,
         sourceWorkdays: congIdx >= 0 ? num(row[congIdx]) : null,
+        rawAttendanceValue: congIdx >= 0 ? row[congIdx] : '',
         sourceHours: gioIdx >= 0 ? num(row[gioIdx]) : null,
         sourceTotalHours: tongIdx >= 0 ? num(row[tongIdx]) : null,
         sourceSymbol: kyIdx >= 0 ? String(row[kyIdx] || '') : '',
@@ -1033,11 +1036,12 @@ function AttendanceImportModal({
       if (!groups.has(sourceKey)) {
         // Old manual mappings can link a ROW placeholder to a different person.
         // This format always re-matches against the current employee directory.
-        const storedMapping = metadata.isMonthlyMatrix ? null : employeeMappings?.[mappingKey]
+        const isDeterministicImport = metadata.isMonthlyMatrix || metadata.isDetailedAttendanceList
+        const storedMapping = isDeterministicImport ? null : employeeMappings?.[mappingKey]
         const mappedEmployee = storedMapping?.employeeId
           ? employeesById.get(String(storedMapping.employeeId))
           : null
-        const currentEmployee = !metadata.isMonthlyMatrix && preserveExistingMatches
+        const currentEmployee = !isDeterministicImport && preserveExistingMatches
           ? employeesById.get(String(log.employeeId))
           : (mappedEmployee || null)
         const smartMatch = currentEmployee
@@ -1060,6 +1064,13 @@ function AttendanceImportModal({
                 activeCompanyId,
                 matchBranch
               )
+            : metadata.isDetailedAttendanceList
+              ? matchDetailedAttendanceEmployee(
+                  sourceCode,
+                  sourceName,
+                  companyScopedEmployees,
+                  activeCompanyId
+                )
             : matchAttendanceEmployee(
                 sourceCode,
                 sourceName,
@@ -1140,7 +1151,7 @@ function AttendanceImportModal({
       const isCreate = employeeId === '__create__'
       const selectedEmployee = employeesById.get(String(employeeId))
       const sourceGroup = previous.matchGroups.find(group => group.key === sourceKey)
-      if (previous.isMonthlyMatrix) {
+      if (previous.isMonthlyMatrix || previous.isDetailedAttendanceList) {
         if (isCreate && !canCreateEmployees) return previous
         if (selectedEmployee && !sourceGroup?.candidates.some(candidate =>
           String(candidate.employee.id) === String(selectedEmployee.id)
@@ -1689,7 +1700,10 @@ function AttendanceImportModal({
         ].filter(index => Number.isInteger(index) && index >= 0)
 
         if (format === 'full') {
-          result = processFullAttendanceFormat(jsonData, headers, headerRowIdx, parserOptions)
+          result = processFullAttendanceFormat(jsonData, headers, headerRowIdx, {
+            ...parserOptions,
+            deterministicDetail: Boolean(selectedConfig?.deterministicDetail)
+          })
           modeLabel = 'Bảng chấm công đầy đủ'
         } else if (format === 'punch') {
           result = processPunchLogFormat(jsonData, headers, headerRowIdx, parserOptions)
@@ -1735,6 +1749,10 @@ function AttendanceImportModal({
         setPreviewData(
           prepareMatchingPreview(result.logs, {
             modeLabel,
+            detectedFormatLabel: selectedConfig?.deterministicDetail
+              ? 'Chi tiết chấm công theo ngày'
+              : modeLabel,
+            isDetailedAttendanceList: Boolean(selectedConfig?.deterministicDetail),
             isMatrixMode: format === 'matrix',
             detectedDays,
             skipped: result.skipped,
@@ -1744,6 +1762,9 @@ function AttendanceImportModal({
             affectedMonths,
             importJobId,
             sourceSheetName: selectedSheetName,
+            employeeCount: selectedConfig?.detailDetection?.employeeCount,
+            dayCount: selectedConfig?.detailDetection?.dayCount,
+            expectedAttendanceCount: result.logs.length,
             availableSheets: sheetCandidates.map(candidate => ({
               name: candidate.sheetName,
               recognized: candidate.analysis.score > 0
@@ -1797,10 +1818,43 @@ function AttendanceImportModal({
       )
 
       if (workbookAnalysis.candidates.length === 0) {
-        throw new Error('File Excel chưa đúng định dạng bảng công đang được hỗ trợ.')
+        const detailAnalysis = analyzeAttendanceDetailSheets(
+          workbookSheets,
+          requestedSheetName,
+          { date1904: Boolean(workbook.Workbook?.WBProps?.date1904) }
+        )
+        if (detailAnalysis.candidates.length === 0) {
+          throw new Error('File Excel chưa đúng định dạng bảng công đang được hỗ trợ.')
+        }
+        if (detailAnalysis.requiresSelection) {
+          setMonthlySheetSelection({
+            kindLabel: 'Chi tiết chấm công',
+            selectedSheetName: '',
+            candidates: detailAnalysis.candidates.map(candidate => ({
+              name: candidate.sheetName,
+              yearMonth: candidate.detailDetection.yearMonth,
+              employeeCount: candidate.detailDetection.employeeCount
+            }))
+          })
+          setPreviewData(null)
+          return
+        }
+        const detailSheet = detailAnalysis.selected
+        if (!detailSheet) throw new Error('Sheet đã chọn không đúng định dạng chi tiết chấm công.')
+        if (detailSheet.detailDetection.errors.length) {
+          throw new Error(detailSheet.detailDetection.errors.join('\n'))
+        }
+        setMonthlySheetSelection(null)
+        return await handleGenericPreview({
+          sheetName: detailSheet.sheetName,
+          autoOnly: true,
+          deterministicDetail: true,
+          detailDetection: detailSheet.detailDetection
+        })
       }
       if (workbookAnalysis.requiresSelection) {
         setMonthlySheetSelection({
+          kindLabel: 'Bảng công tháng',
           selectedSheetName: '',
           candidates: workbookAnalysis.candidates.map(candidate => ({
             name: candidate.sheetName,
@@ -2398,7 +2452,7 @@ function AttendanceImportModal({
               </div>
               {monthlySheetSelection && (
                 <div style={{ marginTop: '14px', padding: '14px', border: '1px solid #60a5fa', borderRadius: '8px', background: '#eff6ff' }}>
-                  <strong>Đã nhận diện nhiều sheet Bảng công tháng — hãy chọn sheet cần import</strong>
+                  <strong>Đã nhận diện nhiều sheet {monthlySheetSelection.kindLabel || 'Bảng công'} — hãy chọn sheet cần import</strong>
                   <select
                     value={monthlySheetSelection.selectedSheetName}
                     onChange={event => setMonthlySheetSelection(previous => ({
@@ -2419,7 +2473,7 @@ function AttendanceImportModal({
             </>
           ) : (
             <div style={{ padding: '10px', background: '#f8f9fa', borderRadius: '4px' }}>
-              <h4>Đã nhận diện: Bảng công tháng</h4>
+              <h4>Đã nhận diện: {previewData.detectedFormatLabel || 'Bảng công tháng'}</h4>
               <ul>
                 <li>
                   <strong>Sheet:</strong>{' '}
@@ -2564,11 +2618,14 @@ function AttendanceImportModal({
                               }}
                             >
                               <option value="">-- Chọn nhân viên Lumi --</option>
-                              {canCreateEmployees && (!previewData.isMonthlyMatrix || group.candidates.length === 0) && (
+                              {canCreateEmployees && (
+                                (!previewData.isMonthlyMatrix && !previewData.isDetailedAttendanceList) ||
+                                group.candidates.length === 0
+                              ) && (
                                 <option value="__create__">-- Tạo hồ sơ mới từ tên trong file --</option>
                               )}
                               <option value="__skip__">-- Không có trong Lumi (bỏ qua) --</option>
-                              {(previewData.isMonthlyMatrix
+                              {(previewData.isMonthlyMatrix || previewData.isDetailedAttendanceList
                                 ? group.candidates.map(candidate => candidate.employee)
                                 : employeesForMatching).map(employee => (
                                 <option key={employee.id} value={employee.id}>
@@ -2580,7 +2637,7 @@ function AttendanceImportModal({
                                 </option>
                               ))}
                             </select>
-                            {!previewData.isMonthlyMatrix && (!group.selectedEmployeeId || group.status === 'create') && suggestedEmployee && (
+                            {!previewData.isMonthlyMatrix && !previewData.isDetailedAttendanceList && (!group.selectedEmployeeId || group.status === 'create') && suggestedEmployee && (
                               <div style={{ color: '#b45309', marginTop: '3px' }}>
                                 Gợi ý gần nhất: {suggestedEmployee.ho_va_ten || suggestedEmployee.name}
                                 {group.status === 'create' ? ' (chọn nếu đây là cùng một người)' : ''}

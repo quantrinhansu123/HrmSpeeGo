@@ -337,15 +337,55 @@ export const matchMonthlyAttendanceEmployee = (
   }
 }
 
+/** Exact-only matcher for detailed attendance exports that include employee code. */
+export const matchDetailedAttendanceEmployee = (
+  sourceCode,
+  sourceName,
+  employees,
+  companyId
+) => {
+  const scoped = scopeAttendanceEmployeesByCompany(employees, companyId)
+  const code = compactEmployeeIdentity(sourceCode)
+  const name = normalizeEmployeeIdentity(sourceName)
+  const exactCode = scoped.filter(employee => code && employeeCodes(employee).includes(code))
+  const exactName = scoped.filter(employee => name && normalizeEmployeeIdentity(employeeName(employee)) === name)
+  const exactBoth = exactCode.filter(employee => normalizeEmployeeIdentity(employeeName(employee)) === name)
+  const matched = exactBoth.length === 1
+    ? exactBoth[0]
+    : exactCode.length === 1 && !name
+      ? exactCode[0]
+      : !exactCode.length && exactName.length === 1
+        ? exactName[0]
+        : null
+  const candidates = exactBoth.length ? exactBoth : exactCode.length ? exactCode : exactName
+  return {
+    employee: matched,
+    suggestedEmployee: matched,
+    confidence: matched ? 1 : candidates.length ? 1 : 0,
+    gap: matched ? 1 : 0,
+    method: matched
+      ? (exactBoth.length ? 'Mã và tên trùng hồ sơ' : 'Tên nhân viên duy nhất trong công ty')
+      : exactCode.length
+        ? 'Mã nhân viên trùng nhưng tên không khớp — cần kiểm tra'
+        : exactName.length > 1
+          ? 'Có nhiều hồ sơ trùng tên — cần kiểm tra'
+          : 'Chưa có hồ sơ trùng mã hoặc họ tên trong công ty',
+    status: matched ? 'matched' : candidates.length ? 'review' : 'unmatched',
+    candidates: candidates.map(employee => ({ employee, score: 1 }))
+  }
+}
+
 /** Guard the monthly preview again before any writes, including manual choices. */
 export const validateMonthlyAttendanceSelection = (preview, employees, companyId) => {
-  if (!preview?.isMonthlyMatrix) return []
+  if (!preview?.isMonthlyMatrix && !preview?.isDetailedAttendanceList) return []
   const issues = []
   const groups = new Map((preview.matchGroups || []).map(group => [group.key, group]))
   const seen = new Set()
   for (const group of groups.values()) {
     if (group.status === 'skipped' || group.status === 'create') continue
-    const match = matchMonthlyAttendanceEmployee(group.sourceName, group.sourceDepartment, employees, companyId)
+    const match = preview.isMonthlyMatrix
+      ? matchMonthlyAttendanceEmployee(group.sourceName, group.sourceDepartment, employees, companyId)
+      : matchDetailedAttendanceEmployee(group.sourceCode, group.sourceName, employees, companyId)
     if (!group.selectedEmployeeId || !match.candidates.some(candidate =>
       String(candidate.employee.id) === String(group.selectedEmployeeId)
     )) issues.push(`${group.sourceName}: chưa chọn được hồ sơ trùng họ tên trong công ty.`)

@@ -291,3 +291,58 @@ test('validates leap-year February and a labeled STT row with a missing name', (
   ] }))
   assert.ok(missingName.errors.some(error => error.includes('không có Họ tên')))
 })
+
+test('accepts consecutive full Excel dates as day headers', () => {
+  const rows = createMatrix()
+  const firstDayColumn = 8
+  Array.from({ length: 32 }, (_, index) => index).forEach(index => {
+    rows[4][firstDayColumn + index] = 46235 + index
+  })
+  const result = detectMonthlyAttendanceMatrix(rows)
+  assert.equal(result.matched, true)
+  assert.equal(result.yearMonth, '2026-08')
+  assert.deepEqual(result.dayColumns.map(column => column.day), Array.from({ length: 31 }, (_, index) => index + 1))
+  assert.deepEqual(result.ignoredDayColumns.map(column => column.day), [])
+})
+
+test('can infer month from consecutive full date headers when title and range are absent', () => {
+  const rows = createMatrix({ title: '', range: '', headerDays: Array.from({ length: 31 }, (_, index) =>
+    `${String(index + 1).padStart(2, '0')}/08/2026`
+  ) })
+  const result = detectMonthlyAttendanceMatrix(rows)
+  assert.equal(result.matched, true)
+  assert.equal(result.yearMonth, '2026-08')
+  assert.equal(result.monthSource, '')
+  assert.equal(result.dayColumns.length, 31)
+})
+
+test('recognizes the replacement attendance workbook with full-date headers', {
+  skip: !process.env.NEW_ATTENDANCE_FILE
+}, () => {
+  const bytes = readFileSync(process.env.NEW_ATTENDANCE_FILE)
+  const workbook = XLSX.read(bytes, { type: 'buffer', cellNF: true, cellDates: false })
+  const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+  const rows = expandAttendanceMergedCells(
+    XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '', blankrows: true }),
+    worksheet['!merges'] || []
+  )
+  const detection = detectMonthlyAttendanceMatrix(rows)
+  const extracted = extractMonthlyAttendanceMatrix(rows, detection)
+  assert.equal(workbook.SheetNames[0], 'Trang tính1')
+  assert.equal(detection.yearMonth, '2026-08')
+  assert.equal(detection.employeeCount, 34)
+  assert.equal(detection.dayColumns.length, 31)
+  assert.equal(extracted.attendanceRows.length, 1054)
+  assert.equal(extracted.employees[0].employeeName, 'Nguyễn Minh Nhựt')
+  assert.equal(extracted.employees[33].employeeName, 'Mai Văn Tuấn')
+})
+
+test('invalid authoritative range still blocks full-date headers', () => {
+  const rows = createMatrix({ range: '1/8/2026 - 32/8/2026' })
+  Array.from({ length: 32 }, (_, index) => index).forEach(index => {
+    rows[4][8 + index] = 46235 + index
+  })
+  const result = detectMonthlyAttendanceMatrix(rows)
+  assert.equal(result.yearMonth, '')
+  assert.ok(result.errors.some(error => error.includes('Khoảng ngày')))
+})

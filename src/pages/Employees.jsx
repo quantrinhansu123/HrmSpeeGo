@@ -379,7 +379,7 @@ function Employees() {
                 const worksheet = workbook.Sheets[sheetName]
                 // Preserve blank separators and expand merged metadata headers.
                 const rows = expandAttendanceMergedCells(
-                    XLSX.utils.sheet_to_json(worksheet, { header: 1, range: 0, defval: '', blankrows: true, raw: false }),
+                    XLSX.utils.sheet_to_json(worksheet, { header: 1, range: 0, defval: '', blankrows: true, raw: true }),
                     worksheet['!merges'] || []
                 )
                 return prepareEmployeeImportSheet({

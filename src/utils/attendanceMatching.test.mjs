@@ -5,6 +5,7 @@ import {
   buildAttendanceStorageId,
   buildMonthlyAttendanceSourceKey,
   matchAttendanceEmployee,
+  matchDetailedAttendanceEmployee,
   matchMonthlyAttendanceEmployee,
   scopeAttendanceEmployeesByCompany
 } from './attendanceMatching.js'
@@ -25,6 +26,21 @@ test('does not auto-match a machine code collision when employee names differ', 
   assert.equal(match.employee, null)
   assert.ok(match.confidence < 0.9)
   assert.equal(match.method, 'Mã trùng nhưng tên không khớp')
+})
+
+test('detailed attendance requires exact employee code and name when code exists', () => {
+  const employees = [
+    { id: 'right', employeeId: '00001', ho_va_ten: 'Đặng Thùy Liên' },
+    { id: 'wrong-name', employeeId: '00002', ho_va_ten: 'Đặng Thùy Linh' }
+  ]
+  assert.equal(
+    matchDetailedAttendanceEmployee('00001', 'Đặng Thùy Liên', employees, 'speego-original').employee?.id,
+    'right'
+  )
+  const conflict = matchDetailedAttendanceEmployee('00001', 'Người Khác', employees, 'speego-original')
+  assert.equal(conflict.employee, null)
+  assert.equal(conflict.status, 'review')
+  assert.deepEqual(conflict.candidates.map(candidate => candidate.employee.id), ['right'])
 })
 
 test('prefers an exact name over a colliding machine code', () => {

@@ -35,6 +35,30 @@ const exactPositiveInteger = value => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
+const excelSerialDate = value => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 20000 || value > 80000) return null
+  const date = new Date(Math.round((value - 25569) * 86400 * 1000))
+  if (Number.isNaN(date.getTime())) return null
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() }
+}
+
+const calendarDateHeader = value => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return { year: value.getFullYear(), month: value.getMonth() + 1, day: value.getDate() }
+  }
+  const serial = excelSerialDate(value)
+  if (serial) return serial
+  const text = String(value ?? '').trim()
+  const iso = text.match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})$/)
+  const vietnamese = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})$/)
+  const parts = iso
+    ? { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) }
+    : vietnamese
+      ? { year: Number(vietnamese[3]), month: Number(vietnamese[2]), day: Number(vietnamese[1]) }
+      : null
+  return parts && validDate(parts.year, parts.month, parts.day) ? parts : null
+}
+
 const validDate = (year, month, day) => {
   const date = new Date(Date.UTC(year, month - 1, day))
   return date.getUTCFullYear() === year &&
@@ -93,13 +117,22 @@ const findTitleMonth = (rows, headerRowIndex) => {
 export const detectMonthlyAttendanceMonth = (rows = [], headerRowIndex = rows.length - 1) =>
   findDateRangeMonth(rows, headerRowIndex) || findTitleMonth(rows, headerRowIndex)
 
-const findDaySequence = (row, totalWorkColumn) => {
+const findDaySequence = (row, totalWorkColumn, expectedMonth = null) => {
   const columns = []
   let expectedDay = 1
   let started = false
+  let inferredMonth = null
 
   for (let columnIndex = totalWorkColumn + 1; columnIndex < (row || []).length; columnIndex += 1) {
-    const day = exactPositiveInteger(row[columnIndex])
+    const fullDate = calendarDateHeader(row[columnIndex])
+    const integer = exactPositiveInteger(row[columnIndex])
+    const day = fullDate ? fullDate.day : (integer && integer <= 32 ? integer : null)
+    if (fullDate) {
+      const headerMonth = { year: fullDate.year, month: fullDate.month }
+      if (expectedMonth && (headerMonth.year !== expectedMonth.year || headerMonth.month !== expectedMonth.month)) break
+      if (inferredMonth && (headerMonth.year !== inferredMonth.year || headerMonth.month !== inferredMonth.month)) break
+      inferredMonth ||= headerMonth
+    }
     if (!started) {
       if (day !== 1) continue
       started = true
@@ -109,7 +142,7 @@ const findDaySequence = (row, totalWorkColumn) => {
     expectedDay += 1
   }
 
-  return columns
+  return { columns, inferredMonth }
 }
 
 const inferSequenceColumn = (rows, headerRowIndex, beforeColumn) => {
@@ -215,12 +248,16 @@ export const detectMonthlyAttendanceMatrix = (rows = []) => {
       columns[field] = findHeaderColumn(row, aliases)
     })
 
-    const rawDayColumns = findDaySequence(row, columns.totalWork)
+    const detectedMonth = detectMonthlyAttendanceMonth(rows, headerRowIndex)
+    const explicitMonth = detectedMonth?.error ? null : detectedMonth
+    const daySequence = findDaySequence(row, columns.totalWork, explicitMonth)
+    const rawDayColumns = daySequence.columns
     // Every supported monthly sheet has at least the 28 possible February days.
     if (rawDayColumns.length < 28) continue
 
-    const detectedMonth = detectMonthlyAttendanceMonth(rows, headerRowIndex)
-    const monthInfo = detectedMonth?.error ? null : detectedMonth
+    // A malformed in-sheet date range is authoritative and must not be hidden
+    // by otherwise valid-looking date headers.
+    const monthInfo = detectedMonth?.error ? null : (explicitMonth || daySequence.inferredMonth)
     const errors = []
     if (!monthInfo) errors.push(detectedMonth?.error || 'Không xác định được tháng/năm từ khoảng ngày hoặc tiêu đề trong sheet.')
     const maxDay = monthInfo ? daysInMonth(monthInfo.year, monthInfo.month) : 31

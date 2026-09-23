@@ -8,7 +8,7 @@ Chỉ mở luồng `monthly_matrix_only` trong `AttendanceImportModal`. Nhận d
 
 - Header: tìm cùng dòng có Họ tên, Bộ phận, Ca làm, Tổng công và dãy ngày liên tiếp phía sau. Không cố định tên file, tên sheet, dòng 6 hay cột AJ. Hỗ trợ header Tổng công ngày thường + Lễ trong cùng họ workbook.
 - Tháng/năm: ưu tiên khoảng ngày phía trên header, rồi tiêu đề trong sheet. Không lấy từ tên file hoặc tháng đang chọn trên giao diện. Khoảng ngày sai bị chặn.
-- Ngày: chỉ tạo ngày thực của tháng; bỏ cột 32 và các ngày thừa trong tháng ngắn, hỗ trợ năm nhuận.
+- Ngày: hỗ trợ cả header dạng số ngày `1…31` và ngày Excel đầy đủ `01/08/2026…31/08/2026`; chỉ tạo ngày thực của tháng, bỏ cột 32 và các ngày thừa trong tháng ngắn, hỗ trợ năm nhuận.
 - Nhân viên: đọc vùng liên tục sau header, dựa trên STT/tên và dữ liệu bộ phận, ca, ngày; dừng ở ngăn cách hoặc thống kê. Không cố định số người hoặc dòng cuối.
 - Metadata: giữ họ tên, bộ phận, ca, loại hợp đồng, trạng thái, Tổng công và tọa độ ô nguồn. Các ô công trống không tạo log.
 - Parser: dùng lại `processMatrixFormat` và `classifyMatrixAttendanceCell`. Không giả giờ vào/ra cho bảng tổng hợp. Giữ số thập phân. Profile của mẫu dùng legend X = nghỉ (0), X1 = 1, X2 = 2, X3 = 3, P1 = phép năm (1); X của parser generic vẫn giữ nghĩa cũ. Giá trị lạ hoặc giờ punch trong mẫu bị chặn.
@@ -41,11 +41,27 @@ Chỉ mở luồng `monthly_matrix_only` trong `AttendanceImportModal`. Nhận d
 - 5 cảnh báo Tổng công khác tổng ngày: Cao Võ Thanh Thương, Ngô Đắc Chung, Nguyễn Thị Dương, Phan Nhân, Ngô Thị Thu Hương. Không tự sửa số công ngày để ép bằng tổng.
 - Test preview dùng đúng file thật xác nhận 40 nhóm và 1.240 log, không có DB write. Test 40 hồ sơ synthetic xác nhận tự khớp, bỏ mapping cũ sai và giá trị X/0.5 chính xác. Đây không phải xác nhận rằng danh mục nhân viên trên DB thực tế đã có đủ 40 hồ sơ.
 
-Thêm 40 test. Toàn bộ suite: **122 test; 121 pass; 0 fail; 1 skip**. Test skip cũ thuộc attendanceFormula vì thiếu fixture. Test file thật chỉ chạy khi đặt `ATTENDANCE_SAMPLE_PATH`; máy không có file sẽ bỏ qua thêm test đó.
+Đã kiểm tra thêm file thay thế `D:\download\BẢNG CÔNG THÁNG 8.xlsx`:
+
+- Một sheet `Trang tính1`, tháng 08/2026, 34 nhân viên, 31 ngày và 1.054 ô công.
+- Header ngày là serial/ngày Excel đầy đủ thay vì số ngày đơn; detector nhận diện theo chuỗi ngày liên tiếp và vẫn ưu tiên khoảng ngày trong sheet.
+- Người đầu Nguyễn Minh Nhựt, người cuối Mai Văn Tuấn. File không được commit vào repo.
+
+Đã hỗ trợ thêm đúng định dạng xuất chi tiết `D:\download\Copy of TỔNG CÔNG THÁNG 8.xlsx`:
+
+- Signature riêng: tiêu đề `CHI TIẾT CHẤM CÔNG` và các cột Mã N.Viên, Tên nhân viên, Ngày, Vào/Ra, Công, Giờ, Tên ca, Kí hiệu, Tổng giờ.
+- Sheet `Xuất lưới`: 34 nhân viên, 31 ngày và 1.054 dòng chi tiết; dữ liệu tháng 08/2026.
+- Dùng lại parser chi tiết hiện có, nhưng chỉ sau detector riêng. Không bật generic mapping cho file Excel bất kỳ.
+- Matching chỉ dùng mã + tên chính xác hoặc tên chính xác duy nhất; mã trùng nhưng tên khác bị chặn để kiểm tra.
+- Preview giữ Công/Giờ/Vào-Ra/Kí hiệu nguồn. Không ghi DB trong kiểm thử.
+
+Toàn bộ suite sau khi bổ sung các định dạng: **148 test; 147 pass; 0 fail; 1 skip**. Test skip cũ thuộc attendanceFormula vì thiếu fixture. Test ba file thật chỉ chạy khi đặt các biến đường dẫn; máy không có file sẽ bỏ qua các test tương ứng.
 
 ```powershell
 $env:ATTENDANCE_SAMPLE_PATH = 'D:\download\BẢNG CÔNG THÁNG 8_2026.xlsx'
-node --test src/utils/*.test.mjs src/services/*.test.mjs src/components/AttendanceImportModal.test.mjs
+$env:NEW_ATTENDANCE_FILE = 'D:\download\BẢNG CÔNG THÁNG 8.xlsx'
+$env:DETAIL_ATTENDANCE_FILE = 'D:\download\Copy of TỔNG CÔNG THÁNG 8.xlsx'
+node --test src/utils/*.test.mjs src/services/*.test.mjs src/components/*.test.mjs src/pages/*.test.mjs
 npm run build -- --outDir .codex-build-check
 ```
 
