@@ -52,7 +52,8 @@ const makeHarness = (employees, employeeMappings = {}, attendanceSettings = {}) 
   return {
     writes,
     render() { hooks.index = 0; return Modal(props) },
-    detailPreview() { return hooks.values.find(value => value?.isDetailedAttendanceList) }
+    detailPreview() { return hooks.values.find(value => value?.isDetailedAttendanceList) },
+    matrixPreview() { return hooks.values.find(value => value?.isMonthlyMatrix) }
   }
 }
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...tree.children.flatMap(nodes)]
@@ -117,6 +118,10 @@ test('monthly upload previews all 40 people / 1240 days without database writes'
   })
   const tree = await upload(harness, bytes)
   assert.equal(harness.writes.length, 0)
+  const matrixLog = harness.matrixPreview().logs[0]
+  assert.equal(matrixLog.importFormat, 'attendance-monthly-matrix')
+  assert.equal(matrixLog.sourceDepartment, 'Sale')
+  assert.equal(matrixLog.monthlyDepartment, 'Sale')
   const tables = nodes(tree).filter(node => node.type === 'table')
   const people = nodes(tables[0]).filter(node => node.type === 'select')
   assert.equal(people.length, 40)

@@ -80,7 +80,18 @@ export const planAttendanceImport = ({
     }
 
     const existing = candidates[0]
-    const data = sanitizeAttendanceImportLog({ ...log, sourceType: 'excel-import' })
+    const previousMonthlyDepartment = existing?.monthlyDepartment || (
+      existing?.importFormat === 'attendance-monthly-matrix'
+        ? existing.sourceDepartment || ''
+        : ''
+    )
+    const data = sanitizeAttendanceImportLog({
+      ...log,
+      sourceType: 'excel-import',
+      ...(log.importFormat === 'attendance-detail-list' && previousMonthlyDepartment
+        ? { monthlyDepartment: previousMonthlyDepartment }
+        : {})
+    })
     if (!existing) {
       inserts.push({ id: buildAttendanceStorageId(log), data, log })
       return

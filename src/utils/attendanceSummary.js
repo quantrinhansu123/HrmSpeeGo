@@ -1,4 +1,5 @@
 import { buildSourceEmployeeKey } from './attendanceMatching.js'
+import { departmentForAttendanceSummary } from './attendanceDepartment.js'
 import {
   applyCalculatedAttendanceTiming,
   attendanceTimeToMinutes,
@@ -351,10 +352,7 @@ export const buildAttendanceSummary = ({
         log.sourceEmployeeName ||
         '',
       department:
-        employee?.bo_phan ||
-        employee?.department ||
-        log.department ||
-        '',
+        departmentForAttendanceSummary(log, employee),
       position:
         employee?.vi_tri ||
         employee?.position ||
@@ -431,6 +429,13 @@ export const buildAttendanceSummary = ({
     const date = key.slice(separatorIndex + 2)
     const log = daySummary.logs[0] || {}
     const row = ensureSummaryRow(employeeId, log)
+    const matrixLog = daySummary.logs.find(item =>
+      item.monthlyDepartment ||
+      (item.importFormat === 'attendance-monthly-matrix' && item.sourceDepartment)
+    )
+    if (matrixLog) {
+      row.department = departmentForAttendanceSummary(matrixLog, employeesById.get(employeeId))
+    }
     row.days.set(date, daySummary)
   })
 

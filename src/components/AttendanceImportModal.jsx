@@ -393,6 +393,10 @@ function AttendanceImportModal({
         sysEmp.name ||
         '',
       department: extra.department || sysEmp.bo_phan || '',
+      sourceDepartment: extra.department || '',
+      monthlyDepartment: extra.importFormat === 'attendance-monthly-matrix'
+        ? extra.department || ''
+        : '',
       position: extra.position || sysEmp.vi_tri || '',
       employmentType: extra.employmentType || '',
       employeeStatus: extra.employeeStatus || '',
@@ -967,6 +971,7 @@ function AttendanceImportModal({
           sourceSymbol: item.directSymbol || item.rawVal,
           derivedHours: !isHourMode,
           calculationMode: 'matrix-value',
+          importFormat: 'attendance-monthly-matrix',
           sourceValues: {
             workdays: isHourMode ? null : item.rawVal,
             hours: isHourMode ? item.rawVal : null,
@@ -993,7 +998,8 @@ function AttendanceImportModal({
         sourceTotalWork: item.sourceTotalWork,
         rawAttendanceValue: item.rawValue,
         sourceEmployeeCode: emp._sourceEmployeeCode || emp.employeeCode,
-        sourceEmployeeName: emp._sourceEmployeeName || emp.employeeName
+        sourceEmployeeName: emp._sourceEmployeeName || emp.employeeName,
+        importFormat: 'attendance-monthly-matrix'
       }))
     })
 

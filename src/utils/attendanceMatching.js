@@ -413,11 +413,18 @@ export const applyEmployeeToAttendanceLog = (log, employee) => {
     log.tenTheoMayChamCong ||
     ''
   const sourceCode = log.sourceEmployeeCode || log.employeeCode || ''
+  const sourceDepartment =
+    log.sourceDepartment ||
+    log._sourceDepartment ||
+    log.department ||
+    log.phongBan ||
+    ''
 
   return {
     ...log,
     sourceEmployeeName: sourceName,
     sourceEmployeeCode: sourceCode,
+    sourceDepartment,
     employeeId: employee.id,
     employeeCode: canonicalCode || sourceCode,
     employeeName: canonicalName || sourceName,

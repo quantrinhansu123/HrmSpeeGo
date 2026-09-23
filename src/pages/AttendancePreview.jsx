@@ -24,6 +24,7 @@ import {
 } from '../utils/attendanceCalculations'
 import { canManageAttendance } from '../utils/staffAccess'
 import { openAttendancePrintWindow } from '../utils/attendancePdf'
+import { resolveAttendanceDepartment } from '../utils/attendanceDepartment'
 import './AttendancePreview.css'
 
 const EXCEL_DETAIL_PAGE_SIZE = 100
@@ -176,28 +177,6 @@ const dayNotes = day => {
   return notes.join(' · ')
 }
 
-const TEAM_DEPARTMENTS = new Map([
-  ['tuấn', 'MKT'],
-  ['toàn', 'Kế toán'],
-  ['trang', 'Sale'],
-  ['quốc anh', 'Vận hành'],
-  ['hưng', 'Vận hành']
-])
-const inferDepartmentFromPosition = position => {
-  const value = String(position || '').trim().toLocaleLowerCase('vi')
-  if (!value) return ''
-  if (/nhân sự|\bhr\b|admin/.test(value)) return 'Nhân sự'
-  if (/kế toán|account/.test(value)) return 'Kế toán'
-  if (/social media|marketing|\bmkt\b|seo|content|designer|media/.test(value)) return 'MKT'
-  if (/sale|kinh doanh/.test(value)) return 'Sale'
-  if (/vận hành|kho|thu mua|xuất nhập khẩu|logistics/.test(value)) return 'Vận hành'
-  return ''
-}
-const resolveDepartment = row => {
-  const storedDepartment = String(row.department || '').trim()
-  const teamDepartment = TEAM_DEPARTMENTS.get(storedDepartment.toLocaleLowerCase('vi'))
-  return teamDepartment || inferDepartmentFromPosition(row.position) || storedDepartment || 'Chưa phân bộ phận'
-}
 const getConsecutiveDepartmentRowSpans = rows => rows.map((row, index) => {
   const department = row.displayDepartment
   if (!department) return 1
@@ -210,7 +189,7 @@ const getConsecutiveDepartmentRowSpans = rows => rows.map((row, index) => {
 const groupRowsByDepartment = rows => {
   const groups = new Map()
   rows.forEach(row => {
-    const department = resolveDepartment(row)
+    const department = resolveAttendanceDepartment(row)
     const key = department.toLocaleLowerCase('vi')
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push({ ...row, displayDepartment: department })

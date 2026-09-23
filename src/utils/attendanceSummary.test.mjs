@@ -2,6 +2,23 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildAttendanceSummary, summarizeAttendanceDay } from './attendanceSummary.js'
 
+test('tổng hợp giữ bộ phận chi tiết của Excel dù hồ sơ HR thuộc nhóm rộng', () => {
+  const rows = buildAttendanceSummary({
+    attendanceLogs: [{
+      employeeId: 'employee-media',
+      date: '2026-08-01',
+      importFormat: 'attendance-monthly-matrix',
+      calculationMode: 'matrix-value',
+      department: 'MKT',
+      sourceDepartment: 'Media',
+      cong: 1
+    }],
+    employees: [{ id: 'employee-media', ho_va_ten: 'Nhân viên Media', bo_phan: 'MKT' }],
+    month: '2026-08'
+  })
+  assert.equal(rows[0].department, 'Media')
+})
+
 test('keeps an unmatched source employee and recalculates punches by actual minutes', () => {
   const rows = buildAttendanceSummary({
     attendanceLogs: [{

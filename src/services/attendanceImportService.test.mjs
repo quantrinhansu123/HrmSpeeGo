@@ -56,6 +56,41 @@ test('detail re-import replaces old Excel totals even when the app shift differs
   assert.equal(plan.updates[0].data.sourceWorkdays, null)
 })
 
+test('detail re-import keeps the precise department from an earlier monthly sheet', () => {
+  const existing = imported({
+    importFormat: 'attendance-monthly-matrix',
+    sourceDepartment: 'Leader Content',
+    department: 'MKT'
+  })
+  const incoming = imported({
+    id: undefined,
+    importFormat: 'attendance-detail-list',
+    sourceDepartment: 'Văn phòng',
+    department: 'MKT'
+  })
+  const plan = planAttendanceImport({ incomingLogs: [incoming], existingLogs: [existing] })
+  assert.equal(plan.updates.length, 1)
+  assert.equal(plan.updates[0].data.sourceDepartment, 'Văn phòng')
+  assert.equal(plan.updates[0].data.monthlyDepartment, 'Leader Content')
+})
+
+test('new monthly sheet can update its own department without retaining an older label', () => {
+  const existing = imported({
+    importFormat: 'attendance-detail-list',
+    sourceDepartment: 'Văn phòng',
+    monthlyDepartment: 'Media'
+  })
+  const incoming = imported({
+    id: undefined,
+    importFormat: 'attendance-monthly-matrix',
+    sourceDepartment: 'SEO',
+    monthlyDepartment: 'SEO'
+  })
+  const plan = planAttendanceImport({ incomingLogs: [incoming], existingLogs: [existing] })
+  assert.equal(plan.updates.length, 1)
+  assert.equal(plan.updates[0].data.monthlyDepartment, 'SEO')
+})
+
 test('detail re-import does not take a different source employee on the same day', () => {
   const existing = imported({ sourceEmployeeCode: 'M02', sourceEmployeeName: 'Người khác' })
   const incoming = imported({

@@ -4,11 +4,26 @@ import {
   buildAttendanceRecordKey,
   buildAttendanceStorageId,
   buildMonthlyAttendanceSourceKey,
+  applyEmployeeToAttendanceLog,
   matchAttendanceEmployee,
   matchDetailedAttendanceEmployee,
   matchMonthlyAttendanceEmployee,
   scopeAttendanceEmployeesByCompany
 } from './attendanceMatching.js'
+
+test('ghép hồ sơ không làm mất bộ phận gốc trong Excel', () => {
+  const log = applyEmployeeToAttendanceLog({
+    employeeName: 'Nhân viên A',
+    department: 'Leader Content',
+    importFormat: 'attendance-monthly-matrix'
+  }, {
+    id: 'employee-a',
+    ho_va_ten: 'Nhân viên A',
+    bo_phan: 'MKT'
+  })
+  assert.equal(log.department, 'MKT')
+  assert.equal(log.sourceDepartment, 'Leader Content')
+})
 
 test('does not auto-match a machine code collision when employee names differ', () => {
   const wrongEmployee = {
