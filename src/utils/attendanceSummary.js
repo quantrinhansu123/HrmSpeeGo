@@ -29,7 +29,11 @@ const attendancePunchPairs = log => {
   const punches = Array.isArray(log?.punches)
     ? log.punches.map(formatAttendanceTime).filter(Boolean)
     : []
-  if (punches.length < 4) return []
+  if (punches.length < 4) {
+    const checkIn = formatAttendanceTime(log?.checkIn || log?.vao)
+    const checkOut = formatAttendanceTime(log?.checkOut || log?.ra)
+    return checkIn || checkOut ? [{ checkIn, checkOut }] : []
+  }
   const pairs = []
   for (let index = 0; index < punches.length; index += 2) {
     pairs.push({ checkIn: punches[index] || '', checkOut: punches[index + 1] || '' })

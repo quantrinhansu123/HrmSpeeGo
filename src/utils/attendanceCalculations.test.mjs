@@ -54,6 +54,57 @@ const splitShift = {
   afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
 }
 
+test('giờ chấm trước/sau ca bị chặn tại mốc ca và giờ nghỉ trưa tự loại', () => {
+  const full = calculateAttendanceMetrics({
+    checkIn: '08:24', checkOut: '17:37', splitShift,
+    breakMinutes: 60, autoCalculateOvertime: true
+  })
+  assert.equal(full.workedMinutes, 480)
+  assert.equal(full.hours, 8)
+  assert.equal(full.regularWorkdays, 1)
+  assert.equal(full.overtimeHours, 0)
+
+  const morning = calculateAttendanceMetrics({
+    checkIn: '08:30', checkOut: '12:33', splitShift,
+    breakMinutes: 60
+  })
+  assert.equal(morning.workedMinutes, 210)
+  assert.equal(morning.hours, 3.5)
+  assert.equal(morning.regularWorkdays, 0.5)
+
+  const afternoon = calculateAttendanceMetrics({
+    checkIn: '12:30', checkOut: '17:33', splitShift
+  })
+  assert.equal(afternoon.workedMinutes, 270)
+  assert.equal(afternoon.hours, 4.5)
+  assert.equal(afternoon.regularWorkdays, 0.5)
+})
+
+test('đi muộn buổi sáng giảm riêng công sáng, buổi chiều đủ vẫn 0.5', () => {
+  const result = calculateAttendanceMetrics({
+    checkIn: '09:00', checkOut: '17:30', splitShift
+  })
+  assert.equal(result.workedMinutes, 450)
+  assert.equal(result.hours, 7.5)
+  assert.equal(result.splitShiftBreakdown[0].workdays, 180 / 210 * 0.5)
+  assert.equal(result.splitShiftBreakdown[1].workdays, 0.5)
+  assert.equal(result.regularWorkdays, 180 / 210 * 0.5 + 0.5)
+  assert.equal(result.overtimeHours, 0)
+})
+
+test('nhiều cặp chấm trùng nhau không được cộng phút hai lần', () => {
+  const result = calculateAttendanceMetrics({
+    checkIn: '08:30', checkOut: '10:00',
+    punchPairs: [
+      { checkIn: '08:30', checkOut: '10:00' },
+      { checkIn: '08:30', checkOut: '10:00' }
+    ],
+    splitShift
+  })
+  assert.equal(result.workedMinutes, 90)
+  assert.equal(result.regularWorkdays, 90 / 210 * 0.5)
+})
+
 test('chia hai cặp chấm thành buổi sáng và chiều, không tính giờ nghỉ giữa ca', () => {
   const result = calculateAttendanceMetrics({
     checkIn: '08:30',
@@ -72,7 +123,7 @@ test('chia hai cặp chấm thành buổi sáng và chiều, không tính giờ 
   assert.equal(result.overtimeHours, 0)
 })
 
-test('một cặp phủ cả ngày vẫn giữ cách tính full ngày', () => {
+test('một cặp phủ cả ngày vẫn trừ khoảng nghỉ giữa hai buổi', () => {
   const result = calculateAttendanceMetrics({
     checkIn: '08:30',
     checkOut: '17:30',
@@ -81,7 +132,7 @@ test('một cặp phủ cả ngày vẫn giữ cách tính full ngày', () => {
     autoCalculateOvertime: false
   })
 
-  assert.equal(result.calculationMode, 'full-day')
+  assert.equal(result.calculationMode, 'split-shift')
   assert.equal(result.hours, 8)
   assert.equal(result.regularWorkdays, 1)
 })
@@ -96,7 +147,7 @@ test('một cặp nằm trong buổi sáng được tính trọn nửa công', (
   assert.equal(result.workedMinutes, 210)
 })
 
-test('có chấm trong một buổi thì tính trọn 0.5 công dù thời lượng ngắn hơn khung buổi', () => {
+test('buổi làm thiếu giờ được tính công theo tỷ lệ phút trong khung buổi', () => {
   const result = calculateAttendanceMetrics({
     checkIn: '08:00',
     checkOut: '10:00',
@@ -105,9 +156,9 @@ test('có chấm trong một buổi thì tính trọn 0.5 công dù thời lư�
     autoCalculateOvertime: false
   })
 
-  assert.equal(result.hours, 2)
-  assert.equal(result.regularWorkdays, 0.5)
-  assert.equal(result.splitShiftBreakdown[0].workdays, 0.5)
+  assert.equal(result.hours, 1.5)
+  assert.equal(result.regularWorkdays, 90 / 210 * 0.5)
+  assert.equal(result.splitShiftBreakdown[0].workdays, 90 / 210 * 0.5)
 })
 
 test('mô tả rõ số công riêng của từng buổi trên bảng công', () => {
@@ -122,6 +173,21 @@ test('mô tả rõ số công riêng của từng buổi trên bảng công', ()
 
   assert.match(formula, /Buổi sáng 210p = 0.5 công/)
   assert.match(formula, /Tổng 1 công/)
+})
+
+test('giờ chấm hoàn toàn ngoài khung ca là 0 công và tooltip không hiện công giả', () => {
+  const result = calculateAttendanceMetrics({
+    checkIn: '18:00', checkOut: '19:00', splitShift
+  })
+  assert.equal(result.workedMinutes, 0)
+  assert.equal(result.regularWorkdays, 0)
+  assert.match(describeDayWorkFormula({
+    checkIn: '18:00', checkOut: '19:00',
+    calculationMode: result.calculationMode,
+    splitShiftBreakdown: result.splitShiftBreakdown,
+    workdaysExact: result.regularWorkdays,
+    workedMinutes: result.workedMinutes
+  }), /Ngoài khung giờ hai buổi = 0 công/)
 })
 
 test('giữ nguyên 8 giờ khi hai buổi đều có đủ cặp chấm', () => {
@@ -141,7 +207,7 @@ test('giữ nguyên 8 giờ khi hai buổi đều có đủ cặp chấm', () =>
   assert.equal(result.calculationMode, 'split-shift')
 })
 
-test('đủ cả hai buổi luôn là 1 công, còn một buổi dùng mức cài đặt', () => {
+test('mức công tối đa của từng buổi được áp dụng cả khi đủ hai buổi', () => {
   const configuredSplitShift = {
     ...splitShift,
     morning: { ...splitShift.morning, workdays: 0.4 },
@@ -165,7 +231,7 @@ test('đủ cả hai buổi luôn là 1 công, còn một buổi dùng mức cà
     autoCalculateOvertime: false
   })
 
-  assert.equal(fullDay.regularWorkdays, 1)
+  assert.equal(fullDay.regularWorkdays, 0.8)
   assert.equal(morning.regularWorkdays, 0.4)
 })
 
@@ -181,12 +247,12 @@ test('tính từ Vào đầu đến Ra cuối khi thiếu Ra buổi chiều', ()
     autoCalculateOvertime: false
   })
 
-  assert.equal(result.hours, 4)
+  assert.equal(result.hours, 3.5)
   assert.equal(result.regularWorkdays, 0.5)
-  assert.equal(result.calculationMode, 'full-day')
+  assert.equal(result.calculationMode, 'split-shift')
 })
 
-test('cặp thiếu lượt nhưng vẫn thuộc một buổi thì tính 0.5 công', () => {
+test('cặp thiếu lượt vẫn tính theo phút của buổi có dữ liệu', () => {
   const result = calculateAttendanceMetrics({
     checkIn: '08:00',
     checkOut: '10:00',
@@ -198,8 +264,8 @@ test('cặp thiếu lượt nhưng vẫn thuộc một buổi thì tính 0.5 cô
     autoCalculateOvertime: false
   })
 
-  assert.equal(result.hours, 2)
-  assert.equal(result.regularWorkdays, 0.5)
+  assert.equal(result.hours, 1.5)
+  assert.equal(result.regularWorkdays, 90 / 210 * 0.5)
 })
 
 test('tính đủ khoảng đầu-cuối khi có Ra sau nửa buổi nhưng thiếu Vào tương ứng', () => {
@@ -216,7 +282,7 @@ test('tính đủ khoảng đầu-cuối khi có Ra sau nửa buổi nhưng thi�
 
   assert.equal(result.hours, 8)
   assert.equal(result.regularWorkdays, 1)
-  assert.equal(result.calculationMode, 'full-day')
+  assert.equal(result.calculationMode, 'split-shift')
 })
 
 test('tính đủ khoảng đầu-cuối khi thiếu Ra buổi sáng nhưng có đủ buổi chiều', () => {

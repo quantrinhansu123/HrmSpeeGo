@@ -70,8 +70,23 @@ const sessionInterval = session => {
   return end > start ? { start, end, minutes: end - start } : null
 }
 
-const overlapMinutes = (left, right) =>
-  Math.max(0, Math.min(left.end, right.end) - Math.max(left.start, right.start))
+const coveredMinutes = (intervals, session) => {
+  const clipped = intervals
+    .map(interval => ({
+      start: Math.max(interval.start, session.start),
+      end: Math.min(interval.end, session.end)
+    }))
+    .filter(interval => interval.end > interval.start)
+    .sort((left, right) => left.start - right.start)
+
+  let total = 0
+  let end = -Infinity
+  clipped.forEach(interval => {
+    total += Math.max(0, interval.end - Math.max(interval.start, end))
+    end = Math.max(end, interval.end)
+  })
+  return total
+}
 
 const normalizePunchPairs = punchPairs => (punchPairs || [])
   .map(pair => ({
@@ -96,8 +111,7 @@ const buildSplitSessions = splitShift => [
  */
 const calculatePartialSplitSpanWork = ({
   punchPairs = [],
-  splitShift,
-  breakMinutes = 0
+  splitShift
 } = {}) => {
   if (!splitShift?.enabled) return null
 
@@ -109,37 +123,15 @@ const calculatePartialSplitSpanWork = ({
   const checkOut = [...pairs].reverse().find(pair => pair.checkOut)?.checkOut
   if (!checkIn || !checkOut) return null
 
-  const workedMinutes = calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
-  if (workedMinutes === null) return null
-
-  const sessions = buildSplitSessions(splitShift)
-  if (sessions.some(session => !session.interval)) return null
-
-  const start = attendanceTimeToMinutes(checkIn)
-  const rawEnd = attendanceTimeToMinutes(checkOut)
-  if (start === null || rawEnd === null) return null
-  const end = rawEnd < start ? rawEnd + 24 * 60 : rawEnd
-  const span = { start, end }
-  const coveredSessions = sessions.filter(session => overlapMinutes(span, session.interval) > 0)
-  const regularWorkdays = coveredSessions.length === 1
-    ? coveredSessions[0].workdays
-    : coveredSessions.length > 1
-      ? 1
-      : 0
-
-  return {
-    workedMinutes,
-    regularWorkdays,
-    calculationMode: 'full-day',
-    splitShiftBreakdown: []
-  }
+  return calculateSplitShiftWork({
+    punchPairs: [{ checkIn, checkOut }],
+    splitShift
+  })
 }
 
 /**
- * Tính công theo hai buổi khi ca bật chia buổi.
- * - Một cặp phủ cả sáng lẫn chiều vẫn dùng công thức full ngày.
- * - Từ hai cặp hợp lệ trở lên, hoặc một cặp chỉ nằm trong một buổi, tính trọn
- *   mức công tối đa đã cấu hình cho từng buổi.
+ * Chỉ tính phút thực làm nằm trong khung từng buổi đã cấu hình. Khoảng nghỉ
+ * giữa hai buổi không thuộc khung nào nên không bị tính hoặc trừ lần nữa.
  */
 export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) => {
   if (!splitShift?.enabled) return null
@@ -154,29 +146,19 @@ export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) =>
 
   const pairs = rawPairs.map(punchInterval).filter(Boolean)
   if (!pairs.length) return null
-  const overlaps = sessions.map(session =>
-    pairs.reduce((total, pair) => total + overlapMinutes(pair, session.interval), 0)
-  )
-  const coveredSessions = overlaps.filter(minutes => minutes > 0).length
-  if (pairs.length === 1 && coveredSessions > 1) return null
-  if (pairs.length === 1 && coveredSessions === 0) return null
-
-  const breakdown = sessions.map((session, index) => {
-    const creditedMinutes = Math.min(overlaps[index], session.interval.minutes)
+  const breakdown = sessions.map(session => {
+    const creditedMinutes = coveredMinutes(pairs, session.interval)
     return {
       key: session.key,
       label: session.label,
       minutes: creditedMinutes,
-      workdays: creditedMinutes > 0 ? session.workdays : 0
+      workdays: creditedMinutes / session.interval.minutes * session.workdays
     }
   })
-  const attendedSessions = breakdown.filter(session => session.minutes > 0)
 
   return {
-    workedMinutes: pairs.reduce((total, pair) => total + pair.minutes, 0),
-    regularWorkdays: attendedSessions.length > 1
-      ? 1
-      : attendedSessions.reduce((total, session) => total + session.workdays, 0),
+    workedMinutes: breakdown.reduce((total, session) => total + session.minutes, 0),
+    regularWorkdays: breakdown.reduce((total, session) => total + session.workdays, 0),
     breakdown
   }
 }
@@ -184,8 +166,9 @@ export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) =>
 /**
  * Tính Công/Giờ/Tăng ca cho một bản ghi.
  *
- * - Có đủ Vào/Ra: luôn lấy phút thực tế từ hai mốc giờ, bỏ qua `hours`,
- *   `tongGio` và `cong` cũ do máy/Excel gửi lên.
+ * - Có đủ Vào/Ra: khi bật chia buổi chỉ tính phần giờ nằm trong từng khung
+ *   buổi, bỏ qua giờ nghỉ giữa buổi; ca không chia buổi dùng khoảng Vào→Ra.
+ *   Không dùng `hours`, `tongGio` và `cong` cũ do máy/Excel gửi lên.
  * - Không có Vào/Ra: giữ số giờ/công nguồn để không làm mất dữ liệu import
  *   dạng mã công (1, 0.5, P...).
  * - Tăng ca thủ công (TC1/TC2/TC3) luôn được ưu tiên. Tự động tách phần vượt
@@ -204,12 +187,15 @@ export const calculateAttendanceMetrics = ({
   fallbackWorkdays
 } = {}) => {
   const standard = Math.max(1, finiteNumber(standardMinutes, STANDARD_WORK_MINUTES))
+  const resolvedPunchPairs = normalizePunchPairs(punchPairs)
+  if (!resolvedPunchPairs.length && checkIn && checkOut) {
+    resolvedPunchPairs.push({ checkIn, checkOut })
+  }
   const partialSplitMetrics = calculatePartialSplitSpanWork({
-    punchPairs,
-    splitShift,
-    breakMinutes
+    punchPairs: resolvedPunchPairs,
+    splitShift
   })
-  const splitMetrics = calculateSplitShiftWork({ punchPairs, splitShift })
+  const splitMetrics = calculateSplitShiftWork({ punchPairs: resolvedPunchPairs, splitShift })
   const activeSplitMetrics = partialSplitMetrics || splitMetrics
   const workedMinutes = activeSplitMetrics?.workedMinutes ?? calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
   const hasPunchPair = workedMinutes !== null
@@ -256,8 +242,8 @@ export const calculateAttendanceMetrics = ({
     regularWorkdays: activeSplitMetrics?.regularWorkdays ?? regularMinutes / standard,
     overtimeHours,
     overtimeSource: manual.hasValue ? 'manual' : automaticAllowed ? 'automatic' : 'disabled',
-    calculationMode: partialSplitMetrics?.calculationMode || (splitMetrics ? 'split-shift' : 'full-day'),
-    splitShiftBreakdown: partialSplitMetrics?.splitShiftBreakdown || splitMetrics?.breakdown || []
+    calculationMode: activeSplitMetrics ? 'split-shift' : 'full-day',
+    splitShiftBreakdown: activeSplitMetrics?.breakdown || []
   }
 }
 
@@ -319,6 +305,7 @@ export const describeDayWorkFormula = (day = {}, {
       )
       return `Chia 2 buổi: ${details.join(' · ')} · Tổng ${roundDecimal(workdays)} công${holidayLabel ? ` · ${holidayLabel}` : ''}`
     }
+    return `Ngoài khung giờ hai buổi = 0 công${holidayLabel ? ` · ${holidayLabel}` : ''}`
   }
 
   if (holidayLabel && workdays <= 0 && !checkIn && !checkOut) {

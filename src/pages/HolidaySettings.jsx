@@ -405,7 +405,7 @@ function HolidaySettings() {
                   />
                   <span>
                     <strong>Bật chia ca thành 2 buổi</strong>
-                    <small>Tự điền mốc mặc định để người dùng chỉnh lại. Ngày đủ hai cặp chấm vẫn giữ cách tính hiện tại; ngày thiếu một lượt Vào/Ra sẽ lấy Vào đầu đến Ra cuối.</small>
+                    <small>Chỉ tính phút nằm trong khung từng buổi. Đi muộn hoặc về sớm làm giảm công buổi đó theo tỷ lệ; khoảng nghỉ giữa hai buổi không tính công.</small>
                   </span>
                 </label>
 
@@ -453,7 +453,7 @@ function HolidaySettings() {
                       ))}
                     </div>
                     <p className="holiday-settings-split-note">
-                      Các mốc giờ và công tối đa có thể sửa riêng cho từng ca. Có đủ hai cặp Vào/Ra thì hệ thống tính riêng từng buổi; nếu thiếu một lượt chấm thì dùng khoảng từ Vào đầu đến Ra cuối và giới hạn theo buổi.
+                      Các mốc giờ và công tối đa có thể sửa riêng cho từng ca. Một hoặc nhiều cặp Vào/Ra đều được giới hạn trong giờ từng buổi; nếu thiếu một lượt chấm thì dùng khoảng từ Vào đầu đến Ra cuối. Khoảng nghỉ giữa hai buổi tự được loại, không trừ thêm ở mục “Phút nghỉ không tính công”.
                     </p>
                   </>
                 )}

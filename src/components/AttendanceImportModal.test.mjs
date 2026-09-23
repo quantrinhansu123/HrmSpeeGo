@@ -44,11 +44,11 @@ const compiled = await build({
   }]
 })
 
-const makeHarness = (employees, employeeMappings = {}) => {
+const makeHarness = (employees, employeeMappings = {}, attendanceSettings = {}) => {
   const module = { exports: {} }
   new Function('require', 'module', 'exports', compiled.outputFiles[0].text)(createRequire(import.meta.url), module, module.exports)
   const { Modal, hooks, writes } = module.exports
-  const props = { employees, employeeMappings, isOpen: true, onClose() {}, onSave() {} }
+  const props = { employees, employeeMappings, attendanceSettings, isOpen: true, onClose() {}, onSave() {} }
   return {
     writes,
     render() { hooks.index = 0; return Modal(props) },
@@ -242,6 +242,66 @@ test('daily-detail workbook uses punch times, not source totals or late/overtime
   assert.equal(reimport.inserts.length, 0)
   assert.equal(reimport.updates.length, 3)
   assert.equal(harness.writes.length, 0)
+})
+
+test('daily-detail preview uses the configured morning and afternoon windows', async () => {
+  const settings = {
+    standardWorkMinutes: 480,
+    unpaidBreakMinutes: 0,
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính', standardCheckIn: '08:30', standardCheckOut: '17:30',
+        splitShift: {
+          enabled: true,
+          morning: { start: '08:30', end: '12:00', workdays: 0.5 },
+          afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
+        }
+      }
+    }
+  }
+  const harness = makeHarness([{
+    id: 'profile-26', employeeId: '00026', ho_va_ten: 'Nguyễn Mỹ Hạnh',
+    bo_phan: 'Văn phòng', ca_lam_viec: 'Ca Hành chính'
+  }], {}, settings)
+  await upload(harness, makeDetailWorkbook())
+  const complete = harness.detailPreview().logs.find(log => log.date === '2026-08-08')
+  assert.equal(complete.hours, 410 / 60)
+  assert.equal(complete.cong, 140 / 210 * 0.5 + 0.5)
+  assert.equal(complete.lateMinutes, 70)
+  assert.equal(complete.tc1, 0)
+  assert.equal(harness.writes.length, 0)
+})
+
+test('daily-detail preview recalculates workdays after matching the employee shift', async () => {
+  const settings = {
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính', standardCheckIn: '08:30', standardCheckOut: '17:30',
+        splitShift: {
+          enabled: true,
+          morning: { start: '08:30', end: '12:00', workdays: 0.5 },
+          afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
+        }
+      },
+      saleMorning: {
+        name: 'Ca Sáng Sale', standardCheckIn: '04:00', standardCheckOut: '13:30',
+        splitShift: {
+          enabled: true,
+          morning: { start: '04:00', end: '08:00', workdays: 0.5 },
+          afternoon: { start: '09:30', end: '13:30', workdays: 0.5 }
+        }
+      }
+    }
+  }
+  const harness = makeHarness([{
+    id: 'profile-26', employeeId: '00026', ho_va_ten: 'Nguyễn Mỹ Hạnh',
+    bo_phan: 'Sale', ca_lam_viec: 'Ca Sáng Sale'
+  }], {}, settings)
+  await upload(harness, makeDetailWorkbook())
+  const complete = harness.detailPreview().logs.find(log => log.date === '2026-08-08')
+  assert.equal(complete.employeeId, 'profile-26')
+  assert.equal(complete.hours, 230 / 60)
+  assert.equal(complete.cong, 230 / 240 * 0.5)
 })
 
 test('daily-detail workbook previews 34 employees and zeros no-punch days without writes', {

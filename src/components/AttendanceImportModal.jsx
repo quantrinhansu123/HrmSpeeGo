@@ -207,10 +207,10 @@ function AttendanceImportModal({
       checkIn: checkInStr,
       checkOut: checkOutStr,
       standardMinutes: Number(attendanceSettings.standardWorkMinutes) || STANDARD_WORK_MINUTES,
-      // Import Excel không tự trừ lunch cứng; nếu doanh nghiệp muốn trừ
-      // khoảng nghỉ thì khai báo rõ trong Cài đặt chấm công.
+      // Ca chia buổi tự loại khoảng giữa hai buổi theo mốc đã cấu hình.
       breakMinutes: Number(attendanceSettings.unpaidBreakMinutes) || 0,
-      autoCalculateOvertime: false
+      autoCalculateOvertime: false,
+      splitShift: shift?.splitShift
     })
     const hours = metrics.hours
 
@@ -224,7 +224,7 @@ function AttendanceImportModal({
     if (isLate) notes.push(`Muộn ${lateMinutes}p`)
     if (isEarly) notes.push(`Sớm ${earlyMinutes}p`)
     if (notes.length > 0) status = notes.join(' & ')
-    if (hours < 4) status = 'Vắng/Nghỉ'
+    if (hours <= 0) status = 'Vắng/Nghỉ'
 
     return {
       checkIn: checkInStr,
@@ -269,9 +269,37 @@ function AttendanceImportModal({
 
   const attachMatchedEmployee = (log, employee) => {
     const matched = applyEmployeeToAttendanceLog(log, employee)
-    return ['source-value', 'matrix-value'].includes(log.calculationMode)
-      ? matched
-      : applyCalculatedAttendanceTiming(matched, employee, attendanceSettings)
+    if (['source-value', 'matrix-value'].includes(log.calculationMode)) return matched
+
+    const timed = applyCalculatedAttendanceTiming(matched, employee, attendanceSettings)
+    if (log.importFormat !== 'attendance-detail-list') return timed
+
+    const checkIn = formatAttendanceTime(timed.vao || timed.checkIn)
+    const checkOut = formatAttendanceTime(timed.ra || timed.checkOut)
+    if (!checkIn || !checkOut) return timed
+
+    const shift = resolveAttendanceShift(employee, timed, attendanceSettings)
+    const metrics = calculateAttendanceMetrics({
+      log: timed,
+      checkIn,
+      checkOut,
+      standardMinutes: Number(attendanceSettings.standardWorkMinutes) || STANDARD_WORK_MINUTES,
+      breakMinutes: Number(attendanceSettings.unpaidBreakMinutes) || 0,
+      autoCalculateOvertime: false,
+      punchPairs: timed.punchPairs,
+      splitShift: shift?.splitShift
+    })
+    const hours = metrics.hours
+    return {
+      ...timed,
+      cong: metrics.regularWorkdays,
+      hours,
+      gio: hours,
+      tongGio: hours + (Number(timed.gioPlus) || 0),
+      workedMinutes: metrics.workedMinutes,
+      regularMinutes: metrics.regularMinutes,
+      overtimeMinutes: metrics.overtimeMinutes
+    }
   }
 
   const parseDateValue = (value, options = {}) => parseAttendanceDate(value, options)

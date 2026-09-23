@@ -112,6 +112,41 @@ test('keeps actual punch strings while replacing incorrect source penalties', ()
   assert.equal(log.earlyMinutes, 0)
 })
 
+test('split shift timing does not mark a morning-only checkout or afternoon-only checkin as missing a half-day', () => {
+  const settings = normalizeAttendanceShiftSettings({
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính',
+        standardCheckIn: '08:30',
+        standardCheckOut: '17:30',
+        splitShift: {
+          enabled: true,
+          morning: { start: '08:30', end: '12:00', workdays: 0.5 },
+          afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
+        }
+      }
+    }
+  })
+  const employee = { shift: 'Ca Hành chính', position: 'HR' }
+  const morning = calculateAttendanceTiming({
+    employee, checkIn: '08:24', checkOut: '12:33', attendanceSettings: settings
+  })
+  assert.equal(morning.lateMinutes, 0)
+  assert.equal(morning.earlyMinutes, 0)
+
+  const afternoon = calculateAttendanceTiming({
+    employee, checkIn: '12:30', checkOut: '17:33', attendanceSettings: settings
+  })
+  assert.equal(afternoon.lateMinutes, 0)
+  assert.equal(afternoon.earlyMinutes, 0)
+
+  const late = calculateAttendanceTiming({
+    employee, checkIn: '09:00', checkOut: '17:30', attendanceSettings: settings
+  })
+  assert.equal(late.lateMinutes, 30)
+  assert.equal(late.earlyMinutes, 0)
+})
+
 test('formats stored timestamps in the attendance timezone', () => {
   assert.equal(formatAttendanceTime('2026-08-05T21:02:00.000Z'), '04:02')
   assert.equal(formatAttendanceTime('8:30 PM'), '20:30')

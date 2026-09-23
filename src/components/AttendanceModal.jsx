@@ -3,7 +3,8 @@ import { fbPush, fbUpdate } from '../services/firebase'
 import { normalizeString } from '../utils/helpers'
 import {
   calculateAttendanceTiming,
-  formatAttendanceTime
+  formatAttendanceTime,
+  resolveAttendanceShift
 } from '../utils/attendanceShift'
 import {
   calculateAttendanceMetrics,
@@ -114,14 +115,18 @@ function AttendanceModal({
     setShowDropdown(false)
   }
 
-  const calculateHours = (checkIn, checkOut) => {
+  const calculateFormMetrics = (form, employee = {}, preserveManualValues = false) => {
+    const shift = resolveAttendanceShift(employee, form, attendanceSettings)
     return calculateAttendanceMetrics({
-      checkIn,
-      checkOut,
+      checkIn: form.checkIn,
+      checkOut: form.checkOut,
       standardMinutes: Number(attendanceSettings.standardWorkMinutes) || STANDARD_WORK_MINUTES,
       breakMinutes: Number(attendanceSettings.unpaidBreakMinutes) || 0,
-      autoCalculateOvertime: false
-    }).hours
+      autoCalculateOvertime: false,
+      splitShift: shift?.splitShift,
+      fallbackHours: preserveManualValues ? parseFloat(form.hours) || 0 : undefined,
+      fallbackWorkdays: preserveManualValues ? parseFloat(form.cong) || 0 : undefined
+    })
   }
 
   const pickEmployee = (emp) => {
@@ -143,6 +148,10 @@ function AttendanceModal({
         checkOut: updated.checkOut,
         attendanceSettings
       })
+      const metrics = calculateFormMetrics(updated, emp)
+      updated.hours = metrics.hours
+      updated.cong = roundDecimal(metrics.regularWorkdays)
+      updated.tongGio = roundDecimal(metrics.hours + Number(updated.gioPlus || 0))
       updated.lateMinutes = timing.lateMinutes ?? 0
       updated.earlyMinutes = timing.earlyMinutes ?? 0
       return updated
@@ -160,22 +169,16 @@ function AttendanceModal({
     }
 
     if (name === 'checkIn' || name === 'checkOut' || name === 'shiftName') {
-      const hours = calculateHours(updated.checkIn, updated.checkOut)
+      const employee = employees.find(item => item.id === updated.employeeId) || {}
+      const metrics = calculateFormMetrics(updated, employee)
+      const hours = metrics.hours
       updated.hours = hours
-      const metrics = calculateAttendanceMetrics({
-        checkIn: updated.checkIn,
-        checkOut: updated.checkOut,
-        standardMinutes: Number(attendanceSettings.standardWorkMinutes) || STANDARD_WORK_MINUTES,
-        breakMinutes: Number(attendanceSettings.unpaidBreakMinutes) || 0,
-        autoCalculateOvertime: false
-      })
       updated.cong = roundDecimal(metrics.regularWorkdays)
       updated.tongGio = roundDecimal(hours + Number(updated.gioPlus || 0))
       if (hours >= 8) updated.status = 'Đủ'
       else if (hours > 0) updated.status = 'Thiếu'
       else updated.status = 'Vắng'
       if (!updated.kyHieu) updated.kyHieu = updated.status
-      const employee = employees.find(item => item.id === updated.employeeId) || {}
       const timing = calculateAttendanceTiming({
         employee,
         log: updated,
@@ -216,20 +219,11 @@ function AttendanceModal({
         checkOutDate.setDate(checkOutDate.getDate() + 1)
       }
 
-      const calculatedMetrics = calculateAttendanceMetrics({
-        log: formData,
-        checkIn: formData.checkIn,
-        checkOut: formData.checkOut,
-        standardMinutes: Number(attendanceSettings.standardWorkMinutes) || STANDARD_WORK_MINUTES,
-        breakMinutes: Number(attendanceSettings.unpaidBreakMinutes) || 0,
-        autoCalculateOvertime: false,
-        fallbackHours: parseFloat(formData.hours) || 0,
-        fallbackWorkdays: parseFloat(formData.cong) || 0
-      })
+      const employee = employees.find(item => item.id === formData.employeeId) || {}
+      const calculatedMetrics = calculateFormMetrics(formData, employee, true)
       const hasPunchPair = Boolean(formData.checkIn && formData.checkOut)
       const hours = hasPunchPair ? calculatedMetrics.hours : parseFloat(formData.hours) || 0
       const gioPlus = parseFloat(formData.gioPlus) || 0
-      const employee = employees.find(item => item.id === formData.employeeId) || {}
       const timing = calculateAttendanceTiming({
         employee,
         log: formData,

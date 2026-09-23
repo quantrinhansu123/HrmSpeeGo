@@ -415,16 +415,52 @@ export const calculateAttendanceTiming = ({
       ? checkOutMinutes + 24 * 60
       : checkOutMinutes
 
+  let effectiveStartMinutes = shiftStartMinutes
+  let effectiveEndMinutes = adjustedShiftEndMinutes
+  const splitShift = shift.splitShift
+  if (splitShift?.enabled && !overnightShift) {
+    const sessions = [splitShift.morning, splitShift.afternoon]
+      .map(session => ({
+        start: attendanceTimeToMinutes(session?.start),
+        end: attendanceTimeToMinutes(session?.end)
+      }))
+    if (sessions.every(session =>
+      session.start !== null && session.end !== null && session.start < session.end
+    )) {
+      if (checkInMinutes !== null && checkOutMinutes !== null) {
+        const attended = sessions.filter(session =>
+          checkInMinutes < session.end && checkOutMinutes > session.start
+        )
+        if (attended.length) {
+          effectiveStartMinutes = attended[0].start
+          effectiveEndMinutes = attended[attended.length - 1].end
+        } else {
+          // Chấm hoàn toàn trong khoảng nghỉ/ngoài ca không tạo phạt giả.
+          effectiveStartMinutes = checkInMinutes
+          effectiveEndMinutes = checkOutMinutes
+        }
+      } else if (checkInMinutes !== null) {
+        effectiveStartMinutes =
+          sessions.find(session => checkInMinutes < session.end)?.start ??
+          sessions[sessions.length - 1].start
+      } else if (checkOutMinutes !== null) {
+        effectiveEndMinutes =
+          [...sessions].reverse().find(session => checkOutMinutes > session.start)?.end ??
+          sessions[0].end
+      }
+    }
+  }
+
   return {
     shift,
     hasCheckIn: checkInMinutes !== null,
     hasCheckOut: checkOutMinutes !== null,
     lateMinutes: checkInMinutes === null
       ? null
-      : Math.max(0, checkInMinutes - shiftStartMinutes),
+      : Math.max(0, checkInMinutes - effectiveStartMinutes),
     earlyMinutes: adjustedCheckOutMinutes === null
       ? null
-      : Math.max(0, adjustedShiftEndMinutes - adjustedCheckOutMinutes)
+      : Math.max(0, effectiveEndMinutes - adjustedCheckOutMinutes)
   }
 }
 

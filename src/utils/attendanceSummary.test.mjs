@@ -168,7 +168,7 @@ test('nhận P1 từ matrix import là phép hưởng lương nhưng vẫn giữ
   assert.equal(day.paidLeaveWorkdays, 1)
 })
 
-test('tự dùng hai buổi khi có hai cặp chấm và giữ full ngày khi chỉ có một cặp', () => {
+test('bảng công áp dụng hai khung buổi cho cả một hoặc hai cặp chấm', () => {
   const attendanceSettings = {
     shifts: {
       administrative: {
@@ -238,12 +238,86 @@ test('tự dùng hai buổi khi có hai cặp chấm và giữ full ngày khi ch
   assert.equal(splitDay.calculationMode, 'split-shift')
   assert.equal(splitDay.hours, 8)
   assert.equal(splitDay.workdays, 1)
-  assert.equal(fullDay.calculationMode, 'full-day')
+  assert.equal(fullDay.calculationMode, 'split-shift')
   assert.equal(fullDay.hours, 8)
   assert.equal(fullDay.workdays, 1)
   assert.equal(saleSplitDay.calculationMode, 'split-shift')
   assert.equal(saleSplitDay.hours, 8)
   assert.equal(saleSplitDay.workdays, 1)
+})
+
+test('bảng công tính từng buổi theo phút và tự bỏ giờ nghỉ trưa', () => {
+  const attendanceSettings = {
+    standardWorkMinutes: 480,
+    unpaidBreakMinutes: 60,
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính',
+        standardCheckIn: '08:30',
+        standardCheckOut: '17:30',
+        splitShift: {
+          enabled: true,
+          morning: { start: '08:30', end: '12:00', workdays: 0.5 },
+          afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
+        }
+      }
+    }
+  }
+  const punches = [
+    ['2026-08-01', '08:24', '17:37'],
+    ['2026-08-02', '08:30', '12:33'],
+    ['2026-08-03', '12:30', '17:33'],
+    ['2026-08-04', '09:00', '17:30']
+  ]
+  const rows = buildAttendanceSummary({
+    attendanceLogs: punches.map(([date, checkIn, checkOut]) => ({
+      employeeId: 'worker', date, vao: checkIn, ra: checkOut,
+      calculationMode: 'punches',
+      punchPairs: [{ checkIn, checkOut }]
+    })),
+    employees: [{ id: 'worker', name: 'Nhân viên', shift: 'Ca Hành chính' }],
+    month: '2026-08',
+    attendanceSettings
+  })
+  const days = rows[0].days
+  assert.equal(days.get('2026-08-01').workdaysExact, 1)
+  assert.equal(days.get('2026-08-01').hours, 8)
+  assert.equal(days.get('2026-08-02').workdaysExact, 0.5)
+  assert.equal(days.get('2026-08-02').hours, 3.5)
+  assert.equal(days.get('2026-08-02').earlyMinutes, 0)
+  assert.equal(days.get('2026-08-03').workdaysExact, 0.5)
+  assert.equal(days.get('2026-08-03').hours, 4.5)
+  assert.equal(days.get('2026-08-03').lateMinutes, 0)
+  assert.equal(days.get('2026-08-04').workdaysExact, 180 / 210 * 0.5 + 0.5)
+  assert.equal(days.get('2026-08-04').hours, 7.5)
+  assert.equal(days.get('2026-08-04').lateMinutes, 30)
+})
+
+test('nhiều log trong một ngày không cộng khoảng trống giữa hai lượt chấm', () => {
+  const summary = buildAttendanceSummary({
+    attendanceLogs: [
+      { employeeId: 'worker', date: '2026-08-05', vao: '08:30', ra: '10:00' },
+      { employeeId: 'worker', date: '2026-08-05', vao: '11:00', ra: '12:00' }
+    ],
+    employees: [{ id: 'worker', name: 'Nhân viên', shift: 'Ca Hành chính' }],
+    month: '2026-08',
+    attendanceSettings: {
+      shifts: {
+        administrative: {
+          name: 'Ca Hành chính',
+          standardCheckIn: '08:30', standardCheckOut: '17:30',
+          splitShift: {
+            enabled: true,
+            morning: { start: '08:30', end: '12:00', workdays: 0.5 },
+            afternoon: { start: '13:00', end: '17:30', workdays: 0.5 }
+          }
+        }
+      }
+    }
+  })
+  const day = summary[0].days.get('2026-08-05')
+  assert.equal(day.hours, 2.5)
+  assert.equal(day.workdaysExact, 150 / 210 * 0.5)
 })
 
 test('summary dùng Vào đầu và Ra cuối cho cặp chia buổi bị thiếu', () => {
@@ -294,12 +368,12 @@ test('summary dùng Vào đầu và Ra cuối cho cặp chia buổi bị thiếu
 
   const morningDay = rows.find(row => row.employeeId === 'partial-morning').days.get('2026-08-19')
   const afternoonDay = rows.find(row => row.employeeId === 'partial-afternoon').days.get('2026-08-20')
-  assert.equal(morningDay.hours, 4)
+  assert.equal(morningDay.hours, 3.5)
   assert.equal(morningDay.workdays, 0.5)
-  assert.equal(morningDay.calculationMode, 'full-day')
+  assert.equal(morningDay.calculationMode, 'split-shift')
   assert.equal(afternoonDay.hours, 8)
   assert.equal(afternoonDay.workdays, 1)
-  assert.equal(afternoonDay.calculationMode, 'full-day')
+  assert.equal(afternoonDay.calculationMode, 'split-shift')
 })
 
 test('giữ Công và Giờ nguồn khi import chọn chế độ theo Excel', () => {
