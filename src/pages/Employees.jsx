@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import EmployeeDirectory from '../components/EmployeeDirectory'
+import EmployeeImportPreview from '../components/EmployeeImportPreview'
+import { expandAttendanceMergedCells } from '../utils/attendanceImport'
+import { prepareEmployeeImportSheet, planEmployeeSheetImport } from '../utils/employeeImport'
 import { supabase } from '../services/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCompanyIdForUser } from '../utils/companyContext'
@@ -49,6 +52,8 @@ function Employees() {
     const [isReadOnly, setIsReadOnly] = useState(false)
     const fileInputRef = useRef(null)
     const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+    const [employeeImportPreview, setEmployeeImportPreview] = useState(null)
+    const employeeImportInProgress = useRef(false)
 
     // Tab State
     const [activeTab, setActiveTab] = useState('list') // 'list' or 'history'
@@ -345,82 +350,73 @@ function Employees() {
 
     const handleImportExcel = async (event) => {
         const file = event.target.files?.[0]
-        if (!file) return
-
-        const XLSX = await loadXlsx()
-
-        const normalizeHeader = (str) => {
-            return String(str || '')
-                .toLowerCase()
-                .trim()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/đ/g, 'd')
-                .replace(/[^a-z0-9]/g, '_')
-                .replace(/_+/g, '_')
-                .replace(/^_|_$/g, '')
-        }
-
-        const rowHasValue = (row) =>
-            Array.isArray(row) && row.some(cell => String(cell ?? '').trim() !== '')
-
-        const sheetToRows = (sheet) =>
-            XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: false, raw: false })
-
-        const readWorkbook = async () => {
-            const bytes = new Uint8Array(await file.arrayBuffer())
-            const sniff = new TextDecoder('utf-8').decode(bytes.slice(0, 512))
-            const fileName = (file.name || '').toLowerCase()
-            const looksHtml = /<html|<table|xmlns:x="urn:schemas-microsoft-com:office:excel"/i.test(sniff)
-            const looksCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt')
-
-            if (looksHtml || looksCsv) {
-                return XLSX.read(new TextDecoder('utf-8').decode(bytes), { type: 'string', raw: false })
-            }
-
-            try {
-                return XLSX.read(bytes, { type: 'array', cellDates: false, raw: false })
-            } catch {
-                return XLSX.read(new TextDecoder('utf-8').decode(bytes), { type: 'string', raw: false })
-            }
-        }
-
+        if (!file || employeeImportInProgress.current) return
+        event.target.value = ''
+        setEmployeeImportPreview(null)
+        setLoading(true)
         try {
-            setLoading(true)
-            const workbook = await readWorkbook()
-            let rows = []
-            for (const name of workbook.SheetNames || []) {
-                const candidate = sheetToRows(workbook.Sheets[name]).filter(rowHasValue)
-                if (candidate.length > rows.length) rows = candidate
-            }
+            const XLSX = await loadXlsx()
+            const readWorkbook = async () => {
+                const bytes = new Uint8Array(await file.arrayBuffer())
+                const sniff = new TextDecoder('utf-8').decode(bytes.slice(0, 512))
+                const fileName = (file.name || '').toLowerCase()
+                const looksHtml = /<html|<table|xmlns:x="urn:schemas-microsoft-com:office:excel"/i.test(sniff)
+                const looksCsv = fileName.endsWith('.csv') || fileName.endsWith('.txt')
 
-            if (!rows.length) {
-                alert('Không đọc được dữ liệu trong file. Hãy dùng .xlsx hoặc file mẫu Mau_import_nhan_su.xlsx.')
-                setLoading(false)
-                return
-            }
+                if (looksHtml || looksCsv) {
+                    return XLSX.read(new TextDecoder('utf-8').decode(bytes), { type: 'string', raw: false })
+                }
 
-            const headerKeywords = ['ho_va_ten', 'ho_ten', 'ten_nhan_vien', 'chi_nhanh', 'email_ca_nhan', 'vi_tri', 'so_cccd', 'sdt', 'ma_nv', 'ma_nhan_vien']
-            let headerIdx = 0
-            for (let i = 0; i < Math.min(rows.length, 15); i++) {
-                const normalized = (rows[i] || []).map(h => normalizeHeader(h))
-                if (normalized.some(h => headerKeywords.some(k => h === k || h.includes(k)))) {
-                    headerIdx = i
-                    break
+                try {
+                    return XLSX.read(bytes, { type: 'array', cellDates: false, raw: false })
+                } catch {
+                    return XLSX.read(new TextDecoder('utf-8').decode(bytes), { type: 'string', raw: false })
                 }
             }
 
-            const headers = (rows[headerIdx] || []).map(h => normalizeHeader(h))
-            const dataRows = rows.slice(headerIdx + 1).filter(rowHasValue)
+            const workbook = await readWorkbook()
+            const sheets = (workbook.SheetNames || []).map((sheetName, index) => {
+                const worksheet = workbook.Sheets[sheetName]
+                // Preserve blank separators and expand merged metadata headers.
+                const rows = expandAttendanceMergedCells(
+                    XLSX.utils.sheet_to_json(worksheet, { header: 1, range: 0, defval: '', blankrows: true, raw: false }),
+                    worksheet['!merges'] || []
+                )
+                return prepareEmployeeImportSheet({
+                    sheetName, rows, hidden: workbook.Workbook?.Sheets?.[index]?.Hidden
+                })
+            }).filter(sheet => sheet && (sheet.employeeCount > 0 || sheet.errors.length > 0))
+            if (!sheets.length) throw new Error('Không tìm thấy sheet có cột Họ tên và danh sách nhân viên.')
+            setEmployeeImportPreview({
+                fileName: file.name, sheets,
+                selectedSheetName: sheets.length === 1 && !sheets[0].hidden ? sheets[0].sheetName : ''
+            })
+        } catch (error) {
+            alert('Không đọc được file nhân sự: ' + error.message)
+        } finally {
+            setLoading(false)
+        }
+    }
 
-            if (!dataRows.length) {
-                alert('File chỉ có tiêu đề, chưa có dòng nhân viên.')
-                setLoading(false)
+    const confirmEmployeeImport = async () => {
+        if (employeeImportInProgress.current) return
+        const selectedSheet = employeeImportPreview?.sheets.find(
+            sheet => sheet.sheetName === employeeImportPreview.selectedSheetName
+        )
+        if (!selectedSheet || !selectedSheet.employeeCount || selectedSheet.errors.length) return
+        employeeImportInProgress.current = true
+        setLoading(true)
+        try {
+            const XLSX = await loadXlsx()
+            // Re-check the authoritative directory at confirmation, not only the old page state.
+            const currentEmployees = (await fetchUsersDirectory(companyId)).map(mapUserToApp)
+            const plan = planEmployeeSheetImport(selectedSheet, currentEmployees, companyId)
+            if (plan.errors.length) {
+                alert(plan.errors.join('\n'))
                 return
             }
-
-            console.log('📋 Headers detected:', headers)
-            console.log('📊 Total data rows:', dataRows.length)
+            const headers = selectedSheet.headers
+            const dataRows = plan.records.map(record => record.row)
 
             const isValidDate = (dateStr) => !dateStr || Boolean(parseFlexibleDate(dateStr))
 
@@ -479,7 +475,7 @@ function Employees() {
             }
 
             const existingByCode = new Map()
-            employees.forEach((emp) => {
+            currentEmployees.forEach((emp) => {
                 const code = normalizeCode(emp.employeeId)
                 if (code && emp.id) existingByCode.set(code, emp)
             })
@@ -487,12 +483,17 @@ function Employees() {
             let imported = 0
             let updated = 0
             let skipped = 0
+            let keptExisting = 0
             const errors = []
             const seenImportKeys = new Map()
 
             for (let i = 0; i < dataRows.length; i++) {
                 const row = dataRows[i]
-                const rowIndex = headerIdx + i + 2
+                const rowIndex = plan.records[i].rowIndex + 1
+                if (plan.records[i].action === 'existing') {
+                    keptExisting++
+                    continue
+                }
 
                 const rowObj = {}
                 headers.forEach((h, idx) => {
@@ -515,7 +516,7 @@ function Employees() {
                     tinh_trang: pick(rowObj, 'tinh_trang'),
                     tinh_trang_hon_nhan: pick(rowObj, 'tinh_trang_hon_nhan', 'hon_nhan'),
                     ngay_sinh: pick(rowObj, 'ngay_thang_nam_sinh', 'ngay_sinh', 'dob', 'birth_date'),
-                    ngay_vao_lam: pick(rowObj, 'ngay_vao_lam', 'ngay_bat_dau'),
+                    ngay_vao_lam: pick(rowObj, 'ngay_vao_lam', 'ngay_bat_dau', 'ngay_nhan_viec'),
                     ngay_lam_chinh_thuc: pick(rowObj, 'ngay_len_chinh_thuc', 'ngay_chinh_thuc', 'ngay_lam_chinh_thuc'),
                     ca_lam_viec: pick(rowObj, 'ca_lam', 'ca_lam_viec', 'ca', 'shift'),
                     cccd: pick(rowObj, 'so_cccd', 'cccd', 'cmnd'),
@@ -537,7 +538,9 @@ function Employees() {
                 // Bảng chấm công thường lặp lại một nhân viên theo từng ngày.
                 // Chỉ tạo hồ sơ một lần, đồng thời báo rõ mã có nhiều tên khác nhau.
                 const codeKey = normalizeCode(payload.employeeId)
-                const importKey = codeKey || normalizeCode(payload.ho_va_ten)
+                const importKey = selectedSheet.isMonthlyMatrix
+                    ? `${normalizeCode(payload.ho_va_ten)}::${normalizeCode(payload.bo_phan)}`
+                    : codeKey || normalizeCode(payload.ho_va_ten)
                 const previousName = seenImportKeys.get(importKey)
                 if (previousName) {
                     if (normalizeCode(previousName) !== normalizeCode(payload.ho_va_ten)) {
@@ -582,7 +585,9 @@ function Employees() {
                     dbPayload.id = crypto.randomUUID()
                     dbPayload.password = payload.password || '123456'
                     if (!dbPayload.username) {
-                        dbPayload.username = payload.employeeId || `nv${String(rowIndex).padStart(4, '0')}`
+                        dbPayload.username = payload.employeeId || (selectedSheet.isMonthlyMatrix
+                            ? `nv_${dbPayload.id.replace(/-/g, '')}`
+                            : `nv${String(rowIndex).padStart(4, '0')}`)
                     }
                     mutationResult = await runUsersMutationWithSchemaFallback(
                         (payloadToInsert) => supabase.from('users').insert([payloadToInsert]),
@@ -612,9 +617,11 @@ function Employees() {
             }
 
             await loadEmployees()
+            setEmployeeImportPreview(null)
 
-            let message = `Đã thêm mới ${imported} nhân viên`
+            let message = `Sheet ${selectedSheet.sheetName}: đã thêm mới ${imported} nhân viên`
             if (updated) message += `, cập nhật ${updated} nhân viên đã có mã NV`
+            if (keptExisting) message += `, giữ nguyên ${keptExisting} hồ sơ đã có`
             message += '.'
             if (skipped > 0) {
                 message += `\nCó ${skipped} dòng bị lỗi/bỏ qua:\n\n`
@@ -632,6 +639,7 @@ function Employees() {
             console.error('❌ Import error:', error)
             alert('Lỗi import: ' + error.message)
         } finally {
+            employeeImportInProgress.current = false
             setLoading(false)
             if (fileInputRef.current) fileInputRef.current.value = ''
         }
@@ -825,7 +833,7 @@ function Employees() {
         return <div className="loadingState">Đang tải dữ liệu...</div>
     }
 
-    return <EmployeeDirectory
+    return <><EmployeeDirectory
         companyId={companyId}
         employees={employees}
         filteredEmployees={filteredEmployees}
@@ -859,6 +867,16 @@ function Employees() {
         onResetFilters={handleResetFilters}
         adminEmail={user?.email || 'admin@company.local'}
     />
+        <EmployeeImportPreview
+            preview={employeeImportPreview}
+            employees={employees}
+            companyId={companyId}
+            busy={loading}
+            onSelectSheet={selectedSheetName => setEmployeeImportPreview(previous => ({ ...previous, selectedSheetName }))}
+            onClose={() => { if (!employeeImportInProgress.current) setEmployeeImportPreview(null) }}
+            onConfirm={confirmEmployeeImport}
+        />
+    </>
 
     /*
     return (
