@@ -1,4 +1,5 @@
 import { normalizeString } from './helpers.js'
+import { LEGACY_COMPANY_ID } from './companyContext.js'
 
 const COMMON_MIDDLE_NAMES = new Set(['thi', 'van'])
 const MIN_NAME_SCORE_FOR_EXACT_CODE_MATCH = 0.9
@@ -54,6 +55,12 @@ const similarity = (left, right) => {
 const employeeName = (employee) =>
   employee?.ho_va_ten || employee?.name || employee?.fullName || ''
 
+const employeeDepartment = employee =>
+  employee?.bo_phan || employee?.department || employee?.phong_ban || employee?.team || ''
+
+const employeeCompanyId = employee =>
+  employee?.companyId || employee?.company_id || employee?.tenantId || employee?.tenant_id || ''
+
 const givenName = (value) => {
   const tokens = normalizeEmployeeIdentity(value).split(' ').filter(Boolean)
   return tokens[tokens.length - 1] || ''
@@ -80,6 +87,29 @@ export const buildSourceEmployeeKey = (code, name) => {
   const normalizedName = compactEmployeeIdentity(name)
   const normalizedCode = compactEmployeeIdentity(code)
   return `${normalizedCode || 'no-code'}::${normalizedName || 'no-name'}`
+}
+
+export const buildMonthlyAttendanceSourceKey = (name, department = '', sourceRow = '') =>
+  [
+    'monthly-matrix',
+    compactEmployeeIdentity(name) || 'no-name',
+    compactEmployeeIdentity(department) || 'no-department',
+    compactEmployeeIdentity(String(sourceRow ?? '')) || 'no-row'
+  ].join('::')
+
+/**
+ * The employee list supplied by legacy SpeeGo is already company-scoped. When
+ * company metadata is present, explicitly exclude records from other tenants.
+ */
+export const scopeAttendanceEmployeesByCompany = (employees = [], companyId = '') => {
+  const normalizedCompanyId = String(companyId || '').trim()
+  if (!normalizedCompanyId) return []
+  return employees.filter(employee => {
+    const candidateCompanyId = String(employeeCompanyId(employee) || '').trim()
+    return candidateCompanyId
+      ? candidateCompanyId === normalizedCompanyId
+      : normalizedCompanyId === LEGACY_COMPANY_ID
+  })
 }
 
 export const buildAttendanceMappingKey = (code, name, namespace = 'excel') => {
@@ -229,6 +259,108 @@ export const matchAttendanceEmployee = (
     status: autoMatched ? 'matched' : confidence >= 0.6 ? 'review' : 'unmatched',
     candidates: ranked.slice(0, 5)
   }
+}
+
+/**
+ * Deterministic matcher for the supported monthly matrix, which has no
+ * employee code. Exact name wins only when unique; department resolves exact
+ * duplicate names. Never suggest a different person's similar name.
+ */
+export const matchMonthlyAttendanceEmployee = (
+  sourceName,
+  sourceDepartment,
+  employees,
+  companyId,
+  branch = ''
+) => {
+  const scopedEmployees = scopeAttendanceEmployeesByCompany(employees, companyId)
+  const normalizedName = normalizeEmployeeIdentity(sourceName)
+  const normalizedDepartment = normalizeEmployeeIdentity(sourceDepartment)
+  const exactNameCandidates = scopedEmployees.filter(employee =>
+    normalizedName && normalizeEmployeeIdentity(employeeName(employee)) === normalizedName
+  )
+
+  if (exactNameCandidates.length === 1) {
+    const employee = exactNameCandidates[0]
+    return {
+      employee,
+      suggestedEmployee: employee,
+      confidence: 1,
+      gap: 1,
+      method: 'Tên nhân viên duy nhất trong công ty',
+      status: 'matched',
+      candidates: [{ employee, score: 1 }]
+    }
+  }
+
+  if (exactNameCandidates.length > 1 && normalizedDepartment) {
+    const exactDepartmentCandidates = exactNameCandidates.filter(employee =>
+      normalizeEmployeeIdentity(employeeDepartment(employee)) === normalizedDepartment
+    )
+    if (exactDepartmentCandidates.length === 1) {
+      const employee = exactDepartmentCandidates[0]
+      return {
+        employee,
+        suggestedEmployee: employee,
+        confidence: 1,
+        gap: 1,
+        method: 'Tên và bộ phận trùng hồ sơ',
+        status: 'matched',
+        candidates: exactNameCandidates.map(candidate => ({
+          employee: candidate,
+          score: candidate === employee ? 1 : 0.9
+        }))
+      }
+    }
+  }
+
+  if (exactNameCandidates.length > 1) {
+    return {
+      employee: null,
+      suggestedEmployee: null,
+      confidence: 1,
+      gap: 0,
+      method: 'Trùng tên, chưa phân biệt được bằng bộ phận — cần admin chọn',
+      status: 'review',
+      candidates: exactNameCandidates.map(employee => ({ employee, score: 1 }))
+    }
+  }
+
+  return {
+    employee: null,
+    suggestedEmployee: null,
+    confidence: 0,
+    gap: 0,
+    method: 'Chưa có hồ sơ trùng họ tên trong công ty',
+    status: 'unmatched',
+    candidates: []
+  }
+}
+
+/** Guard the monthly preview again before any writes, including manual choices. */
+export const validateMonthlyAttendanceSelection = (preview, employees, companyId) => {
+  if (!preview?.isMonthlyMatrix) return []
+  const issues = []
+  const groups = new Map((preview.matchGroups || []).map(group => [group.key, group]))
+  const seen = new Set()
+  for (const group of groups.values()) {
+    if (group.status === 'skipped' || group.status === 'create') continue
+    const match = matchMonthlyAttendanceEmployee(group.sourceName, group.sourceDepartment, employees, companyId)
+    if (!group.selectedEmployeeId || !match.candidates.some(candidate =>
+      String(candidate.employee.id) === String(group.selectedEmployeeId)
+    )) issues.push(`${group.sourceName}: chưa chọn được hồ sơ trùng họ tên trong công ty.`)
+  }
+  for (const log of preview.logs || []) {
+    const group = groups.get(log._sourceEmployeeKey)
+    if (!group?.selectedEmployeeId || ['skipped', 'create'].includes(group.status)) continue
+    const key = buildAttendanceRecordKey(log)
+    if (seen.has(key)) {
+      issues.push(`${group.sourceName}: nhiều dòng cùng nhân viên, ngày ${log.date}, ca ${log.shiftName || '-'}. Hãy kiểm tra dòng trùng trong file.`)
+      break
+    }
+    seen.add(key)
+  }
+  return issues
 }
 
 export const applyEmployeeToAttendanceLog = (log, employee) => {

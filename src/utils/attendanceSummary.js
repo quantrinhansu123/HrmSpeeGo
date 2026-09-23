@@ -111,6 +111,11 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
       !hasCheckOut &&
       numberValue(log.congPlus) > 0 &&
       String(log.kyHieuPlus || status).trim().toUpperCase() === 'V'
+    const isMatrixPaidLeave =
+      !hasCheckIn &&
+      !hasCheckOut &&
+      ['P1', 'P'].includes(status) &&
+      numberValue(log.cong) > 0
     const workMode = String(
       log.workMode || log.workLocation || log.hinhThucLamViec || ''
     ).toLowerCase()
@@ -126,6 +131,8 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
       ['NP', 'VẮNG', 'VANG', 'NGHỈ KHÔNG PHÉP'].includes(status)
     if (isSourcePaidLeave) {
       paidLeaveWorkdays += numberValue(log.congPlus)
+    } else if (isMatrixPaidLeave) {
+      paidLeaveWorkdays += numberValue(log.cong)
     }
 
     if (workMode.includes('online') || workMode.includes('remote')) {

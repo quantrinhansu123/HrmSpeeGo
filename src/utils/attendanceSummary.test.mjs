@@ -148,6 +148,26 @@ test('tách công thực tế, phép hưởng lương và tổng công tính lư
   assert.equal(rows[0].workdays, 1.88)
 })
 
+test('nhận P1 từ matrix import là phép hưởng lương nhưng vẫn giữ tổng công', () => {
+  const day = summarizeAttendanceDay(
+    [{
+      employeeId: 'employee-paid-leave',
+      date: '2026-08-03',
+      cong: 1,
+      hours: 8,
+      kyHieu: 'P1',
+      calculationMode: 'matrix-value',
+      syntheticPunch: true
+    }],
+    { id: 'employee-paid-leave', name: 'Nhân viên phép' },
+    {},
+    '2026-08-03'
+  )
+
+  assert.equal(day.workdays, 1)
+  assert.equal(day.paidLeaveWorkdays, 1)
+})
+
 test('tự dùng hai buổi khi có hai cặp chấm và giữ full ngày khi chỉ có một cặp', () => {
   const attendanceSettings = {
     shifts: {

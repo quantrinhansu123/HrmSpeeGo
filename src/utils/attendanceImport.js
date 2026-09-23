@@ -380,14 +380,17 @@ export const classifyMatrixAttendanceCell = (value, options = {}) => {
   const standardMinutes = Number(options.standardMinutes) || 480
   const mode = options.mode === 'hours' ? 'hours' : 'workdays'
   const raw = String(value).trim()
+  const isMonthlyMatrix = options.sourceFormat === 'monthly-attendance'
   const explicitClockValues = raw.match(/\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AP]\.?M\.?)?/gi) || []
   const times = explicitClockValues
     .map(parseAttendanceTime)
     .filter(Boolean)
     .map(item => item.str)
 
-  if (times.length > 0) return { kind: 'punch', times, raw }
-  if (typeof value === 'number' && value >= 0 && value < 1 && hasExcelTimeNumberFormat(options.numberFormat)) {
+  if (times.length > 0) return isMonthlyMatrix
+    ? { kind: 'unknown', raw, symbol: raw }
+    : { kind: 'punch', times, raw }
+  if (!isMonthlyMatrix && typeof value === 'number' && value >= 0 && value < 1 && hasExcelTimeNumberFormat(options.numberFormat)) {
     const parsed = parseAttendanceTime(value)
     return parsed ? { kind: 'punch', times: [parsed.str], raw } : null
   }
@@ -395,6 +398,7 @@ export const classifyMatrixAttendanceCell = (value, options = {}) => {
   const upper = normalizeAttendanceHeader(raw).toUpperCase()
   const numeric = parseAttendanceDecimal(value)
   if (numeric !== null) {
+    if (isMonthlyMatrix && numeric < 0) return { kind: 'unknown', raw, symbol: raw }
     if (mode === 'hours') {
       const hours = Math.max(0, numeric)
       return {
@@ -415,6 +419,30 @@ export const classifyMatrixAttendanceCell = (value, options = {}) => {
     }
   }
 
+  // The supported monthly attendance template includes its own legend:
+  // X = scheduled day off, X1 = paid holiday, X2/X3 = holiday work paid at
+  // the indicated multiplier, P1 = paid annual leave. Keep this profile
+  // explicit so generic matrix imports retain their existing X semantics.
+  if (options.sourceFormat === 'monthly-attendance') {
+    const monthlySymbols = {
+      X: { workdays: 0, status: 'Nghỉ theo lịch' },
+      X1: { workdays: 1, status: 'Nghỉ lễ/tết có lương' },
+      X2: { workdays: 2, status: 'Làm lễ/tết X2 lương' },
+      X3: { workdays: 3, status: 'Làm lễ/tết X3 lương' },
+      P1: { workdays: 1, status: 'Phép năm' }
+    }
+    const monthlySymbol = monthlySymbols[upper]
+    if (monthlySymbol) {
+      return {
+        kind: 'value',
+        workdays: monthlySymbol.workdays,
+        hours: monthlySymbol.workdays * standardMinutes / 60,
+        symbol: raw,
+        status: monthlySymbol.status
+      }
+    }
+  }
+
   const fullDaySymbols = new Set(['X', 'D', 'DU', 'CO MAT', 'PRESENT'])
   const absentSymbols = new Set(['KP', 'OFF', 'V', 'NGHI', 'ABSENT'])
   if (fullDaySymbols.has(upper)) {
@@ -426,7 +454,7 @@ export const classifyMatrixAttendanceCell = (value, options = {}) => {
   if (absentSymbols.has(upper)) {
     return { kind: 'value', workdays: 0, hours: 0, symbol: raw, status: 'Nghỉ' }
   }
-  if (upper.startsWith('P')) {
+  if (isMonthlyMatrix ? /^P(?:\d+(?:[.,]\d+)?)?$/.test(upper) : upper.startsWith('P')) {
     const leaveValue = parseAttendanceDecimal(raw.slice(1)) ?? 1
     return {
       kind: 'value', workdays: leaveValue, hours: leaveValue * standardMinutes / 60,

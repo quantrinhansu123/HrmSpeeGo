@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import XLSX from 'xlsx-js-style'
 import { fbGet, fbSet, fbUpdate } from '../services/firebase'
 import { useAuth } from '../contexts/AuthContext'
 import {
   applyEmployeeToAttendanceLog,
   buildAttendanceMappingKey,
+  buildMonthlyAttendanceSourceKey,
   buildSourceEmployeeKey,
   getCanonicalEmployeeCode,
   matchAttendanceEmployee,
-  normalizeEmployeeIdentity
+  matchMonthlyAttendanceEmployee,
+  normalizeEmployeeIdentity,
+  scopeAttendanceEmployeesByCompany,
+  validateMonthlyAttendanceSelection
 } from '../utils/attendanceMatching'
 import { createEmployeeDirectoryProfile } from '../services/employeeDirectory'
 import {
@@ -30,6 +34,11 @@ import {
   parseAttendanceTime,
   resolveAttendanceTemplateBindings
 } from '../utils/attendanceImport'
+import {
+  analyzeMonthlyAttendanceSheets,
+  extractMonthlyAttendanceMatrix,
+  SUPPORTED_ATTENDANCE_IMPORT_MODE
+} from '../utils/monthlyAttendanceMatrix'
 import {
   applyCalculatedAttendanceTiming,
   calculateAttendanceTiming,
@@ -100,6 +109,7 @@ function AttendanceImportModal({
   const [aiAvailable, setAiAvailable] = useState(null)
   const [previewData, setPreviewData] = useState(null)
   const [manualMapping, setManualMapping] = useState(null)
+  const [monthlySheetSelection, setMonthlySheetSelection] = useState(null)
   const [importMonth, setImportMonth] = useState(new Date().toISOString().slice(0, 7)) // YYYY-MM
   const [calculationPreference, setCalculationPreference] = useState('source')
   const [matrixValuePreference, setMatrixValuePreference] = useState('auto')
@@ -117,8 +127,16 @@ function AttendanceImportModal({
   )
 
   const employeesById = useMemo(
-    () => new Map(employees.map(employee => [String(employee.id), employee])),
-    [employees]
+    () => new Map(
+      scopeAttendanceEmployeesByCompany(employees, activeCompanyId)
+        .map(employee => [String(employee.id), employee])
+    ),
+    [employees, activeCompanyId]
+  )
+
+  const companyScopedEmployees = useMemo(
+    () => scopeAttendanceEmployeesByCompany(employees, activeCompanyId),
+    [employees, activeCompanyId]
   )
 
   const employeesForMatching = useMemo(() => {
@@ -128,7 +146,7 @@ function AttendanceImportModal({
       normalizeEmployeeIdentity(employee.chi_nhanh || employee.branch || '') ===
         normalizedBranch
 
-    return employees
+    return companyScopedEmployees
       .slice()
       .sort((left, right) => {
         const branchOrder = Number(isInPreferredBranch(right)) -
@@ -139,30 +157,13 @@ function AttendanceImportModal({
           'vi'
         )
       })
-  }, [employees, matchBranch])
-
-  useEffect(() => {
-    if (!isOpen) return
-    let cancelled = false
-
-    fetch('/api/attendance-match')
-      .then(response => response.json())
-      .then(payload => {
-        if (!cancelled) setAiAvailable(Boolean(payload.available))
-      })
-      .catch(() => {
-        if (!cancelled) setAiAvailable(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [isOpen])
+  }, [companyScopedEmployees, matchBranch])
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0])
     setPreviewData(null)
     setManualMapping(null)
+    setMonthlySheetSelection(null)
   }
 
   const parseTime = parseAttendanceTime
@@ -237,19 +238,20 @@ function AttendanceImportModal({
   }
 
   const findEmployee = (code, name) => {
-    return matchAttendanceEmployee(code, name, employees, matchBranch).employee
+    return matchAttendanceEmployee(code, name, companyScopedEmployees, matchBranch).employee
   }
 
-  const buildFallbackEmployee = (code, name, rowIndex = 0) => {
+  const buildFallbackEmployee = (code, name, rowIndex = 0, options = {}) => {
     const codeStr = String(code || '').trim()
     const nameStr = String(name || '').trim()
     const fallbackCode = codeStr || `ROW${rowIndex + 1}`
     const fallbackName = nameStr || `NV ${fallbackCode}`
     const sourceKey = buildSourceEmployeeKey(fallbackCode, fallbackName)
+    const profileCode = options.allowGeneratedCode === false ? codeStr : fallbackCode
     return {
       id: `external:${sourceKey}`,
-      employeeId: fallbackCode,
-      username: fallbackCode,
+      employeeId: profileCode,
+      username: profileCode,
       ho_va_ten: fallbackName,
       name: fallbackName,
       bo_phan: '',
@@ -362,6 +364,10 @@ function AttendanceImportModal({
         '',
       department: extra.department || sysEmp.bo_phan || '',
       position: extra.position || sysEmp.vi_tri || '',
+      employmentType: extra.employmentType || '',
+      employeeStatus: extra.employeeStatus || '',
+      sourceTotalWork: extra.sourceTotalWork ?? null,
+      rawAttendanceValue: extra.rawAttendanceValue ?? extra.sourceSymbol ?? '',
       date: dateStr,
       dayOfWeek: extra.dayOfWeek || dayNames[baseDate.getDay()] || '',
       timestamp: baseDate.getTime(),
@@ -648,9 +654,14 @@ function AttendanceImportModal({
     let posColIdx = -1
     let deptColIdx = -1
     let shiftColIdx = -1
+    let employmentTypeColIdx = -1
+    let employeeStatusColIdx = -1
+    let totalWorkColIdx = -1
     let dataStartRow = 0
+    let employeeRowIndexes = null
     let worksheet = null
     let matrixValueMode = 'workdays'
+    let isMonthlyMatrix = false
     let year = yearArg
     let month = monthArg
 
@@ -661,9 +672,16 @@ function AttendanceImportModal({
       posColIdx = optionsOrHeaders.posColIdx ?? -1
       deptColIdx = optionsOrHeaders.deptColIdx ?? -1
       shiftColIdx = optionsOrHeaders.shiftColIdx ?? -1
+      employmentTypeColIdx = optionsOrHeaders.employmentTypeColIdx ?? -1
+      employeeStatusColIdx = optionsOrHeaders.employeeStatusColIdx ?? -1
+      totalWorkColIdx = optionsOrHeaders.totalWorkColIdx ?? -1
       dataStartRow = optionsOrHeaders.dataStartRow ?? (headerRowIdx + 1)
+      employeeRowIndexes = Array.isArray(optionsOrHeaders.employeeRowIndexes)
+        ? optionsOrHeaders.employeeRowIndexes
+        : null
       worksheet = optionsOrHeaders.worksheet || null
       matrixValueMode = optionsOrHeaders.matrixValueMode === 'hours' ? 'hours' : 'workdays'
+      isMonthlyMatrix = Boolean(optionsOrHeaders.isMonthlyMatrix)
       year = optionsOrHeaders.year ?? yearArg
       month = optionsOrHeaders.month ?? monthArg
     } else {
@@ -699,8 +717,13 @@ function AttendanceImportModal({
 
     const mergedData = {}
     const skipped = []
+    const warnings = []
+    const rowTotals = new Map()
+    let expectedAttendanceCount = 0
+    const rowsToProcess = employeeRowIndexes ||
+      Array.from({ length: Math.max(0, jsonData.length - dataStartRow) }, (_, index) => dataStartRow + index)
 
-    for (let r = dataStartRow; r < jsonData.length; r++) {
+    for (const r of rowsToProcess) {
       const row = jsonData[r]
       if (!row || row.length === 0) continue
 
@@ -709,41 +732,81 @@ function AttendanceImportModal({
       const empPos = posColIdx >= 0 ? String(row[posColIdx] ?? '').trim() : ''
       const empDept = deptColIdx >= 0 ? String(row[deptColIdx] ?? '').trim() : ''
       const empShift = shiftColIdx >= 0 ? String(row[shiftColIdx] ?? '').trim() : ''
+      const employmentType = employmentTypeColIdx >= 0
+        ? String(row[employmentTypeColIdx] ?? '').trim()
+        : ''
+      const employeeStatus = employeeStatusColIdx >= 0
+        ? String(row[employeeStatusColIdx] ?? '').trim()
+        : ''
+      const sourceTotalWork = totalWorkColIdx >= 0 ? row[totalWorkColIdx] : ''
 
       if (!empName && !empCode) continue
 
       const lowerName = empName.toLowerCase()
-      if (lowerName.startsWith('tổng') || lowerName.startsWith('cộng') || lowerName.startsWith('bình quân')) continue
+      if (!isMonthlyMatrix && (lowerName.startsWith('tổng') || lowerName.startsWith('cộng') || lowerName.startsWith('bình quân'))) continue
 
+      if (isMonthlyMatrix && !empDept) warnings.push(`Dòng ${r + 1}: thiếu Bộ phận.`)
+      if (isMonthlyMatrix && !empShift) warnings.push(`Dòng ${r + 1}: thiếu Ca làm.`)
+
+      // Keep source rows distinct until the preview performs identity matching.
+      const matchedEmployee = isMonthlyMatrix
+        ? null
+        : findEmployee(empCode, empName)
       const currentSysEmp = attachSourceIdentity(
-        findEmployee(empCode, empName) || buildFallbackEmployee(empCode, empName, r),
+        matchedEmployee || buildFallbackEmployee(
+          empCode,
+          empName,
+          r,
+          { allowGeneratedCode: !isMonthlyMatrix }
+        ),
         empCode,
         empName
       )
 
+      rowTotals.set(r, {
+        employeeName: empName,
+        sourceTotal: parseAttendanceDecimal(sourceTotalWork),
+        computedTotal: 0,
+        comparable: true
+      })
+
       dateCols.forEach(({ day, idx, month: columnMonth, year: columnYear }) => {
         const cellContent = row[idx]
         if (cellContent === undefined || cellContent === null || String(cellContent).trim() === '') return
+        expectedAttendanceCount += 1
 
         const cellStr = String(cellContent).trim()
         const address = utils.encode_cell({ r, c: idx })
         const parsedCell = classifyMatrixAttendanceCell(cellContent, {
           mode: isHourMode ? 'hours' : 'workdays',
+          sourceFormat: isMonthlyMatrix ? 'monthly-attendance' : '',
           numberFormat: worksheet?.[address]?.z || '',
           standardMinutes: Number(attendanceSettings.standardWorkMinutes) || STANDARD_WORK_MINUTES
         })
         if (!parsedCell || parsedCell.kind === 'unknown') {
           skipped.push(`${address}: không hiểu giá trị “${cellStr}”`)
+          rowTotals.get(r).comparable = false
           return
+        }
+
+        if (parsedCell.kind === 'value') {
+          rowTotals.get(r).computedTotal += Number(parsedCell.workdays) || 0
+        } else {
+          rowTotals.get(r).comparable = false
         }
 
         const resolvedYear = columnYear || year
         const resolvedMonth = columnMonth || month
-        const key = `${currentSysEmp.id}_${resolvedYear}_${resolvedMonth}_${day}`
+        const key = `${isMonthlyMatrix ? `row-${r}` : currentSysEmp.id}_${resolvedYear}_${resolvedMonth}_${day}`
 
         if (parsedCell.kind === 'punch') {
           if (!mergedData[key]) {
-            mergedData[key] = { emp: currentSysEmp, day, year: resolvedYear, month: resolvedMonth, times: [], rawVal: cellStr, sourceCell: address, pos: empPos, dept: empDept, shift: empShift }
+            mergedData[key] = {
+              emp: currentSysEmp, day, year: resolvedYear, month: resolvedMonth,
+              times: [], rawVal: cellStr, rawValue: cellContent, sourceCell: address,
+              sourceRow: r + 1, pos: empPos, dept: empDept, shift: empShift,
+              employmentType, employeeStatus, sourceTotalWork
+            }
           }
           mergedData[key].times.push(...parsedCell.times)
         } else {
@@ -761,14 +824,31 @@ function AttendanceImportModal({
               directStatus: parsedCell.status,
               directSymbol: parsedCell.symbol,
               isCodeOnly: true,
+              rawValue: cellContent,
+              sourceRow: r + 1,
               pos: empPos,
               dept: empDept,
-              shift: empShift
+              shift: empShift,
+              employmentType,
+              employeeStatus,
+              sourceTotalWork
             }
           }
         }
       })
     }
+
+    rowTotals.forEach(item => {
+      if (
+        item.comparable &&
+        item.sourceTotal !== null &&
+        Math.abs(item.sourceTotal - item.computedTotal) > 0.01
+      ) {
+        warnings.push(
+          `${item.employeeName}: Tổng công trong file (${item.sourceTotal}) lệch tổng dữ liệu ngày (${Math.round(item.computedTotal * 100) / 100}).`
+        )
+      }
+    })
 
     const logs = []
     Object.values(mergedData).forEach(item => {
@@ -800,6 +880,10 @@ function AttendanceImportModal({
           position: item.pos,
           department: item.dept,
           shiftName: item.shift,
+          employmentType: item.employmentType,
+          employeeStatus: item.employeeStatus,
+          sourceTotalWork: item.sourceTotalWork,
+          rawAttendanceValue: item.rawValue,
           kyHieu: item.directSymbol || item.rawVal,
           sourceWorkdays: isHourMode ? null : item.directCong,
           sourceHours: isHourMode ? item.directHours : null,
@@ -811,7 +895,7 @@ function AttendanceImportModal({
             hours: isHourMode ? item.rawVal : null,
             symbol: item.directSymbol || item.rawVal
           },
-          provenance: { valueCell: item.sourceCell || '' },
+          provenance: { valueCell: item.sourceCell || '', row: item.sourceRow },
           sourceEmployeeCode: emp._sourceEmployeeCode || emp.employeeCode,
           sourceEmployeeName: emp._sourceEmployeeName || emp.employeeName,
           syntheticPunch: true
@@ -827,12 +911,22 @@ function AttendanceImportModal({
         position: item.pos,
         department: item.dept,
         shiftName: item.shift,
+        employmentType: item.employmentType,
+        employeeStatus: item.employeeStatus,
+        sourceTotalWork: item.sourceTotalWork,
+        rawAttendanceValue: item.rawValue,
         sourceEmployeeCode: emp._sourceEmployeeCode || emp.employeeCode,
         sourceEmployeeName: emp._sourceEmployeeName || emp.employeeName
       }))
     })
 
-    return { logs, skipped }
+    return {
+      logs,
+      skipped,
+      warnings,
+      expectedAttendanceCount,
+      employeeCount: employeeRowIndexes?.length || rowTotals.size
+    }
   }
 
   const processListFormat = (jsonData, headers, headerRowIdx, parserOptions = {}) => {
@@ -923,15 +1017,27 @@ function AttendanceImportModal({
         log.machineName ||
         log.tenTheoMayChamCong ||
         ''
-      const sourceKey = buildSourceEmployeeKey(sourceCode, sourceName)
-      const mappingKey = buildAttendanceMappingKey(sourceCode, sourceName)
+      const sourceDepartment = String(log.department || log.phongBan || '').trim()
+      const sourceRow = log.provenance?.row || ''
+      const sourceKey = metadata.isMonthlyMatrix
+        ? buildMonthlyAttendanceSourceKey(sourceName, sourceDepartment, sourceRow)
+        : buildSourceEmployeeKey(sourceCode, sourceName)
+      const mappingKey = metadata.isMonthlyMatrix
+        ? buildAttendanceMappingKey(
+            '',
+            `${sourceName}::${sourceDepartment}::row-${sourceRow}`,
+            `monthly-matrix:${activeCompanyId}`
+          )
+        : buildAttendanceMappingKey(sourceCode, sourceName)
 
       if (!groups.has(sourceKey)) {
-        const storedMapping = employeeMappings?.[mappingKey]
+        // Old manual mappings can link a ROW placeholder to a different person.
+        // This format always re-matches against the current employee directory.
+        const storedMapping = metadata.isMonthlyMatrix ? null : employeeMappings?.[mappingKey]
         const mappedEmployee = storedMapping?.employeeId
           ? employeesById.get(String(storedMapping.employeeId))
           : null
-        const currentEmployee = preserveExistingMatches
+        const currentEmployee = !metadata.isMonthlyMatrix && preserveExistingMatches
           ? employeesById.get(String(log.employeeId))
           : (mappedEmployee || null)
         const smartMatch = currentEmployee
@@ -946,12 +1052,20 @@ function AttendanceImportModal({
               status: 'matched',
               candidates: [{ employee: currentEmployee, score: 1 }]
             }
-          : matchAttendanceEmployee(
-              sourceCode,
-              sourceName,
-              employees,
-              matchBranch
-            )
+          : metadata.isMonthlyMatrix
+            ? matchMonthlyAttendanceEmployee(
+                sourceName,
+                sourceDepartment,
+                companyScopedEmployees,
+                activeCompanyId,
+                matchBranch
+              )
+            : matchAttendanceEmployee(
+                sourceCode,
+                sourceName,
+                companyScopedEmployees,
+                matchBranch
+              )
         groups.set(sourceKey, {
           key: sourceKey,
           mappingKey,
@@ -966,7 +1080,8 @@ function AttendanceImportModal({
           status: smartMatch.status,
           matchMethod: smartMatch.method,
           matchStatus: smartMatch.status,
-          sourceDepartment: String(log.department || log.phongBan || '').trim(),
+          sourceDepartment,
+          sourceTotalWork: log.sourceTotalWork,
           sourcePosition: String(log.position || log.chucVu || '').trim(),
           sourceShift: String(log.shiftName || log.tenCa || '').trim(),
           candidates: smartMatch.candidates
@@ -986,7 +1101,11 @@ function AttendanceImportModal({
         log.machineName ||
         log.tenTheoMayChamCong ||
         ''
-      const sourceKey = buildSourceEmployeeKey(sourceCode, sourceName)
+      const sourceDepartment = String(log.department || log.phongBan || '').trim()
+      const sourceRow = log.provenance?.row || ''
+      const sourceKey = metadata.isMonthlyMatrix
+        ? buildMonthlyAttendanceSourceKey(sourceName, sourceDepartment, sourceRow)
+        : buildSourceEmployeeKey(sourceCode, sourceName)
       const group = groupByKey.get(sourceKey)
       const selectedEmployee = employeesById.get(String(group?.selectedEmployeeId))
       const preparedLog = {
@@ -1020,6 +1139,14 @@ function AttendanceImportModal({
       const isSkipped = employeeId === '__skip__'
       const isCreate = employeeId === '__create__'
       const selectedEmployee = employeesById.get(String(employeeId))
+      const sourceGroup = previous.matchGroups.find(group => group.key === sourceKey)
+      if (previous.isMonthlyMatrix) {
+        if (isCreate && !canCreateEmployees) return previous
+        if (selectedEmployee && !sourceGroup?.candidates.some(candidate =>
+          String(candidate.employee.id) === String(selectedEmployee.id)
+        )) return previous
+        if (selectedEmployee && sourceGroup?.matchStatus === 'review' && !canCreateEmployees) return previous
+      }
       const matchGroups = previous.matchGroups.map(group =>
         group.key === sourceKey
           ? {
@@ -1308,7 +1435,8 @@ function AttendanceImportModal({
     return null
   }
 
-  const handlePreview = async (mappingOverride = null) => {
+  // Retained for a future explicit re-enable; monthly-only imports never enter here.
+  const handleGenericPreview = async (mappingOverride = null) => {
     if (!file) {
       alert('Vui lòng chọn file Excel')
       return
@@ -1634,9 +1762,185 @@ function AttendanceImportModal({
     }
   }
 
+  const handlePreview = async (mappingOverride = null) => {
+    if (SUPPORTED_ATTENDANCE_IMPORT_MODE !== 'monthly_matrix_only') {
+      return handleGenericPreview(mappingOverride)
+    }
+    if (!file) {
+      alert('Vui lòng chọn file Excel')
+      return
+    }
+
+    setLoading(true)
+    try {
+      const data = await file.arrayBuffer()
+      const workbook = read(data, { type: 'array', cellNF: true, cellDates: false })
+      const workbookSheets = workbook.SheetNames.map((sheetName, workbookIndex) => {
+        const worksheet = workbook.Sheets[sheetName]
+        const rawRows = utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' })
+        const rows = expandAttendanceMergedCells(rawRows, worksheet['!merges'] || [])
+        return {
+          sheetName,
+          workbookIndex,
+          worksheet,
+          rows
+        }
+      }).filter(candidate => candidate.rows.length > 0)
+
+      const requestedConfig = mappingOverride && !mappingOverride?.preventDefault
+        ? mappingOverride
+        : null
+      const requestedSheetName = requestedConfig?.sheetName || ''
+      const workbookAnalysis = analyzeMonthlyAttendanceSheets(
+        workbookSheets,
+        requestedSheetName
+      )
+
+      if (workbookAnalysis.candidates.length === 0) {
+        throw new Error('File Excel chưa đúng định dạng bảng công đang được hỗ trợ.')
+      }
+      if (workbookAnalysis.requiresSelection) {
+        setMonthlySheetSelection({
+          selectedSheetName: '',
+          candidates: workbookAnalysis.candidates.map(candidate => ({
+            name: candidate.sheetName,
+            yearMonth: candidate.detection.yearMonth,
+            employeeCount: candidate.detection.employeeCount
+          }))
+        })
+        setManualMapping(null)
+        setPreviewData(null)
+        return
+      }
+
+      const selectedSheet = workbookAnalysis.selected
+      if (!selectedSheet) {
+        throw new Error('Sheet đã chọn không đúng định dạng bảng công đang được hỗ trợ.')
+      }
+      const detection = selectedSheet.detection
+      if (detection.errors.length > 0) throw new Error(detection.errors.join('\n'))
+
+      const jsonData = selectedSheet.rows
+      const selectedSheetName = selectedSheet.sheetName
+      const extracted = extractMonthlyAttendanceMatrix(jsonData, detection)
+      if (extracted.errors.length > 0) throw new Error(extracted.errors.join('\n'))
+      setMonthlySheetSelection(null)
+      setManualMapping(null)
+
+      const mappingDescriptor = JSON.stringify({
+        sheet: selectedSheetName,
+        kind: detection.kind,
+        headerRow: detection.headerRowIndex,
+        yearMonth: detection.yearMonth,
+        mode: SUPPORTED_ATTENDANCE_IMPORT_MODE
+      })
+      const mappingBytes = new TextEncoder().encode(mappingDescriptor)
+      const fileBytes = new Uint8Array(data)
+      const fingerprintInput = new Uint8Array(fileBytes.length + mappingBytes.length)
+      fingerprintInput.set(fileBytes)
+      fingerprintInput.set(mappingBytes, fileBytes.length)
+      const digest = await crypto.subtle.digest('SHA-256', fingerprintInput)
+      const importJobId = `excel_${Array.from(new Uint8Array(digest))
+        .map(byte => byte.toString(16).padStart(2, '0'))
+        .join('')}`
+      setImportMonth(detection.yearMonth)
+      const detectedDays = detection.dayColumns.map(column => column.day)
+      const result = processMatrixFormat(jsonData, {
+        matrixDayCols: detection.dayColumns,
+        codeColIdx: -1,
+        nameColIdx: detection.columns.name,
+        posColIdx: -1,
+        deptColIdx: detection.columns.department,
+        shiftColIdx: detection.columns.shift,
+        employmentTypeColIdx: detection.columns.employmentType,
+        employeeStatusColIdx: detection.columns.employeeStatus,
+        totalWorkColIdx: detection.columns.totalWork,
+        dataStartRow: detection.headerRowIndex + 1,
+        employeeRowIndexes: detection.employeeRowIndexes,
+        year: detection.year,
+        month: detection.month,
+        worksheet: selectedSheet.worksheet,
+        matrixValueMode: 'workdays',
+        isMonthlyMatrix: true
+      })
+
+      const usedColumnSet = new Set(detection.dayColumns.map(column => column.idx))
+      const usedRowSet = new Set(detection.employeeRowIndexes)
+      Object.entries(selectedSheet.worksheet || {}).forEach(([address, cell]) => {
+        if (address.startsWith('!')) return
+        const position = utils.decode_cell(address)
+        if (!usedRowSet.has(position.r) || !usedColumnSet.has(position.c)) return
+        if (cell?.t === 'e' || (cell?.f && (cell.v === null || cell.v === undefined || cell.v === ''))) {
+          result.skipped.push(
+            `${address}: công thức không có kết quả lưu sẵn hoặc đang lỗi (${cell.f || cell.w || cell.v || 'Excel error'})`
+          )
+        }
+      })
+
+      if (result.logs.length === 0) {
+        const hint = result.skipped.slice(0, 5).join('\n')
+        alert(`Không tìm thấy dữ liệu hợp lệ.\n${hint || 'Vui lòng kiểm tra các ô công theo ngày trong file.'}`)
+        setPreviewData(null)
+      } else {
+        result.logs = result.logs.map(log => ({
+          ...log,
+          provenance: { sheet: selectedSheetName, ...(log.provenance || {}) }
+        }))
+        result.skipped = (result.skipped || []).map(issue =>
+          String(issue).startsWith('Sheet ') ? issue : `Sheet ${selectedSheetName}!${issue}`
+        )
+        const warnings = [...new Set([
+          ...(extracted.warnings || []),
+          ...(result.warnings || [])
+        ])]
+        setPreviewData(
+          prepareMatchingPreview(result.logs, {
+            modeLabel: 'Bảng công tháng',
+            detectedFormatLabel: 'Bảng công tháng',
+            isMatrixMode: true,
+            isMonthlyMatrix: true,
+            detectedDays,
+            skipped: result.skipped,
+            blockingIssues: result.skipped,
+            warnings,
+            isReconcileMode: false,
+            importMonth: detection.yearMonth,
+            affectedMonths: [detection.yearMonth],
+            importJobId,
+            sourceSheetName: selectedSheetName,
+            employeeCount: extracted.employees.length,
+            dayCount: detection.dayColumns.length,
+            expectedAttendanceCount: extracted.attendanceRows.length,
+            ignoredDayCount: detection.ignoredDayColumns.length,
+            availableSheets: workbookAnalysis.candidates.map(candidate => ({
+              name: candidate.sheetName,
+              recognized: true
+            })),
+            mappingTemplate: null,
+            recognizedColumns: [
+              'Họ tên', 'Bộ phận', 'Ca làm', 'Loại HĐ', 'Trạng thái',
+              'Tổng công', `Ngày 1–${detection.dayColumns.length}`
+            ]
+          })
+        )
+      }
+    } catch (error) {
+      alert('Lỗi: ' + error.message)
+      console.error(error)
+      setPreviewData(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const executeImport = async () => {
     if (!previewData || !previewData.logs) return
     if (importInProgressRef.current) return
+    const selectionIssues = validateMonthlyAttendanceSelection(previewData, employees, activeCompanyId)
+    if (selectionIssues.length) {
+      alert(selectionIssues.join('\n'))
+      return
+    }
     if (previewData.blockingIssues?.length > 0) {
       alert(
         `Còn ${previewData.blockingIssues.length} ô/dòng dữ liệu chưa hợp lệ. ` +
@@ -1785,13 +2089,6 @@ function AttendanceImportModal({
           count += chunk.length
         }
       } else {
-        result.logs = result.logs.map(log => ({
-          ...log,
-          provenance: { sheet: selectedSheetName, ...(log.provenance || {}) }
-        }))
-        result.skipped = (result.skipped || []).map(issue =>
-          String(issue).startsWith('Sheet ') ? issue : `Sheet ${selectedSheetName}!${issue}`
-        )
         const latestLogsData = await fbGet('hr/attendanceLogs', activeCompanyId)
         latestAttendanceLogs = Array.isArray(latestLogsData)
           ? latestLogsData
@@ -1893,6 +2190,7 @@ function AttendanceImportModal({
       setReferenceImage(null)
       setPreviewData(null)
       setManualMapping(null)
+      setMonthlySheetSelection(null)
     } catch (error) {
       const failedJobId = previewData?.importJobId
       if (failedJobId) {
@@ -1991,6 +2289,7 @@ function AttendanceImportModal({
     setReferenceImage(null)
     setPreviewData(null)
     setManualMapping(null)
+    setMonthlySheetSelection(null)
     onClose()
   }
 
@@ -2012,6 +2311,7 @@ function AttendanceImportModal({
     matchedEmployeeCount -
     newEmployeeCount -
     skippedEmployeeCount
+  const selectionIssues = validateMonthlyAttendanceSelection(previewData, employees, activeCompanyId)
   const selectedManualSheet = manualMapping?.sheets?.find(
     sheet => sheet.sheetName === manualMapping.sheetName
   )
@@ -2026,21 +2326,31 @@ function AttendanceImportModal({
     (manualMapping?.headerRow || 0) + 1,
     (manualMapping?.headerRow || 0) + 4
   ) || []
+  const previewGroupByKey = new Map(
+    (previewData?.matchGroups || []).map(group => [group.key, group])
+  )
+  const previewDate = value => {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '-'
+  }
 
   return (
     <div className="modal show" onClick={handleClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1100px' }}>
         <div className="modal-header">
           <h3>
-            <i className="fas fa-robot"></i>
-            AI đối soát & Import chấm công
+            <i className="fas fa-file-excel"></i>
+            {' Import bảng công tháng'}
           </h3>
           <button className="modal-close" onClick={handleClose}>&times;</button>
         </div>
         <div className="modal-body">
           {!previewData ? (
             <>
-              <div className="form-group">
+              <div style={{ padding: '10px 12px', marginBottom: '12px', background: '#eff6ff', borderRadius: '6px', color: '#1e40af' }}>
+                Chỉ hỗ trợ file Excel có cấu trúc “Bảng công tháng”. Tháng/năm được đọc trực tiếp từ nội dung sheet.
+              </div>
+              {SUPPORTED_ATTENDANCE_IMPORT_MODE !== 'monthly_matrix_only' && <div className="form-group">
                 <label>Chi nhánh ưu tiên khi trùng tên</label>
                 <select
                   value={matchBranch}
@@ -2052,43 +2362,7 @@ function AttendanceImportModal({
                     <option key={branch} value={branch}>{branch}</option>
                   ))}
                 </select>
-              </div>
-              <div className="form-group">
-                <label>Chọn tháng chấm công (dùng cho mẫu ma trận ngày) *</label>
-                <input
-                  type="month"
-                  value={importMonth}
-                  onChange={(e) => setImportMonth(e.target.value)}
-                  style={{ width: '100%', marginBottom: '15px' }}
-                />
-              </div>
-              <div className="form-group">
-                <label>Cách tính khi file có cả Công/Giờ và giờ Vào/Ra</label>
-                <select
-                  value={calculationPreference}
-                  onChange={event => setCalculationPreference(event.target.value)}
-                  style={{ width: '100%', padding: '10px', marginBottom: '12px' }}
-                >
-                  <option value="source">Ưu tiên Công/Giờ đã có trong Excel</option>
-                  <option value="punches">Tính lại theo giờ Vào/Ra và cài đặt công ty</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Ý nghĩa ô số trong bảng ma trận ngày</label>
-                <select
-                  value={matrixValuePreference}
-                  onChange={event => setMatrixValuePreference(event.target.value)}
-                  style={{ width: '100%', padding: '10px', marginBottom: '12px' }}
-                >
-                  <option value="auto">Tự nhận diện từ tiêu đề (mặc định là Công)</option>
-                  <option value="workdays">Số Công (0.5 = nửa công)</option>
-                  <option value="hours">Số Giờ (0.5 = nửa giờ)</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>1. File Excel chấm công</label>
-                <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} style={{ width: '100%', padding: '10px' }} />
-              </div>
+              </div>}
               <div className="form-group">
                 <label
                   style={{
@@ -2111,7 +2385,7 @@ function AttendanceImportModal({
                 >
                   <input
                     type="file"
-                    accept=".xlsx,.xls,.csv"
+                    accept=".xlsx,.xls"
                     onChange={handleFileChange}
                     style={{ display: 'none' }}
                   />
@@ -2120,88 +2394,35 @@ function AttendanceImportModal({
                     Tải Excel lên
                   </span>
                 </label>
+                {file && <div style={{ marginTop: '6px', color: '#475569' }}>Đã chọn: {file.name}</div>}
               </div>
-              {manualMapping && (
-                <div style={{ marginTop: '14px', padding: '14px', border: '1px solid #f59e0b', borderRadius: '8px', background: '#fffbeb' }}>
-                  <strong>File lạ — xác nhận cấu trúc cột</strong>
-                  <div style={{ color: '#92400e', margin: '6px 0 12px' }}>
-                    Chọn đúng sheet, hàng tiêu đề và ý nghĩa từng cột. Cột không dùng cứ để “Bỏ qua”.
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) 180px', gap: '10px' }}>
-                    <label>
-                      Sheet
-                      <select
-                        value={manualMapping.sheetName}
-                        onChange={event => setManualMapping(
-                          createManualMappingState(manualMapping.sheets, event.target.value)
-                        )}
-                        style={{ width: '100%', padding: '8px' }}
-                      >
-                        {manualMapping.sheets.map(sheet => (
-                          <option key={sheet.sheetName} value={sheet.sheetName}>{sheet.sheetName}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Hàng tiêu đề
-                      <input
-                        type="number"
-                        min="1"
-                        max={selectedManualSheet?.rows?.length || 1}
-                        value={(manualMapping.headerRow || 0) + 1}
-                        onChange={event => setManualMapping(
-                          createManualMappingState(
-                            manualMapping.sheets,
-                            manualMapping.sheetName,
-                            Math.max(0, Number(event.target.value || 1) - 1)
-                          )
-                        )}
-                        style={{ width: '100%', padding: '8px' }}
-                      />
-                    </label>
-                  </div>
-                  <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(260px, 1fr))', gap: '8px 14px' }}>
-                    {MANUAL_MAPPING_FIELDS.map(([field, label]) => (
-                      <label key={field} style={{ display: 'grid', gridTemplateColumns: '145px 1fr', alignItems: 'center', gap: '8px' }}>
-                        <span>{label}</span>
-                        <select
-                          value={manualMapping.bindings?.[field] ?? ''}
-                          onChange={event => setManualMapping(previous => {
-                            const bindings = { ...(previous.bindings || {}) }
-                            if (event.target.value === '') delete bindings[field]
-                            else bindings[field] = Number(event.target.value)
-                            return { ...previous, bindings }
-                          })}
-                          style={{ minWidth: 0, padding: '7px' }}
-                        >
-                          <option value="">— Bỏ qua —</option>
-                          {manualHeaders.map((header, index) => (
-                            <option key={`${field}-${index}`} value={index}>
-                              {excelColumnName(index)} — {String(header || '(không có tên)')}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+              {monthlySheetSelection && (
+                <div style={{ marginTop: '14px', padding: '14px', border: '1px solid #60a5fa', borderRadius: '8px', background: '#eff6ff' }}>
+                  <strong>Đã nhận diện nhiều sheet Bảng công tháng — hãy chọn sheet cần import</strong>
+                  <select
+                    value={monthlySheetSelection.selectedSheetName}
+                    onChange={event => setMonthlySheetSelection(previous => ({
+                      ...previous,
+                      selectedSheetName: event.target.value
+                    }))}
+                    style={{ width: '100%', padding: '9px', marginTop: '10px' }}
+                  >
+                    <option value="">-- Chọn sheet --</option>
+                    {monthlySheetSelection.candidates.map(candidate => (
+                      <option key={candidate.name} value={candidate.name}>
+                        {candidate.name} — {candidate.yearMonth || 'chưa rõ tháng'} — {candidate.employeeCount} nhân viên
+                      </option>
                     ))}
-                  </div>
-                  {manualSampleRows.length > 0 && (
-                    <div style={{ marginTop: '12px', overflowX: 'auto', background: '#fff', border: '1px solid #fde68a' }}>
-                      <table className="table" style={{ width: '100%', fontSize: '0.78rem' }}>
-                        <thead><tr>{manualHeaders.map((header, index) => <th key={index}>{excelColumnName(index)}<br />{String(header || '-')}</th>)}</tr></thead>
-                        <tbody>{manualSampleRows.map((row, rowIndex) => <tr key={rowIndex}>{manualHeaders.map((_, index) => <td key={index}>{String(row?.[index] ?? '')}</td>)}</tr>)}</tbody>
-                      </table>
-                    </div>
-                  )}
+                  </select>
                 </div>
               )}
             </>
           ) : (
             <div style={{ padding: '10px', background: '#f8f9fa', borderRadius: '4px' }}>
-              <h4>Kết quả phân tích:</h4>
+              <h4>Đã nhận diện: Bảng công tháng</h4>
               <ul>
-                <li><strong>Chế độ:</strong> {previewData.modeLabel}</li>
                 <li>
-                  <strong>Sheet đã chọn:</strong>{' '}
+                  <strong>Sheet:</strong>{' '}
                   {previewData.availableSheets?.length > 1 ? (
                     <select
                       value={previewData.sourceSheetName || ''}
@@ -2215,17 +2436,21 @@ function AttendanceImportModal({
                     >
                       {previewData.availableSheets.map(sheet => (
                         <option key={sheet.name} value={sheet.name}>
-                          {sheet.name}{sheet.recognized ? '' : ' (cần map cột)'}
+                          {sheet.name}
                         </option>
                       ))}
                     </select>
                   ) : (previewData.sourceSheetName || '-')}
                 </li>
-                {previewData.recognizedColumns?.length > 0 && (
-                  <li><strong>Cột đã nhận diện:</strong> {previewData.recognizedColumns.join(', ')}</li>
+                <li><strong>Tháng/Năm:</strong> {previewData.importMonth?.split('-').reverse().join('/') || '-'}</li>
+                <li><strong>Số nhân viên trong file:</strong> {previewData.employeeCount}</li>
+                <li><strong>Số ngày:</strong> {previewData.dayCount}</li>
+                <li><strong>Số dòng attendance dự kiến:</strong> {previewData.expectedAttendanceCount}</li>
+                {previewData.ignoredDayCount > 0 && (
+                  <li style={{ color: '#475569' }}>
+                    <strong>Cột ngoài tháng đã bỏ qua:</strong> {previewData.ignoredDayCount}
+                  </li>
                 )}
-                <li><strong>Số nhân viên (không trùng):</strong> {previewData.uniqueEmployeeCount}</li>
-                <li><strong>Bản ghi theo ngày/ca:</strong> {previewData.count}</li>
                 <li style={{ color: '#15803d' }}>
                   <strong>Đã ghép với Lumi:</strong> {matchedEmployeeCount}
                 </li>
@@ -2242,12 +2467,12 @@ function AttendanceImportModal({
                     <strong>Chủ động bỏ qua:</strong> {skippedEmployeeCount}
                   </li>
                 )}
-                {previewData.isMatrixMode && (
-                  <li>
-                    <strong>Các cột ngày tìm thấy:</strong>{' '}
-                    <span style={{ color: '#007bff', fontWeight: 'bold' }}>
-                      {previewData.detectedDays.join(', ')}
-                    </span>
+                {previewData.warnings?.length > 0 && (
+                  <li style={{ color: '#b45309' }}>
+                    <strong>Cảnh báo:</strong> {previewData.warnings.length}
+                    <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>
+                      {previewData.warnings.slice(0, 5).map((warning, index) => <div key={index}>{warning}</div>)}
+                    </div>
                   </li>
                 )}
                 {previewData.skipped?.length > 0 && (
@@ -2269,22 +2494,6 @@ function AttendanceImportModal({
               >
                 <button
                   type="button"
-                  className="btn btn-info"
-                  onClick={handleAiMatch}
-                  disabled={aiLoading || !referenceImage || aiAvailable === false}
-                  title={
-                    aiAvailable === false
-                      ? 'Production chưa cấu hình GROQ_API_KEY'
-                      : referenceImage
-                        ? 'Dùng AI đọc ảnh và đối sánh mã/tên'
-                        : 'Chọn ảnh danh sách nhân sự trước'
-                  }
-                >
-                  <i className={`fas ${aiLoading ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'}`}></i>
-                  {aiLoading ? ' AI đang đối sánh...' : ' AI đọc ảnh & khớp mã'}
-                </button>
-                <button
-                  type="button"
                   className="btn btn-success"
                   onClick={downloadMatchedExcel}
                   disabled={unresolvedEmployeeCount > 0}
@@ -2295,7 +2504,12 @@ function AttendanceImportModal({
               </div>
 
               <div style={{ marginTop: '10px' }}>
-                <strong>Bảng khớp mã máy → mã nhân viên Lumi:</strong>
+                <strong>Khớp nhân viên theo Họ tên + Bộ phận:</strong>
+                {selectionIssues.length > 0 && (
+                  <div role="alert" style={{ color: '#b91c1c', marginTop: '6px' }}>
+                    {selectionIssues.slice(0, 5).map((issue, index) => <div key={index}>{issue}</div>)}
+                  </div>
+                )}
               </div>
               <div
                 style={{
@@ -2310,9 +2524,9 @@ function AttendanceImportModal({
                 <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                   <thead>
                     <tr style={{ background: '#eee', position: 'sticky', top: 0, zIndex: 2 }}>
-                      <th style={{ padding: '6px' }}>Mã máy</th>
-                      <th style={{ padding: '6px' }}>Tên từ máy/file</th>
-                      <th style={{ padding: '6px' }}>Mã NV Lumi</th>
+                      <th style={{ padding: '6px' }}>Tên trong file</th>
+                      <th style={{ padding: '6px' }}>Bộ phận trong file</th>
+                      <th style={{ padding: '6px' }}>Tổng công trong file</th>
                       <th style={{ padding: '6px' }}>Hồ sơ Lumi</th>
                       <th style={{ padding: '6px' }}>Độ giống</th>
                       <th style={{ padding: '6px' }}>Kết quả</th>
@@ -2334,23 +2548,11 @@ function AttendanceImportModal({
                       return (
                         <tr key={group.key} style={{ borderBottom: '1px solid #eee' }}>
                           <td style={{ padding: '6px' }}>
-                            <strong>{group.sourceCode || '-'}</strong>
-                            <div style={{ color: '#6b7280' }}>{group.rowCount} dòng</div>
-                          </td>
-                          <td style={{ padding: '6px' }}>
                             <strong>{group.sourceName || '-'}</strong>
+                            <div style={{ color: '#6b7280' }}>{group.rowCount} ngày có dữ liệu</div>
                           </td>
-                          <td style={{ padding: '6px', color: selectedEmployee ? '#15803d' : '#b91c1c' }}>
-                            <strong>
-                              {selectedEmployee
-                                ? getCanonicalEmployeeCode(selectedEmployee) || '-'
-                                : group.status === 'create'
-                                  ? 'Tạo mới'
-                                : group.status === 'skipped'
-                                  ? 'Bỏ qua'
-                                  : 'Chưa khớp'}
-                            </strong>
-                          </td>
+                          <td style={{ padding: '6px' }}>{group.sourceDepartment || '-'}</td>
+                          <td style={{ padding: '6px' }}>{group.sourceTotalWork ?? '-'}</td>
                           <td style={{ padding: '6px', minWidth: '310px' }}>
                             <select
                               value={group.selectedEmployeeId}
@@ -2362,20 +2564,23 @@ function AttendanceImportModal({
                               }}
                             >
                               <option value="">-- Chọn nhân viên Lumi --</option>
-                              {canCreateEmployees && (
+                              {canCreateEmployees && (!previewData.isMonthlyMatrix || group.candidates.length === 0) && (
                                 <option value="__create__">-- Tạo hồ sơ mới từ tên trong file --</option>
                               )}
                               <option value="__skip__">-- Không có trong Lumi (bỏ qua) --</option>
-                              {employeesForMatching.map(employee => (
+                              {(previewData.isMonthlyMatrix
+                                ? group.candidates.map(candidate => candidate.employee)
+                                : employeesForMatching).map(employee => (
                                 <option key={employee.id} value={employee.id}>
                                   {employee.ho_va_ten || employee.name || employee.id}
                                   {employee.employeeId || employee.username
                                     ? ` (${employee.employeeId || employee.username})`
                                     : ''}
+                                  {employee.bo_phan || employee.department ? ` — ${employee.bo_phan || employee.department}` : ''}
                                 </option>
                               ))}
                             </select>
-                            {(!group.selectedEmployeeId || group.status === 'create') && suggestedEmployee && (
+                            {!previewData.isMonthlyMatrix && (!group.selectedEmployeeId || group.status === 'create') && suggestedEmployee && (
                               <div style={{ color: '#b45309', marginTop: '3px' }}>
                                 Gợi ý gần nhất: {suggestedEmployee.ho_va_ten || suggestedEmployee.name}
                                 {group.status === 'create' ? ' (chọn nếu đây là cùng một người)' : ''}
@@ -2404,50 +2609,47 @@ function AttendanceImportModal({
                 </table>
               </div>
               <div style={{ marginTop: '10px' }}>
-                <strong>Chi tiết chấm công sau đối sánh:</strong>
+                <strong>Preview attendance theo ngày:</strong>
               </div>
               <div style={{ maxHeight: '260px', overflowY: 'auto', marginTop: '8px', fontSize: '0.85rem', border: '1px solid #ddd', borderRadius: '6px' }}>
                 <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#eee' }}>
                       <th style={{ padding: '5px' }}>STT</th>
-                      <th style={{ padding: '5px' }}>Mã NV</th>
-                      <th style={{ padding: '5px' }}>Tên NV</th>
-                      <th style={{ padding: '5px' }}>Tên máy chấm công</th>
+                      <th style={{ padding: '5px' }}>Tên nhân viên</th>
+                      <th style={{ padding: '5px' }}>Bộ phận</th>
+                      <th style={{ padding: '5px' }}>Ca</th>
                       <th style={{ padding: '5px' }}>Ngày</th>
-                      <th style={{ padding: '5px' }}>Vào</th>
-                      <th style={{ padding: '5px' }}>Ra</th>
-                      <th style={{ padding: '5px' }}>Công</th>
-                      <th style={{ padding: '5px' }}>Giờ</th>
-                      <th style={{ padding: '5px' }}>Trạng thái</th>
-                      <th style={{ padding: '5px' }}>Cách tính</th>
+                      <th style={{ padding: '5px' }}>Giá trị công</th>
+                      <th style={{ padding: '5px' }}>Work unit</th>
+                      <th style={{ padding: '5px' }}>Match status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {previewData.logs.slice(0, 50).map((l, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #ddd' }}>
-                        <td style={{ padding: '5px', textAlign: 'center' }}>{i + 1}</td>
-                        <td style={{ padding: '5px' }}>{l.employeeCode || '-'}</td>
-                        <td style={{ padding: '5px' }}>{l.employeeName || employees.find(e => e.id === l.employeeId)?.ho_va_ten || l.employeeId}</td>
-                        <td style={{ padding: '5px' }}>{l.machineName || l.tenTheoMayChamCong || l.employeeName || '-'}</td>
-                        <td style={{ padding: '5px' }}>{l.date}</td>
-                        <td style={{ padding: '5px' }}>{formatExportTime(l.vao || l.checkIn) || '-'}</td>
-                        <td style={{ padding: '5px' }}>{formatExportTime(l.ra || l.checkOut) || '-'}</td>
-                        <td style={{ padding: '5px', textAlign: 'center' }}>{l.cong ?? '-'}</td>
-                        <td style={{ padding: '5px' }}>{l.hours}</td>
-                        <td style={{ padding: '5px' }}>{l.status}</td>
-                        <td style={{ padding: '5px' }}>
-                          {l.calculationMode === 'punches' ? 'Từ Vào/Ra' : 'Theo Excel'}
-                        </td>
-                      </tr>
-                    ))}
-                    {previewData.logs.length > 50 && (
-                      <tr>
-                        <td colSpan="11" style={{ textAlign: 'center', padding: '5px' }}>
-                          ...và {previewData.logs.length - 50} dòng khác
-                        </td>
-                      </tr>
-                    )}
+                    {previewData.logs.map((log, index) => {
+                      const group = previewGroupByKey.get(log._sourceEmployeeKey)
+                      const matchStatus = group?.status === 'skipped'
+                        ? 'Bỏ qua'
+                        : group?.status === 'create'
+                          ? 'Tạo mới'
+                          : group?.selectedEmployeeId
+                            ? 'Matched'
+                            : group?.status === 'review'
+                              ? 'Ambiguous'
+                              : 'Unmatched'
+                      return (
+                        <tr key={index} style={{ borderBottom: '1px solid #ddd' }}>
+                          <td style={{ padding: '5px', textAlign: 'center' }}>{index + 1}</td>
+                          <td style={{ padding: '5px' }}>{log.sourceEmployeeName || log.employeeName || '-'}</td>
+                          <td style={{ padding: '5px' }}>{(log._sourceDepartment ?? log.department) || '-'}</td>
+                          <td style={{ padding: '5px' }}>{log.shiftName || '-'}</td>
+                          <td style={{ padding: '5px' }}>{previewDate(log.date)}</td>
+                          <td style={{ padding: '5px', textAlign: 'center' }}>{String(log.rawAttendanceValue ?? log.sourceSymbol ?? '')}</td>
+                          <td style={{ padding: '5px', textAlign: 'center' }}>{log.cong ?? '-'}</td>
+                          <td style={{ padding: '5px' }}>{matchStatus}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2461,12 +2663,20 @@ function AttendanceImportModal({
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={manualMapping ? () => handlePreview(manualMapping) : handlePreview}
-                disabled={loading || !file}
+                onClick={() => handlePreview(
+                  monthlySheetSelection?.selectedSheetName
+                    ? { sheetName: monthlySheetSelection.selectedSheetName }
+                    : null
+                )}
+                disabled={
+                  loading ||
+                  !file ||
+                  Boolean(monthlySheetSelection && !monthlySheetSelection.selectedSheetName)
+                }
               >
                 {loading
                   ? <><i className="fas fa-spinner fa-spin"></i> Đang đọc file...</>
-                  : manualMapping ? 'Áp dụng mapping & phân tích >' : 'Phân tích & khớp dữ liệu >'}
+                  : monthlySheetSelection ? 'Phân tích sheet đã chọn >' : 'Phân tích & khớp dữ liệu >'}
               </button>
             ) : (
               <>
@@ -2475,7 +2685,7 @@ function AttendanceImportModal({
                   type="button"
                   className="btn btn-success"
                   onClick={executeImport}
-                  disabled={loading}
+                  disabled={loading || unresolvedEmployeeCount > 0 || selectionIssues.length > 0 || previewData.blockingIssues?.length > 0}
                   title={
                     unresolvedEmployeeCount > 0
                       ? 'Cần ghép, tạo mới hoặc bỏ qua toàn bộ nhân viên trước khi ghi CSDL'

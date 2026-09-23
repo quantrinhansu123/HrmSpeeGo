@@ -198,6 +198,30 @@ test('preserves matrix symbols without inventing punches', () => {
   })
 })
 
+test('routes monthly X and P1 symbols through the existing matrix classifier', () => {
+  assert.deepEqual(classifyMatrixAttendanceCell('X', { sourceFormat: 'monthly-attendance' }), {
+    kind: 'value', workdays: 0, hours: 0, symbol: 'X', status: 'Nghỉ theo lịch'
+  })
+  assert.deepEqual(classifyMatrixAttendanceCell('P1', { sourceFormat: 'monthly-attendance' }), {
+    kind: 'value', workdays: 1, hours: 8, symbol: 'P1', status: 'Phép năm'
+  })
+})
+
+test('keeps monthly holiday multipliers explicit without changing generic X behavior', () => {
+  assert.equal(classifyMatrixAttendanceCell('X1', { sourceFormat: 'monthly-attendance' }).workdays, 1)
+  assert.equal(classifyMatrixAttendanceCell('X2', { sourceFormat: 'monthly-attendance' }).workdays, 2)
+  assert.equal(classifyMatrixAttendanceCell('X3', { sourceFormat: 'monthly-attendance' }).workdays, 3)
+  assert.equal(classifyMatrixAttendanceCell('X').workdays, 1)
+})
+
+test('monthly work units ignore Excel time styling and reject punches, negative units and unknown P words', () => {
+  const options = { sourceFormat: 'monthly-attendance', numberFormat: 'hh:mm' }
+  assert.equal(classifyMatrixAttendanceCell(0.5, options).workdays, 0.5)
+  for (const value of ['08:00 17:00', -1, 'Potato']) {
+    assert.equal(classifyMatrixAttendanceCell(value, options).kind, 'unknown')
+  }
+})
+
 test('restores a confirmed mapping after columns are reordered', () => {
   const original = ['Mã chấm công', 'Tên người lao động', 'Ngày làm', 'Số công']
   const bindings = { code: 0, name: 1, date: 2, workdays: 3 }
