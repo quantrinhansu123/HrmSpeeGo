@@ -27,6 +27,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 | `employee_status_history` | Lịch sử đổi trạng thái |
 | `performance_reviews` | Đánh giá / grading |
 | **`hr_records`** | **Toàn bộ module còn lại** (thay Firebase) |
+| `employee_leave_settings` | Phép năm/tháng dạng JSONB theo công ty và nhân sự; chạy migration `20260924100000_employee_leave_settings.sql` sau các migration xác thực |
 
 ### Trong `hr_records` (cột `collection`)
 - **Lương / phúc lợi:** `salaryGrades`, `employeeSalaries`, `promotionHistory`, `payrolls`
@@ -40,6 +41,10 @@ VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 - **Phê duyệt:** `approvalRequests`
 
 App vẫn gọi `fbGet` / `fbPush`… nhưng **đã trỏ sang Supabase** (`src/services/firebase.js`).
+
+### Bật Bảng phép trên database đang dùng
+
+Chạy riêng [`migrations/20260924100000_employee_leave_settings.sql`](./migrations/20260924100000_employee_leave_settings.sql) trong Supabase SQL Editor sau các migration xác thực nhân sự. Migration chỉ tạo bảng phép, hàm kiểm tra công ty và chính sách truy cập; không sửa dữ liệu nhân sự hoặc chấm công.
 
 ## Tài khoản mặc định
 - Email: `admin@company.local`

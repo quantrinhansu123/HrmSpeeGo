@@ -16,7 +16,8 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
     { path: '/bang-phat', icon: 'fas fa-file-invoice-dollar', label: 'Bảng phạt' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
-    { path: '/holiday-settings', icon: 'fas fa-calendar-day', label: 'Cài đặt chấm công' }
+    ...(user?.role === 'admin' || user?.role === 'hr' ? [{ path: '/bang-phep', icon: 'fas fa-calendar-alt', label: 'Bảng phép' }] : []),
+    { path: '/holiday-settings', icon: 'fas fa-cog', label: 'Cài đặt' }
   ]
 
   const secondaryStaffItems = [

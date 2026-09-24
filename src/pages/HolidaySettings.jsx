@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useSearchParams } from 'react-router-dom'
+import LeaveSettingsPanel from '../components/LeaveSettingsPanel'
 import { fbGet, fbUpdate } from '../services/firebase'
 import { getCompanyIdForUser } from '../utils/companyContext'
 import {
@@ -18,13 +20,15 @@ import './HolidaySettings.css'
 const TABS = [
   { id: 'holidays', label: 'Cài đặt ngày lễ', icon: 'fas fa-calendar-day' },
   { id: 'shifts', label: 'Cài đặt ca', icon: 'fas fa-clock' },
-  { id: 'penalties', label: 'Cài đặt Nội dung phạt và mức phạt', icon: 'fas fa-file-invoice-dollar' }
+  { id: 'penalties', label: 'Cài đặt Nội dung phạt và mức phạt', icon: 'fas fa-file-invoice-dollar' },
+  { id: 'leave', label: 'Cài đặt phép', icon: 'fas fa-calendar-alt' }
 ]
 
 const TAB_COPY = {
   holidays: 'Khai báo ngày lễ/ngày nghỉ để hiển thị chính xác trên Bảng Công.',
   shifts: 'Cài giờ chuẩn từng ca. Báo cáo đi muộn/về sớm dùng ca của từng nhân viên.',
-  penalties: 'Nội dung và mức phạt này dùng khi nhập hoặc nạp Bảng phạt từ chấm công.'
+  penalties: 'Nội dung và mức phạt này dùng khi nhập hoặc nạp Bảng phạt từ chấm công.',
+  leave: 'Thiết lập tổng phép năm và phân bổ phép từng tháng cho mỗi nhân sự.'
 }
 
 const sortHolidays = holidays => [...(holidays || [])]
@@ -33,8 +37,14 @@ const sortHolidays = holidays => [...(holidays || [])]
 
 function HolidaySettings() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const companyId = useMemo(() => getCompanyIdForUser(user), [user])
-  const [activeTab, setActiveTab] = useState('holidays')
+  const leaveCompanyId = user?.company_id || user?.companyId || companyId
+  const canEditLeave = user?.role === 'admin' || user?.role === 'hr'
+  const requestedTab = searchParams.get('tab')
+  const activeTab = requestedTab === 'leave' && !canEditLeave ? 'holidays' :
+    TABS.some(tab => tab.id === requestedTab) ? requestedTab : 'holidays'
+  const setActiveTab = tab => setSearchParams(tab === 'holidays' ? {} : { tab })
   const [settings, setSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [penaltyCategories, setPenaltyCategories] = useState(() =>
     DEFAULT_PENALTY_CATEGORIES.map(item => ({ ...item }))
@@ -255,16 +265,16 @@ function HolidaySettings() {
     <div className="holiday-settings-page">
       <header className="holiday-settings-head">
         <div>
-          <h1>Cài đặt chấm công</h1>
+          <h1>Cài đặt</h1>
           <p>{TAB_COPY[activeTab]}</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={saveSettings} disabled={loading || saving}>
+        {activeTab !== 'leave' && <button type="button" className="btn btn-primary" onClick={saveSettings} disabled={loading || saving}>
           <i className="fas fa-save"></i> {saving ? 'Đang lưu...' : 'Lưu cài đặt'}
-        </button>
+        </button>}
       </header>
 
       <div className="holiday-settings-tabs" role="tablist" aria-label="Cài đặt chấm công">
-        {TABS.map(tab => (
+        {TABS.filter(tab => tab.id !== 'leave' || canEditLeave).map(tab => (
           <button
             key={tab.id}
             type="button"
@@ -283,8 +293,10 @@ function HolidaySettings() {
         ))}
       </div>
 
-      {error && <div className="holiday-settings-alert is-error">{error}</div>}
-      {notice && <div className="holiday-settings-alert is-success">{notice}</div>}
+      {activeTab !== 'leave' && error && <div className="holiday-settings-alert is-error">{error}</div>}
+      {activeTab !== 'leave' && notice && <div className="holiday-settings-alert is-success">{notice}</div>}
+
+      {activeTab === 'leave' && <LeaveSettingsPanel companyId={leaveCompanyId} />}
 
       {activeTab === 'holidays' && (
         <section className="holiday-settings-card" role="tabpanel">
