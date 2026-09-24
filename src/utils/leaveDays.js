@@ -14,3 +14,10 @@ export const isValidLeaveDate = value => {
 
 export const formatLeaveDate = value =>
   isValidLeaveDate(value) ? value.split('-').reverse().join('/') : '—'
+
+export const normalizeLeaveReason = value => {
+  const reason = String(value || '').trim()
+  if (!reason) throw new Error('Vui lòng nhập lý do nghỉ phép.')
+  if (reason.length > 500) throw new Error('Lý do nghỉ phép không được quá 500 ký tự.')
+  return reason
+}

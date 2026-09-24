@@ -14,6 +14,7 @@ function LeaveDays() {
   const [search, setSearch] = useState('')
   const [formOpen, setFormOpen] = useState(false)
   const [leaveDate, setLeaveDate] = useState(() => todayLocalDate())
+  const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -51,12 +52,13 @@ function LeaveDays() {
     }
     setSaving(true)
     try {
-      const record = await addLeaveDay({ companyId, employeeId: user.id, leaveDate })
+      const record = await addLeaveDay({ companyId, employeeId: user.id, leaveDate, reason })
       setRecords(current => [record, ...current].sort((a, b) =>
         b.leave_date.localeCompare(a.leave_date) || a.id.localeCompare(b.id)))
       setSearch('')
       setFormOpen(false)
       setLeaveDate(todayLocalDate())
+      setReason('')
       setNotice('Đã ghi nhận ngày nghỉ phép.')
     } catch (requestError) {
       setError(requestError.message || 'Không ghi nhận được ngày nghỉ phép.')
@@ -91,6 +93,9 @@ function LeaveDays() {
           <input type="date" value={leaveDate} onChange={event => setLeaveDate(event.target.value)} required />
         </label>
       </div>
+      <label className="leave-days-reason">Lý do nghỉ phép
+        <textarea value={reason} onChange={event => setReason(event.target.value)} placeholder="Nhập lý do nghỉ phép" maxLength={500} rows={3} required />
+      </label>
       <div className="leave-days-form-actions">
         <button type="submit" className="btn btn-primary" disabled={saving || !name}>{saving ? 'Đang lưu...' : 'Lưu ngày nghỉ'}</button>
       </div>
@@ -113,10 +118,11 @@ function LeaveDays() {
         <p className="leave-days-empty">Chưa có ngày nghỉ phép nào.</p>
       ) : <div className="leave-days-table-wrap">
         <table>
-          <thead><tr><th scope="col">Tên người nghỉ</th><th scope="col">Ngày nghỉ phép</th></tr></thead>
+          <thead><tr><th scope="col">Tên người nghỉ</th><th scope="col">Ngày nghỉ phép</th><th scope="col">Lý do</th></tr></thead>
           <tbody>{visibleRecords.map(record => <tr key={record.id}>
             <td>{record.employee_name}</td>
             <td>{formatLeaveDate(record.leave_date)}</td>
+            <td>{record.reason || '—'}</td>
           </tr>)}</tbody>
         </table>
       </div>}

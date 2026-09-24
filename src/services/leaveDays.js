@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { isValidLeaveDate } from '../utils/leaveDays'
+import { isValidLeaveDate, normalizeLeaveReason } from '../utils/leaveDays'
 
 const TABLE = 'employee_leave_days'
 const PAGE_SIZE = 1000
@@ -18,7 +18,7 @@ export const loadLeaveDays = async ({ companyId, employeeId }) => {
   const rows = []
   for (let from = 0; ; from += PAGE_SIZE) {
     let query = supabase.from(TABLE)
-      .select('id, employee_id, employee_name, leave_date')
+      .select('id, employee_id, employee_name, leave_date, reason')
       .eq('company_id', companyId)
     if (employeeId) query = query.eq('employee_id', employeeId)
     const { data, error } = await query
@@ -32,12 +32,13 @@ export const loadLeaveDays = async ({ companyId, employeeId }) => {
   return rows
 }
 
-export const addLeaveDay = async ({ companyId, employeeId, leaveDate }) => {
+export const addLeaveDay = async ({ companyId, employeeId, leaveDate, reason }) => {
   if (!companyId || !employeeId) throw new Error('Thiếu thông tin tài khoản nhân sự.')
   if (!isValidLeaveDate(leaveDate)) throw new Error('Vui lòng chọn ngày nghỉ hợp lệ.')
+  const normalizedReason = normalizeLeaveReason(reason)
   const { data, error } = await supabase.from(TABLE)
-    .insert({ company_id: companyId, employee_id: employeeId, leave_date: leaveDate })
-    .select('id, employee_id, employee_name, leave_date')
+    .insert({ company_id: companyId, employee_id: employeeId, leave_date: leaveDate, reason: normalizedReason })
+    .select('id, employee_id, employee_name, leave_date, reason')
     .single()
   throwLeaveError(error)
   return data

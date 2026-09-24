@@ -9,9 +9,12 @@
 .leave-days-form { display: grid; gap: 18px; }
 .leave-days-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .leave-days-form-grid label,
+.leave-days-reason,
 .leave-days-list-tools label { display: grid; gap: 6px; color: #334155; font-weight: 600; }
 .leave-days-form-grid input,
+.leave-days-reason textarea,
 .leave-days-list-tools input { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
+.leave-days-reason textarea { min-height: 88px; resize: vertical; }
 .leave-days-form-grid input[readonly] { background: #f1f5f9; color: #475569; }
 .leave-days-form-grid small { color: #991b1b; font-weight: 400; }
 .leave-days-form-actions { display: flex; justify-content: flex-end; }
@@ -24,7 +27,7 @@
 .leave-days-list-tools input { min-width: 220px; }
 .leave-days-empty { padding: 24px 0; color: #64748b; }
 .leave-days-table-wrap { width: 100%; overflow-x: auto; }
-.leave-days-table-wrap table { width: 100%; border-collapse: collapse; }
+.leave-days-table-wrap table { width: 100%; min-width: 620px; border-collapse: collapse; }
 .leave-days-table-wrap th,
 .leave-days-table-wrap td { padding: 13px 14px; border-bottom: 1px solid #e2e8f0; text-align: left; overflow-wrap: anywhere; }
 .leave-days-table-wrap th { color: #334155; background: #f1f5f9; }

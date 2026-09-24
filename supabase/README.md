@@ -49,6 +49,8 @@ Chạy riêng [`migrations/20260924100000_employee_leave_settings.sql`](./migrat
 
 Để bật trang **Ngày nghỉ phép**, chạy thêm [`migrations/20260924143000_employee_leave_days.sql`](./migrations/20260924143000_employee_leave_days.sql). Bảng này lưu tên từ hồ sơ đăng nhập và ngày nghỉ, không sửa đơn duyệt phép hoặc chấm công.
 
+Chạy tiếp [`migrations/20260924160000_employee_leave_day_reason.sql`](./migrations/20260924160000_employee_leave_day_reason.sql) để lưu lý do nghỉ phép cho bản ghi mới. Ngày nghỉ đã có vẫn được giữ nguyên.
+
 ## Tài khoản mặc định
 - Email: `admin@company.local`
 - Password: `123456`
