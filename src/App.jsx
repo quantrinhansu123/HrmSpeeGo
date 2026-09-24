@@ -35,6 +35,7 @@ function App() {
             <Route element={<AppLayout />}>
               <Route path="/cham-cong-online" element={<OnlineAttendance />} />
               <Route path="/ngay-nghi-phep" element={<LeaveDays />} />
+              <Route path="/approvals" element={<Approvals />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['user']} />}>
@@ -53,7 +54,6 @@ function App() {
               <Route path="/" element={<Navigate to="/employees" replace />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/bang-phep" element={<ProtectedRoute allowedRoles={['admin', 'hr']}><LeaveBoard /></ProtectedRoute>} />
-              <Route path="/approvals" element={<Approvals />} />
               <Route path="/bang-phat" element={<AttendancePenalties />} />
               <Route path="/attendance" element={<Navigate to="/bang-cong-preview" replace />} />
               <Route path="/honor" element={<Navigate to="/bang-cong-preview" replace />} />

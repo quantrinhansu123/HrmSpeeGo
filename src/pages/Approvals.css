@@ -2059,3 +2059,24 @@
     padding: 7px 8px;
   }
 }
+.apv-leave-balance {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid #cbdcf0;
+  border-radius: 10px;
+  background: #f6faff;
+  color: #123765;
+}
+
+.apv-leave-balance__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+}
+
+.apv-leave-balance__row span {
+  white-space: nowrap;
+}

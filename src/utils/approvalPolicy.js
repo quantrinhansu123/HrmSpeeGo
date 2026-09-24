@@ -8,8 +8,8 @@ export const APPROVAL_PERIOD_LABELS = {
 
 export const DEFAULT_APPROVAL_POLICIES = {
   leave: {
-    quotaEnabled: true,
-    maxRequests: 12,
+    quotaEnabled: false,
+    maxRequests: 0,
     quotaPeriod: 'year',
     attendanceSync: 'paid-leave'
   },
@@ -75,11 +75,9 @@ export const getTemplatePolicy = (template = {}) => {
 
 export const isSameRequester = (request, person) => {
   if (!request || !person) return false
-  if (
-    request.requesterId &&
-    person.id &&
-    String(request.requesterId) === String(person.id)
-  ) return true
+  if (request.requesterId && person.id) {
+    return String(request.requesterId) === String(person.id)
+  }
   if (
     request.requesterCode &&
     person.employeeCode &&

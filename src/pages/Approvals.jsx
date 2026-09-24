@@ -16,10 +16,6 @@ import './Approvals.css'
 
 const REQUESTS_PATH = 'hr/approvalRequests'
 const TEMPLATES_PATH = 'hr/approvalTemplates'
-// Auth isn't wired up app-wide yet (no <AuthProvider>/login route mounted), so this page
-// keeps its own lightweight "who am I" choice in localStorage and prefers a real auth user
-// automatically the moment one becomes available.
-const ME_STORAGE_KEY = 'apv_current_person'
 const RECENT_TEMPLATES_KEY = 'apv_recent_templates'
 const MAX_APPROVAL_STEPS = 4
 
@@ -179,41 +175,6 @@ function BottomSheet({ title, onClose, children }) {
   )
 }
 
-function PersonPickerSheet({ title, employees, onPick, onClose }) {
-  const [q, setQ] = useState('')
-  const filtered = employees.filter((e) =>
-    normalizeString(e.ho_va_ten || e.name || '').includes(normalizeString(q))
-  )
-  return (
-    <BottomSheet title={title} onClose={onClose}>
-      <input
-        autoFocus
-        placeholder="Tìm nhân sự..."
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        style={{
-          width: '100%',
-          border: '1px solid #e3e6ea',
-          borderRadius: 10,
-          padding: '9px 12px',
-          fontSize: '.9rem',
-          outline: 'none',
-          marginBottom: 10
-        }}
-      />
-      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-        {filtered.length === 0 && <div className="apv-picker__empty">Không tìm thấy</div>}
-        {filtered.map((e) => (
-          <div key={e.id} className="apv-picker__item" onClick={() => onPick(e)}>
-            <Avatar name={e.ho_va_ten || e.name} avatar={e.avatarDataUrl || e.avatarUrl || e.avatar} size={28} />
-            <span>{e.ho_va_ten || e.name || 'N/A'}</span>
-          </div>
-        ))}
-      </div>
-    </BottomSheet>
-  )
-}
-
 function EmployeePicker({ employees, onPick, onClose }) {
   const [q, setQ] = useState('')
   const filtered = employees.filter((e) =>
@@ -248,10 +209,13 @@ function emptyStep() {
 function Approvals() {
   const auth = useAuth()
   const authUser = auth?.user || null
+  const isEmployee = authUser?.role === 'user'
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const view = searchParams.get('view') || 'list' // list | create | detail | template-form
-  const tab = searchParams.get('tab') || 'inbox' // inbox | sent | admin | templates | stats
+  const requestedView = searchParams.get('view') || 'list'
+  const view = isEmployee && requestedView === 'template-form' ? 'list' : requestedView
+  const requestedTab = searchParams.get('tab') || (isEmployee ? 'sent' : 'inbox')
+  const tab = isEmployee && ['admin', 'templates', 'stats'].includes(requestedTab) ? 'sent' : requestedTab
   const subFilter = searchParams.get('filter') || 'todo' // todo | done
   const selectedId = searchParams.get('id') || null
   const templateParam = searchParams.get('template') || ''
@@ -265,8 +229,13 @@ function Approvals() {
   const [customTemplates, setCustomTemplates] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const [meLocal, setMeLocal] = useState(null)
-  const [showMePicker, setShowMePicker] = useState(false)
+  const [teamLeader, setTeamLeader] = useState(null)
+  const [leaderError, setLeaderError] = useState('')
+  const [leaderLoading, setLeaderLoading] = useState(false)
+  const [leaveBalances, setLeaveBalances] = useState({})
+  const [balanceError, setBalanceError] = useState('')
+  const [balanceLoading, setBalanceLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState('')
@@ -391,12 +360,6 @@ function Approvals() {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(ME_STORAGE_KEY)
-      if (stored) setMeLocal(JSON.parse(stored))
-    } catch (e) {
-      console.error('Failed to read stored identity', e)
-    }
-    try {
       const recent = JSON.parse(localStorage.getItem(RECENT_TEMPLATES_KEY) || '[]')
       if (Array.isArray(recent)) setRecentTemplateIds(recent)
     } catch (e) {
@@ -408,6 +371,7 @@ function Approvals() {
   const loadData = async () => {
     try {
       setLoading(true)
+      setLoadError('')
       // The real staff directory lives in Supabase (`users`, same table Employees.jsx
       // reads/writes) — only the columns the picker/avatars need are selected so this
       // stays fast even as the table grows (avoids the heavy documents/images blobs
@@ -442,6 +406,7 @@ function Approvals() {
       setCustomTemplates(tplList)
     } catch (e) {
       console.error('Lỗi tải dữ liệu phê duyệt:', e)
+      setLoadError(e?.message || 'Không tải được dữ liệu đề xuất.')
     } finally {
       setLoading(false)
     }
@@ -452,9 +417,7 @@ function Approvals() {
     setTimeout(() => setToast(''), 2200)
   }
 
-  // Prefer a real authenticated user the moment one is available; otherwise fall back
-  // to the person chosen locally via the identity picker. Enrich from staff directory
-  // so name + employee code always match the logged-in account record.
+  // Identity always comes from the authenticated profile.
   const me = useMemo(() => {
     const base = authUser
       ? {
@@ -469,7 +432,7 @@ function Approvals() {
             '',
           role: authUser.role || 'user'
         }
-      : meLocal
+      : null
 
     if (!base) return null
 
@@ -497,10 +460,23 @@ function Approvals() {
       employeeCode: base.employeeCode || emp.employeeId || emp.username || '',
       role: emp.role || base.role || 'user'
     }
-  }, [authUser, meLocal, employees])
+  }, [authUser, employees])
 
-  // Nội bộ HR: ai vào tab Mẫu yêu cầu cũng tạo/sửa được mẫu (không chặn theo role)
-  const canManageTemplates = true
+  const canManageTemplates = ['admin', 'hr'].includes(authUser?.role)
+
+  useEffect(() => {
+    if (view !== 'create' || !isEmployee) return
+    let active = true
+    setLeaderLoading(true)
+    setLeaderError('')
+    supabase.rpc('my_team_leader').then(({ data, error }) => {
+      if (!active) return
+      setTeamLeader(error ? null : data)
+      setLeaderError(error?.message || '')
+      setLeaderLoading(false)
+    })
+    return () => { active = false }
+  }, [view, isEmployee, authUser?.id])
 
   useEffect(() => {
     if (view !== 'create' || !selectedTemplate) return
@@ -648,7 +624,7 @@ function Approvals() {
 
   const isMe = (personId, personName) => {
     if (!me) return false
-    if (me.id && personId && String(me.id) === String(personId)) return true
+    if (me.id && personId) return String(me.id) === String(personId)
     if (me.name && personName) return normalizeString(me.name) === normalizeString(personName)
     return false
   }
@@ -667,6 +643,45 @@ function Approvals() {
     selectedTemplateUsage.attendanceSync === 'paid-leave' ||
     selectedTemplate?.id === 'leave' ||
     selectedTemplate?.baseId === 'leave'
+
+  const effectiveApproverSteps = isEmployee
+    ? teamLeader ? [{
+        approverId: teamLeader.id,
+        approverName: teamLeader.name,
+        approverAvatar: teamLeader.avatar || ''
+      }] : []
+    : approverSteps
+
+  const leaveDaysByYear = useMemo(() => {
+    if (!selectedTemplateUsesLeaveDates) return {}
+    const days = listRequestLeaveDates({ leaveStartDate, leaveEndDate })
+    return days.reduce((result, day) => {
+      const year = day.slice(0, 4)
+      result[year] = (result[year] || 0) + (leaveDuration === 'half' ? 0.5 : 1)
+      return result
+    }, {})
+  }, [selectedTemplateUsesLeaveDates, leaveStartDate, leaveEndDate, leaveDuration])
+  const leaveYearsKey = Object.keys(leaveDaysByYear).join(',')
+
+  useEffect(() => {
+    if (view !== 'create' || !selectedTemplateUsesLeaveDates || !leaveYearsKey) return
+    let active = true
+    setBalanceLoading(true)
+    setBalanceError('')
+    setLeaveBalances({})
+    Promise.all(leaveYearsKey.split(',').map(async (year) => {
+      const { data, error } = await supabase.rpc('my_approval_leave_balance', { p_year: Number(year) })
+      if (error) throw error
+      return [year, data]
+    })).then((entries) => {
+      if (active) setLeaveBalances(Object.fromEntries(entries))
+    }).catch((error) => {
+      if (active) setBalanceError(error?.message || 'Không tải được số phép còn lại.')
+    }).finally(() => {
+      if (active) setBalanceLoading(false)
+    })
+    return () => { active = false }
+  }, [view, selectedTemplateUsesLeaveDates, leaveYearsKey, authUser?.id])
 
   const myCreateStats = useMemo(() => {
     const emptyBucket = () => ({ total: 0, byTemplate: {} })
@@ -819,7 +834,7 @@ function Approvals() {
 
   const openCreate = (template) => {
     if (!me) {
-      setShowMePicker(true)
+      showToast('Vui lòng đăng nhập lại để tạo đề xuất.')
       return
     }
     const tpl = template || selectedTemplate || allTemplates.find((t) => t.id === 'proposal') || allTemplates[0]
@@ -1045,9 +1060,9 @@ function Approvals() {
     const errs = {}
     if (!subject.trim()) errs.subject = 'Vui lòng chọn về việc'
     if (!content.trim()) errs.content = 'Vui lòng nhập nội dung'
-    if (!approverSteps.some((s) => s.approverId)) {
-      errs.approvers = 'Vui lòng chọn ít nhất 1 người phê duyệt'
-    } else if (approverSteps.some((s) => !s.approverId)) {
+    if (!effectiveApproverSteps.some((s) => s.approverId)) {
+      errs.approvers = isEmployee ? (leaderError || 'Chưa tìm được Leader của Team.') : 'Vui lòng chọn ít nhất 1 người phê duyệt'
+    } else if (effectiveApproverSteps.some((s) => !s.approverId)) {
       errs.approvers = 'Vui lòng chọn đầy đủ người phê duyệt hoặc xóa bước còn trống'
     }
     if (selectedTemplateUsage.limitReached) {
@@ -1058,6 +1073,19 @@ function Approvals() {
       if (!leaveStartDate || !leaveEndDate || dates.length === 0) {
         errs.leaveDates = 'Ngày nghỉ không hợp lệ hoặc ngày kết thúc trước ngày bắt đầu'
       }
+      if (leaveType === 'paid') {
+        if (balanceLoading || balanceError || Object.keys(leaveBalances).length !== Object.keys(leaveDaysByYear).length) {
+          errs.leaveBalance = balanceError || 'Đang tải số phép còn lại. Vui lòng thử lại.'
+        } else {
+          for (const [year, daysNeeded] of Object.entries(leaveDaysByYear)) {
+            const balance = leaveBalances[year]
+            if (!balance?.configured) errs.leaveBalance = `Chưa cài đặt phép năm ${year}. Vui lòng liên hệ HR.`
+            else if (Number(balance.remaining) < daysNeeded) {
+              errs.leaveBalance = `Năm ${year} chỉ còn ${balance.remaining} ngày phép; đơn cần ${daysNeeded} ngày.`
+            }
+          }
+        }
+      }
     }
     setErrors(errs)
     return Object.keys(errs).length === 0
@@ -1065,7 +1093,7 @@ function Approvals() {
 
   const handleSubmitRequest = async () => {
     if (!me) {
-      setShowMePicker(true)
+      showToast('Vui lòng đăng nhập lại để gửi đề xuất.')
       return
     }
     if (!validateForm()) return
@@ -1127,12 +1155,17 @@ function Approvals() {
           : {}),
         status: 'pending',
         currentStepIndex: 0,
-        approvalSteps: approverSteps
+        approvalSteps: effectiveApproverSteps
           .filter((s) => s.approverId)
           .map((s) => ({ ...s, decision: null, decidedAt: null, comment: '' })),
         createdAt: now
       }
-      await fbPush(REQUESTS_PATH, payload)
+      if (isEmployee) {
+        const { error } = await supabase.rpc('submit_employee_approval', { p_data: payload })
+        if (error) throw error
+      } else {
+        await fbPush(REQUESTS_PATH, { ...payload, companyId: authUser?.company_id || authUser?.companyId || 'speego-original' })
+      }
       showToast(
         latestUsage.remaining === null
           ? 'Đã nộp yêu cầu'
@@ -1146,118 +1179,29 @@ function Approvals() {
       await loadData()
     } catch (e) {
       console.error(e)
-      showToast('Có lỗi khi nộp yêu cầu')
+      setErrors((previous) => ({ ...previous, submit: e?.message || 'Có lỗi khi nộp yêu cầu.' }))
+      showToast(e?.message || 'Có lỗi khi nộp yêu cầu')
     } finally {
       setSubmitting(false)
     }
   }
 
-  // ---- Decision helpers (detail view) ----
-  const syncApprovedLeaveToAttendance = async (request) => {
-    if (!isPaidLeaveRequest(request)) return null
-    if (request.attendanceSyncStatus === 'synced') {
-      return {
-        attendanceSyncStatus: 'synced',
-        attendanceSyncedAt: request.attendanceSyncedAt || ''
-      }
-    }
-
-    const leaveDates = listRequestLeaveDates(request)
-    if (!leaveDates.length) {
-      throw new Error('Phiếu nghỉ phép chưa có ngày bắt đầu/kết thúc để đồng bộ chấm công.')
-    }
-
-    const employee = employees.find((item) =>
-      (request.requesterId && String(item.id) === String(request.requesterId)) ||
-      (request.requesterCode &&
-        String(item.employeeId || item.username || '') === String(request.requesterCode)) ||
-      (request.requesterName &&
-        normalizeString(item.ho_va_ten || item.name || '') ===
-        normalizeString(request.requesterName))
-    )
-    const employeeId = employee?.id || request.requesterId
-    if (!employeeId) {
-      throw new Error('Không xác định được hồ sơ nhân viên để đồng bộ ngày phép.')
-    }
-
-    const datesByMonth = new Map()
-    leaveDates.forEach((date) => {
-      const month = date.slice(0, 7)
-      const day = Number(date.slice(8, 10))
-      if (!datesByMonth.has(month)) datesByMonth.set(month, [])
-      datesByMonth.get(month).push(day)
-    })
-
-    const workdayValue = request.leaveDuration === 'half' ? 0.5 : 1
-    for (const [month, days] of datesByMonth) {
-      const currentAdjustments =
-        (await fbGet(`hr/attendanceAdjustments/${month}`)) || {}
-      const currentDays = String(currentAdjustments[employeeId] || '')
-        .split(',')
-        .map((value) => Number.parseInt(value.trim(), 10))
-        .filter(Number.isFinite)
-      const mergedDays = [...new Set([...currentDays, ...days])]
-        .sort((left, right) => left - right)
-
-      await fbUpdate(`hr/attendanceAdjustments/${month}`, {
-        [employeeId]: mergedDays.join(',')
-      })
-      await fbUpdate(`hr/manualWorkdays/${month}/${employeeId}`, Object.fromEntries(
-        days.map((day) => [day, workdayValue])
-      ))
-    }
-
-    return {
-      attendanceSyncStatus: 'synced',
-      attendanceSyncedAt: new Date().toISOString(),
-      attendanceEmployeeId: employeeId,
-      attendanceDates: leaveDates,
-      attendanceWorkdayValue: workdayValue
-    }
-  }
-
+  // The RPC checks the assigned approver and commits attendance changes with
+  // the final decision in one database transaction.
   const handleDecision = async (decision, comment = '', requestOverride = null) => {
     const target = requestOverride || selectedRequest
     if (!target) return
     setDeciding(true)
     try {
-      const idx = target.currentStepIndex || 0
-      const decidedAt = new Date().toISOString()
-      const steps = (target.approvalSteps || []).map((s, i) =>
-        i === idx
-          ? {
-              ...s,
-              decision,
-              decidedAt,
-              comment,
-              decidedById: me?.id || s.approverId || '',
-              decidedByName: me?.name || s.approverName || '',
-              decidedByAvatar: me?.avatar || s.approverAvatar || ''
-            }
-          : s
-      )
-      let status = target.status
-      let currentStepIndex = target.currentStepIndex || 0
-      if (decision === 'rejected') {
-        status = 'rejected'
-      } else if (idx === steps.length - 1) {
-        status = 'approved'
-      } else {
-        currentStepIndex = idx + 1
-      }
-      const attendanceSyncPatch =
-        status === 'approved'
-          ? await syncApprovedLeaveToAttendance(target)
-          : null
-      await fbUpdate(`${REQUESTS_PATH}/${target.id}`, {
-        approvalSteps: steps,
-        status,
-        currentStepIndex,
-        ...(attendanceSyncPatch || {})
+      const { data, error } = await supabase.rpc('decide_employee_approval', {
+        p_id: target.id,
+        p_decision: decision,
+        p_comment: comment
       })
+      if (error) throw error
       showToast(
         decision === 'approved'
-          ? attendanceSyncPatch
+          ? data?.attendanceSyncStatus === 'synced'
             ? 'Đã duyệt và đồng bộ ngày phép sang chấm công'
             : 'Đã đồng ý'
           : 'Đã từ chối'
@@ -1273,28 +1217,13 @@ function Approvals() {
     }
   }
 
-  const pickMe = (emp) => {
-    const person = {
-      id: emp.id,
-      name: emp.ho_va_ten || emp.name || 'N/A',
-      avatar: emp.avatarDataUrl || emp.avatarUrl || emp.avatar || '',
-      employeeCode: emp.employeeId || emp.username || '',
-      role: emp.role || 'user'
-    }
-    setMeLocal(person)
-    try {
-      localStorage.setItem(ME_STORAGE_KEY, JSON.stringify(person))
-    } catch (e) {
-      console.error('Failed to store identity', e)
-    }
-    setShowMePicker(false)
-  }
-
   return (
     <div className="apv-page">
       <div className="apv" data-view={view} data-tab={tab}>
         {loading ? (
           <div className="loadingState">Đang tải dữ liệu...</div>
+        ) : loadError ? (
+          <div className="apv-card-block" role="alert">{loadError} <button type="button" onClick={loadData}>Tải lại</button></div>
         ) : view === 'template-form' ? (
           <>
             <div className="apv-topbar">
@@ -1841,11 +1770,28 @@ function Approvals() {
                         </select>
                       </div>
                     </div>
+                    <div className="apv-leave-balance" aria-live="polite">
+                      <strong>Phép năm còn lại</strong>
+                      {balanceLoading ? <span>Đang tính số phép...</span> : balanceError ? (
+                        <span className="apv-field-error">{balanceError}</span>
+                      ) : Object.entries(leaveDaysByYear).map(([year, requested]) => {
+                        const balance = leaveBalances[year]
+                        return <div className="apv-leave-balance__row" key={year}>
+                          <b>{year}</b>
+                          <span>Tổng: {balance?.configured ? balance.total : 'Chưa cài đặt'}</span>
+                          <span>Đã xin: {balance?.used ?? '—'}</span>
+                          <span>Còn: {balance?.remaining ?? '—'}</span>
+                          <span>Đơn này: {requested}</span>
+                        </div>
+                      })}
+                      {leaveType === 'unpaid' && <small>Nghỉ không hưởng lương không trừ phép năm.</small>}
+                    </div>
                     <div className="apv-leave-fields__note">
                       <i className="fas fa-link"></i>
                       Khi được duyệt ở bước cuối, các ngày nghỉ có phép sẽ tự chuyển sang Chấm công.
                     </div>
                     {errors.leaveDates && <div className="apv-field-error">{errors.leaveDates}</div>}
+                    {errors.leaveBalance && <div className="apv-field-error">{errors.leaveBalance}</div>}
                   </div>
                 )}
 
@@ -1962,7 +1908,19 @@ function Approvals() {
                     </div>
                   </div>
 
-                  {approverSteps.map((step, idx) => (
+                  {isEmployee && <div className="apv-tl-step">
+                    <div className="apv-tl-step__rail"><div className="apv-tl-step__dot apv-tl-step__dot--waiting"><i className="fas fa-stamp"></i></div></div>
+                    <div className="apv-tl-step__body">
+                      <div className="apv-tl-step__title">Người phê duyệt theo Team</div>
+                      {leaderLoading ? <span>Đang tìm Leader...</span> : leaderError ? (
+                        <div className="apv-field-error">{leaderError}</div>
+                      ) : teamLeader ? (
+                        <div className="apv-tl-approver"><Avatar name={teamLeader.name} avatar={teamLeader.avatar} size={26} />
+                          <span className="apv-tl-approver__name">{teamLeader.name} · {teamLeader.department}</span></div>
+                      ) : <div className="apv-field-error">Chưa tìm được Leader của Team.</div>}
+                    </div>
+                  </div>}
+                  {!isEmployee && approverSteps.map((step, idx) => (
                     <div className="apv-tl-step" key={idx}>
                       <div className="apv-tl-step__rail">
                         <div className="apv-tl-step__dot apv-tl-step__dot--waiting">
@@ -2019,7 +1977,7 @@ function Approvals() {
                     </div>
                   ))}
 
-                  {approverSteps.length < MAX_APPROVAL_STEPS && (
+                  {!isEmployee && approverSteps.length < MAX_APPROVAL_STEPS && (
                     <button type="button" className="apv-tl-add-step" onClick={addStep}>
                       <i className="fas fa-plus"></i> Thêm bước phê duyệt
                     </button>
@@ -2045,7 +2003,7 @@ function Approvals() {
             <div className="apv-actionbar">
               <button
                 className="apv-btn apv-btn--primary"
-                disabled={submitting || selectedTemplateUsage.limitReached}
+                disabled={submitting || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && leaveType === 'paid' && balanceLoading)}
                 onClick={handleSubmitRequest}
               >
                 {submitting ? (
@@ -2053,9 +2011,10 @@ function Approvals() {
                     <i className="fas fa-spinner fa-spin"></i> Đang nộp...
                   </>
                 ) : (
-                  'Nộp yêu cầu'
+                  'Gửi đơn đề xuất'
                 )}
               </button>
+              {errors.submit && <div className="apv-field-error" role="alert">{errors.submit}</div>}
             </div>
           </>
         ) : view === 'detail' && selectedRequest ? (
@@ -2333,7 +2292,7 @@ function Approvals() {
               )}
             </div>
 
-            {selectedRequest.status === 'pending' && (isMyTurn(selectedRequest) || tab === 'admin') && (
+            {selectedRequest.status === 'pending' && (isMyTurn(selectedRequest) || (tab === 'admin' && canManageTemplates)) && (
               <div className="apv-actionbar" style={{ flexWrap: 'wrap' }}>
                 {!isMyTurn(selectedRequest) && (
                   <div className="apv-actionbar__notice">
@@ -2357,7 +2316,7 @@ function Approvals() {
                 <i className="fas fa-stamp"></i>
               </div>
               <div className="apv-topbar__title">
-                {tab === 'templates' ? 'Mẫu yêu cầu' : tab === 'stats' ? 'Thống kê đề xuất' : 'Phê duyệt'}
+                {tab === 'templates' ? 'Mẫu yêu cầu' : tab === 'stats' ? 'Thống kê đề xuất' : 'Đề xuất'}
                 <small>
                   {tab === 'templates'
                     ? 'Chọn mẫu để tạo yêu cầu mới'
@@ -2366,15 +2325,9 @@ function Approvals() {
                       : 'Đề xuất & yêu cầu công việc'}
                 </small>
               </div>
-              {authUser ? (
-                <div className="apv-topbar__icon" title={me?.name}>
-                  <Avatar name={me?.name} avatar={me?.avatar} size={30} />
-                </div>
-              ) : (
-                <button className="apv-topbar__icon" title={me ? `Bạn: ${me.name}` : 'Chọn bạn là ai'} onClick={() => setShowMePicker(true)}>
-                  {me ? <Avatar name={me.name} avatar={me.avatar} size={30} /> : <i className="fas fa-user"></i>}
-                </button>
-              )}
+              <div className="apv-topbar__icon" title={me?.name}>
+                <Avatar name={me?.name} avatar={me?.avatar} size={30} />
+              </div>
             </div>
 
             <div className="apv-search">
@@ -2399,24 +2352,11 @@ function Approvals() {
               >
                 Gửi đi
               </button>
-              <button
-                className={tab === 'admin' ? 'active' : ''}
-                onClick={() => setTabNav('admin')}
-              >
-                Quản trị
-              </button>
-              <button
-                className={tab === 'templates' ? 'active' : ''}
-                onClick={() => setTabNav('templates')}
-              >
-                Mẫu yêu cầu
-              </button>
-              <button
-                className={tab === 'stats' ? 'active' : ''}
-                onClick={() => setTabNav('stats')}
-              >
-                Thống kê
-              </button>
+              {!isEmployee && <>
+                <button className={tab === 'admin' ? 'active' : ''} onClick={() => setTabNav('admin')}>Quản trị</button>
+                <button className={tab === 'templates' ? 'active' : ''} onClick={() => setTabNav('templates')}>Mẫu yêu cầu</button>
+                <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTabNav('stats')}>Thống kê</button>
+              </>}
             </div>
 
             {tab === 'templates' ? (
@@ -2911,10 +2851,6 @@ function Approvals() {
         )}
 
         {toast && <div className="apv-toast">{toast}</div>}
-
-        {showMePicker && (
-          <PersonPickerSheet title="Bạn là ai?" employees={employees} onPick={pickMe} onClose={() => setShowMePicker(false)} />
-        )}
 
         {rejectPrompt && selectedRequest && (
           <BottomSheet title="Lý do từ chối" onClose={() => setRejectPrompt(false)}>
