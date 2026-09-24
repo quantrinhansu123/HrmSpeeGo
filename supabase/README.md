@@ -28,6 +28,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 | `performance_reviews` | Đánh giá / grading |
 | **`hr_records`** | **Toàn bộ module còn lại** (thay Firebase) |
 | `employee_leave_settings` | Phép năm/tháng dạng JSONB theo công ty và nhân sự; chạy migration `20260924100000_employee_leave_settings.sql` sau các migration xác thực |
+| `employee_leave_days` | Từng ngày nghỉ phép (tên tài khoản, ngày nghỉ); chạy migration `20260924143000_employee_leave_days.sql` |
 
 ### Trong `hr_records` (cột `collection`)
 - **Lương / phúc lợi:** `salaryGrades`, `employeeSalaries`, `promotionHistory`, `payrolls`
@@ -45,6 +46,8 @@ App vẫn gọi `fbGet` / `fbPush`… nhưng **đã trỏ sang Supabase** (`src/
 ### Bật Bảng phép trên database đang dùng
 
 Chạy riêng [`migrations/20260924100000_employee_leave_settings.sql`](./migrations/20260924100000_employee_leave_settings.sql) trong Supabase SQL Editor sau các migration xác thực nhân sự. Migration chỉ tạo bảng phép, hàm kiểm tra công ty và chính sách truy cập; không sửa dữ liệu nhân sự hoặc chấm công.
+
+Để bật trang **Ngày nghỉ phép**, chạy thêm [`migrations/20260924143000_employee_leave_days.sql`](./migrations/20260924143000_employee_leave_days.sql). Bảng này lưu tên từ hồ sơ đăng nhập và ngày nghỉ, không sửa đơn duyệt phép hoặc chấm công.
 
 ## Tài khoản mặc định
 - Email: `admin@company.local`

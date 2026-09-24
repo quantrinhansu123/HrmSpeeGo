@@ -13,6 +13,7 @@ const Employees = lazy(() => import('./pages/Employees'))
 const FeatureComingSoon = lazy(() => import('./pages/FeatureComingSoon'))
 const HolidaySettings = lazy(() => import('./pages/HolidaySettings'))
 const LeaveBoard = lazy(() => import('./pages/LeaveBoard'))
+const LeaveDays = lazy(() => import('./pages/LeaveDays'))
 const Login = lazy(() => import('./pages/Login'))
 const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
@@ -33,6 +34,7 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={ATTENDANCE_ROLES} allowAccounting />}>
             <Route element={<AppLayout />}>
               <Route path="/cham-cong-online" element={<OnlineAttendance />} />
+              <Route path="/ngay-nghi-phep" element={<LeaveDays />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['user']} />}>

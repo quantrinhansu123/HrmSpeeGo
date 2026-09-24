@@ -17,6 +17,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/bang-phat', icon: 'fas fa-file-invoice-dollar', label: 'Bảng phạt' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
     ...(user?.role === 'admin' || user?.role === 'hr' ? [{ path: '/bang-phep', icon: 'fas fa-calendar-alt', label: 'Bảng phép' }] : []),
+    { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/holiday-settings', icon: 'fas fa-cog', label: 'Cài đặt' }
   ]
 
@@ -31,11 +32,13 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
 
   const employeeItems = [
     { path: '/bang-cong', icon: 'fas fa-calendar-check', label: 'Bảng công' },
+    { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
   ]
 
   const accountingItems = [
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
+    { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/holiday-settings', icon: 'fas fa-calendar-day', label: 'Cài đặt chấm công' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
   ]
