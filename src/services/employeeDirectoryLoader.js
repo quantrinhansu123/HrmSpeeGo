@@ -10,12 +10,16 @@ const normalizeColumns = columns => {
 }
 
 const missingColumnFromError = error => {
-  const match = String(error?.message || '')
-    .match(/Could not find the '([^']+)' column of 'users' in the schema cache/i)
-  return match?.[1] || ''
+  const message = String(error?.message || '')
+  const cacheMatch = message.match(/Could not find the '([^']+)' column of 'users' in the schema cache/i)
+  if (cacheMatch) return cacheMatch[1]
+  // PostgreSQL returns 42703 for a SELECT that names a column absent from an
+  // older users schema (for example, users.company_id).
+  if (error?.code && error.code !== '42703') return ''
+  return message.match(/column (?:"?users"?\.)?"?([a-z_][a-z0-9_]*)"? does not exist/i)?.[1] || ''
 }
 
-/** Pure paginated loader; the Supabase client is injected for testability. */
+/** Pure paginated loader; optional missing columns are removed after an explicit schema error. */
 export const loadEmployeeDirectoryWithClient = async ({
   client,
   columns,
