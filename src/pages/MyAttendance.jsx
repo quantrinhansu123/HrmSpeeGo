@@ -72,7 +72,29 @@ function MyAttendance() {
             const date = dateValue(log), hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
             return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{log.cong ?? '—'}</td><td>{hours || '—'}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td></tr>
           }) : <tr><td colSpan="9" className="my-attendance__empty">Không có dữ liệu trong tháng này.</td></tr>}
-        </tbody></table></div></section>
+        </tbody></table></div>
+        <div className="my-attendance__mobile-list">
+          {monthLogs.length ? monthLogs.map(log => {
+            const date = dateValue(log)
+            const hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
+            return <article key={log.id} className="my-attendance__mobile-day">
+              <div className="my-attendance__mobile-day-head"><strong>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</strong><span>{log.dayOfWeek || log.thu || '—'} · {log.kyHieu || log.status || '—'}</span></div>
+              <div className="my-attendance__mobile-day-grid">
+                <div><span>Giờ vào</span><strong>{timeValue(log.vao || log.checkIn)}</strong></div>
+                <div><span>Giờ ra</span><strong>{timeValue(log.ra || log.checkOut)}</strong></div>
+                <div><span>Công</span><strong>{log.cong ?? '—'}</strong></div>
+                <div><span>Giờ</span><strong>{hours || '—'}</strong></div>
+              </div>
+              {(numberValue(log.lateMinutes ?? log.vaoTre) > 0 || numberValue(log.earlyMinutes ?? log.raSom) > 0) && (
+                <p className="my-attendance__mobile-day-warning">
+                  {numberValue(log.lateMinutes ?? log.vaoTre) > 0 && `Đi muộn ${numberValue(log.lateMinutes ?? log.vaoTre)} phút`}
+                  {numberValue(log.lateMinutes ?? log.vaoTre) > 0 && numberValue(log.earlyMinutes ?? log.raSom) > 0 && ' · '}
+                  {numberValue(log.earlyMinutes ?? log.raSom) > 0 && `Về sớm ${numberValue(log.earlyMinutes ?? log.raSom)} phút`}
+                </p>
+              )}
+            </article>
+          }) : <p className="my-attendance__mobile-empty">Không có dữ liệu trong tháng này.</p>}
+        </div></section>
       </>}
     </div>
   )

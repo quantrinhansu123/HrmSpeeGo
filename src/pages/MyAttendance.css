@@ -23,6 +23,7 @@
 .my-attendance__table-wrap th { color: #fff; background: #0b3d73; }
 .my-attendance__table-wrap .is-warning { color: #b42318; font-weight: 700; background: #fff7ed; }
 .my-attendance__empty { padding: 30px !important; color: #64748b; }
+.my-attendance__mobile-list { display: none; }
 @media (max-width: 1050px) { .my-attendance__stats { grid-template-columns: repeat(3, 1fr); } .my-attendance__identity { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px) {
   .my-attendance__header { align-items: stretch; flex-direction: column; gap: 14px; }
@@ -35,5 +36,15 @@
   .my-attendance__identity { grid-template-columns: 1fr; }
   .my-attendance__identity div { padding: 13px 15px; border-right: 0; border-bottom: 1px solid #e2e8f0; }
   .my-attendance__table-card h3 { padding: 14px; }
-  .my-attendance__table-wrap th, .my-attendance__table-wrap td { padding: 10px 11px; font-size: .92rem; }
+  .my-attendance__table-wrap { display: none; }
+  .my-attendance__mobile-list { display: grid; gap: 9px; padding: 10px; }
+  .my-attendance__mobile-day { padding: 12px; border: 1px solid #d9e4ef; border-radius: 10px; background: #fff; }
+  .my-attendance__mobile-day-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; color: #0b3d73; }
+  .my-attendance__mobile-day-head span { color: #64748b; font-size: 12px; }
+  .my-attendance__mobile-day-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .my-attendance__mobile-day-grid > div { display: grid; gap: 3px; padding: 8px; border-radius: 7px; background: #f0f5fa; }
+  .my-attendance__mobile-day-grid span { color: #64748b; font-size: 11px; }
+  .my-attendance__mobile-day-grid strong { color: #0b3d73; }
+  .my-attendance__mobile-day-warning { margin-top: 9px; color: #b42318; font-size: 12px; font-weight: 700; }
+  .my-attendance__mobile-empty { padding: 16px; color: #64748b; }
 }

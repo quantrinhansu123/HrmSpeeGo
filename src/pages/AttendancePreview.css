@@ -527,6 +527,10 @@
   color: #ff5b1a;
 }
 
+.attendance-preview-mobile {
+  display: none;
+}
+
 .attendance-preview-table td.attendance-summary-notes {
   min-width: 210px;
   max-width: 270px;
@@ -873,7 +877,40 @@
   .attendance-preview-page > header { align-items: stretch; flex-direction: column; padding: 16px; }
   .attendance-preview-actions { flex-direction: column; align-items: stretch; }
   .attendance-preview-page header label { justify-content: space-between; }
-  .attendance-preview-scroll { max-height: calc(100vh - 225px); }
+  .attendance-preview-actions > button { width: 100%; min-height: 42px; white-space: normal; }
+  .attendance-preview-scroll { display: none; }
+  .attendance-preview-mobile { display: grid; gap: 10px; }
+  .attendance-preview-mobile__empty { padding: 20px; border-radius: 10px; background: #fff; }
+  .attendance-preview-mobile-card { min-width: 0; padding: 14px; border: 1px solid #d7e3ee; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(15, 45, 80, .05); }
+  .attendance-preview-mobile-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .attendance-preview-mobile-card__head > button { border: 0; background: transparent; color: #0d427a; font: inherit; font-weight: 700; text-align: left; text-decoration: underline; cursor: pointer; }
+  .attendance-preview-mobile-card__head label { display: flex; align-items: center; gap: 5px; color: #4a5c70; font-size: 12px; white-space: nowrap; }
+  .attendance-preview-mobile-card__head input { width: 18px; height: 18px; accent-color: #0d427a; }
+  .attendance-preview-mobile-card > p { margin: 6px 0 12px; color: #5a6472; font-size: 12px; }
+  .attendance-preview-mobile-card__stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .attendance-preview-mobile-card__stats > div { display: grid; gap: 3px; min-width: 0; padding: 9px; border-radius: 8px; background: #f0f5fb; }
+  .attendance-preview-mobile-card__stats span { color: #506177; font-size: 11px; }
+  .attendance-preview-mobile-card__stats strong { color: #0d427a; font-size: 16px; }
+  .attendance-preview-mobile-card__notes { display: grid; gap: 4px; margin-top: 12px; padding: 10px; border-radius: 8px; background: #fff8e7; font-size: 12px; overflow-wrap: anywhere; }
+  .attendance-preview-mobile-card__detail { width: 100%; min-height: 40px; margin-top: 12px; border: 1px solid #b6cee8; border-radius: 8px; background: #edf6ff; color: #0d427a; font: inherit; font-weight: 700; cursor: pointer; }
+  .attendance-day-detail-overlay { padding: 8px; }
+  .attendance-day-detail-modal { width: 100%; max-height: calc(100dvh - 16px); }
+  .attendance-day-detail-modal > header { align-items: flex-start; padding: 12px; }
+  .attendance-day-detail-modal > header h2 { font-size: 17px; }
+  .attendance-day-detail-summary { gap: 6px 12px; padding: 10px 12px; }
+  .attendance-day-detail-scroll { padding: 8px; background: #f3f7fc; }
+  .attendance-day-detail-scroll table,
+  .attendance-day-detail-scroll tbody { display: block; width: 100%; }
+  .attendance-day-detail-scroll thead { display: none; }
+  .attendance-day-detail-scroll tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-bottom: 8px; border: 1px solid #d7dee8; border-radius: 9px; background: #fff; overflow: hidden; }
+  .attendance-day-detail-scroll tbody td { display: grid; gap: 4px; min-width: 0; padding: 8px 10px; text-align: left; font-size: 13px; }
+  .attendance-day-detail-scroll tbody td::before { content: attr(data-label); color: #64748b; font-size: 11px; font-weight: 600; }
+  .attendance-day-detail-scroll tbody td:first-child,
+  .attendance-day-detail-scroll tbody td.note { grid-column: 1 / -1; }
+  .attendance-day-detail-scroll tbody td:first-child { color: #0d427a; font-weight: 700; }
+  .attendance-day-detail-scroll td.note { min-width: 0; }
+  .attendance-day-detail-scroll td.note textarea { min-width: 0; }
+  .attendance-day-detail-footer { padding: 9px 12px calc(9px + env(safe-area-inset-bottom, 0px)); }
 }
 
 /* ==========================================================================

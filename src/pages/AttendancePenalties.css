@@ -32,6 +32,28 @@
   font-size: 13px;
 }
 
+.attendance-penalties-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.attendance-penalties-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px 18px;
+  border: 1px solid #d7dee8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.attendance-penalties-summary span { color: #526477; font-size: 13px; font-weight: 600; }
+.attendance-penalties-summary strong { color: #0d427a; font-size: 25px; font-variant-numeric: tabular-nums; }
+.attendance-penalties-summary > div:last-child strong { color: #b42318; }
+.attendance-penalties-summary small { color: #64748b; font-size: 11px; }
+
 .attendance-penalties-actions {
   display: flex;
   flex-wrap: wrap;
@@ -259,6 +281,10 @@
     border-radius: 0;
     border-top-width: 3px;
   }
+
+  .attendance-penalties-summary { gap: 8px; margin: 0 10px 10px; }
+  .attendance-penalties-summary > div { padding: 12px; }
+  .attendance-penalties-summary strong { font-size: clamp(17px, 5vw, 23px); overflow-wrap: anywhere; }
 
   .attendance-penalties-page h1 {
     font-size: 1.35rem;

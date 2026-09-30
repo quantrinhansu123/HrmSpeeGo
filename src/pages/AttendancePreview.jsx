@@ -1369,6 +1369,47 @@ function AttendancePreview() {
             ))}
           </tbody>
         </table></div>
+        <section className="attendance-preview-mobile" aria-label="Bảng công theo nhân viên">
+          {rows.length === 0 ? (
+            <p className="attendance-preview-mobile__empty">Tháng này chưa có nhân viên trong bảng công.</p>
+          ) : rows.map(row => (
+            <article className="attendance-preview-mobile-card" key={row.employeeId}>
+              <div className="attendance-preview-mobile-card__head">
+                <button type="button" onClick={() => openDetailRow(row)}>
+                  {row.employeeName || row.employeeCode || 'Nhân viên'}
+                </button>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(confirmations[String(row.employeeId)])}
+                    disabled={confirmSaving}
+                    onChange={event => handleToggleConfirm(row.employeeId, event.target.checked)}
+                    aria-label={`Xác nhận ${row.employeeName || ''}`}
+                  />
+                  Xác nhận
+                </label>
+              </div>
+              <p>{row.displayDepartment || row.department || 'Chưa có bộ phận'} · {row.shift || 'Chưa có ca'}</p>
+              <div className="attendance-preview-mobile-card__stats">
+                <div><span>Công thực tế</span><strong>{formatWorkdays(actualWorkdaysFor(row))}</strong></div>
+                <div><span>Phép hưởng lương</span><strong>{formatWorkdays(paidLeaveWorkdaysFor(row))}</strong></div>
+                <div><span>Công tính lương</span><strong>{formatWorkdays(payableWorkdaysFor(row))}</strong></div>
+                <div><span>Tăng ca</span><strong>{row.overtimeHours || 0}</strong></div>
+              </div>
+              {summaryNoteLines(row, attendanceNotes, month).length > 0 && (
+                <div className="attendance-preview-mobile-card__notes">
+                  <strong>Ghi chú</strong>
+                  {summaryNoteLines(row, attendanceNotes, month).map((line, index) => (
+                    <span key={`${index}-${line}`}>{line}</span>
+                  ))}
+                </div>
+              )}
+              <button type="button" className="attendance-preview-mobile-card__detail" onClick={() => openDetailRow(row)}>
+                {canEditWorkdays ? 'Xem và chỉnh chi tiết từng ngày' : 'Xem chi tiết từng ngày'}
+              </button>
+            </article>
+          ))}
+        </section>
         <section className="attendance-preview-weeks">
           <div className="attendance-preview-weeks__head">
             <h2>Tổng hợp theo tuần</h2>
@@ -1490,21 +1531,21 @@ function AttendancePreview() {
               <tbody>
                 {detailDays.map(item => (
                   <tr key={item.date} className={item.hasData ? '' : 'is-empty'}>
-                    <td>{dateText(item.date)}</td>
-                    <td>{item.weekday}</td>
-                    <td>{item.code || '—'}</td>
-                    <td className={item.checkIn && item.standardCheckIn && item.checkIn > item.standardCheckIn ? 'is-late' : ''}>
+                    <td data-label="Ngày">{dateText(item.date)}</td>
+                    <td data-label="Thứ">{item.weekday}</td>
+                    <td data-label="Ký hiệu">{item.code || '—'}</td>
+                    <td data-label="Giờ vào" className={item.checkIn && item.standardCheckIn && item.checkIn > item.standardCheckIn ? 'is-late' : ''}>
                       {item.checkIn || '—'}
                     </td>
-                    <td className={item.checkOut && item.standardCheckOut && item.checkOut < item.standardCheckOut ? 'is-early' : ''}>
+                    <td data-label="Giờ ra" className={item.checkOut && item.standardCheckOut && item.checkOut < item.standardCheckOut ? 'is-early' : ''}>
                       {item.checkOut || '—'}
                     </td>
-                    <td className="standard">
+                    <td data-label="Tiêu chuẩn" className="standard">
                       {item.standardCheckIn && item.standardCheckOut
                         ? `${item.standardCheckIn} - ${item.standardCheckOut}`
                         : '—'}
                     </td>
-                    <td className={item.manualWorkday !== undefined ? 'manual-workday-cell is-manual' : 'manual-workday-cell'}>
+                    <td data-label="Công" className={item.manualWorkday !== undefined ? 'manual-workday-cell is-manual' : 'manual-workday-cell'}>
                       {canEditNotes ? (
                         <ManualWorkdayInput
                           value={item.manualWorkday !== undefined ? item.manualWorkday : item.workdays}
@@ -1516,9 +1557,9 @@ function AttendancePreview() {
                         />
                       ) : (item.workdays !== '' ? item.workdays : '—')}
                     </td>
-                    <td>{item.hours || '—'}</td>
-                    <td>{item.overtimeHours || '—'}</td>
-                    <td className="note">
+                    <td data-label="Giờ">{item.hours || '—'}</td>
+                    <td data-label="Tăng ca">{item.overtimeHours || '—'}</td>
+                    <td data-label="Ghi chú" className="note">
                       {item.notes && <div className="attendance-auto-note">{item.notes}</div>}
                       {canEditWorkdays ? (
                         <textarea

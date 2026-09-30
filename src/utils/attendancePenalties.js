@@ -86,6 +86,14 @@ export const normalizePenaltyRows = (rows = []) =>
     source: row.source || 'manual'
   }))
 
+export const getPenaltyTotals = (rows = []) => (rows || []).reduce((totals, row) => {
+  if (!String(row?.employeeId || row?.employeeCode || row?.employeeName || '').trim()) return totals
+  totals.errorCount += 1
+  const amount = Number(row?.amount)
+  if (Number.isFinite(amount) && amount > 0) totals.amount += amount
+  return totals
+}, { errorCount: 0, amount: 0 })
+
 const autoRow = ({ employeeId, employeeCode, employeeName, date, suffix, category, content }) => ({
   id: `p-auto-${employeeId}-${date}-${suffix}`,
   date,

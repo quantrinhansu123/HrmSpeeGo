@@ -11,6 +11,7 @@ import {
   PENALTY_CATEGORIES,
   buildPenaltyDetailRows,
   createEmptyPenaltyRow,
+  getPenaltyTotals,
   normalizePenaltyCategories,
   normalizePenaltyRows
 } from '../utils/attendancePenalties'
@@ -129,10 +130,7 @@ function AttendancePenalties() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const total = useMemo(
-    () => rows.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-    [rows]
-  )
+  const { errorCount, amount: total } = useMemo(() => getPenaltyTotals(rows), [rows])
 
   const loadEmployees = useCallback(async () => {
     const list = await listPenaltyEmployeesSlim()
@@ -276,6 +274,10 @@ function AttendancePenalties() {
       alert('Tháng không hợp lệ.')
       return
     }
+    if (rows.some(row => !String(row.employeeId || row.employeeCode || row.employeeName || '').trim())) {
+      alert('Vui lòng chọn nhân viên cho mọi dòng phạt trước khi lưu.')
+      return
+    }
     setSaving(true)
     try {
       const rowsToSave = normalizePenaltyRows(rows).map(row => {
@@ -333,7 +335,7 @@ function AttendancePenalties() {
         <div>
           <h1>Bảng phạt</h1>
           <p>
-            {rows.length} dòng · Tổng {money(total)} đ
+            {rows.length} dòng
             {generatedAt ? ` · Đã lưu ${formatGeneratedAt(generatedAt)}` : ' · Chưa lưu'}
             {dirty ? ' · Chưa lưu thay đổi' : ''}
           </p>
@@ -368,6 +370,11 @@ function AttendancePenalties() {
           </button>
         </div>
       </header>
+
+      <section className="attendance-penalties-summary" aria-label="Tổng hợp bảng phạt">
+        <div><span>Tổng lỗi</span><strong>{errorCount}</strong><small>lỗi trong tháng {month}</small></div>
+        <div><span>Tổng tiền phạt</span><strong>{money(total)} đ</strong><small>Cập nhật theo các dòng phạt</small></div>
+      </section>
 
       <div className="attendance-penalties-card attendance-penalties-card--desktop">
         <div className="attendance-penalties-scroll">
@@ -459,7 +466,7 @@ function AttendancePenalties() {
             {rows.length > 0 && (
               <tfoot>
                 <tr>
-                  <td colSpan="5">Tổng cộng</td>
+                  <td colSpan="5">Tổng cộng · {errorCount} lỗi</td>
                   <td className="fine">{money(total)}</td>
                   <td colSpan="2"></td>
                 </tr>
@@ -554,7 +561,7 @@ function AttendancePenalties() {
 
         {rows.length > 0 && (
           <div className="attendance-penalties-mobile__total">
-            <span>Tổng cộng</span>
+            <span>{errorCount} lỗi · Tổng cộng</span>
             <strong>{money(total)} đ</strong>
           </div>
         )}

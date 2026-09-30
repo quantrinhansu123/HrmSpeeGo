@@ -1007,7 +1007,7 @@
 @media (max-width: 767px) {
   .apv {
     border-radius: 0;
-    min-height: calc(100vh - 80px);
+    min-height: calc(100dvh - 128px);
     box-shadow: none;
   }
 }
