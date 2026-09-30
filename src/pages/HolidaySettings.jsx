@@ -380,32 +380,6 @@ function HolidaySettings() {
                     onChange={event => updateSelectedShift('standardCheckOut', event.target.value)}
                   />
                 </label>
-                <label>
-                  <span>Chuẩn ngày công (phút)</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={settings.standardWorkMinutes || 480}
-                    onChange={event => setSettings(current => ({
-                      ...current,
-                      standardWorkMinutes: Number(event.target.value) || 480
-                    }))}
-                  />
-                </label>
-                <label>
-                  <span>Phút nghỉ không tính công</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={settings.unpaidBreakMinutes || 0}
-                    onChange={event => setSettings(current => ({
-                      ...current,
-                      unpaidBreakMinutes: Math.max(0, Number(event.target.value) || 0)
-                    }))}
-                  />
-                </label>
               </div>
 
               <div className="holiday-settings-split-card">
@@ -465,7 +439,7 @@ function HolidaySettings() {
                       ))}
                     </div>
                     <p className="holiday-settings-split-note">
-                      Các mốc giờ và công tối đa có thể sửa riêng cho từng ca. Một hoặc nhiều cặp Vào/Ra đều được giới hạn trong giờ từng buổi; nếu thiếu một lượt chấm thì dùng khoảng từ Vào đầu đến Ra cuối. Khoảng nghỉ giữa hai buổi tự được loại, không trừ thêm ở mục “Phút nghỉ không tính công”.
+                      Các mốc giờ và công tối đa có thể sửa riêng cho từng ca. Một hoặc nhiều cặp Vào/Ra đều được giới hạn trong giờ từng buổi; nếu thiếu một lượt chấm thì dùng khoảng từ Vào đầu đến Ra cuối. Khoảng nghỉ giữa hai buổi được tự động loại khỏi công.
                     </p>
                   </>
                 )}
