@@ -642,6 +642,26 @@
 .attendance-day-detail-scroll td.note {
   text-align: left;
   color: #5a6472;
+  min-width: 210px;
+}
+
+.attendance-day-detail-scroll td.note textarea {
+  display: block;
+  width: 100%;
+  min-width: 170px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #c5d0dc;
+  border-radius: 5px;
+  resize: vertical;
+  font: inherit;
+  color: #172033;
+  background: #fff;
+}
+
+.attendance-auto-note {
+  margin-bottom: 5px;
+  font-size: 12px;
 }
 
 .attendance-day-detail-scroll tr.is-empty td {

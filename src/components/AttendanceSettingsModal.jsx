@@ -121,10 +121,6 @@ function AttendanceSettingsModal({ isOpen, onClose, onSaved }) {
                 <div className="form-group"><label>Giờ vào chuẩn</label><input type="time" value={selectedShift?.standardCheckIn || ''} onChange={event => updateSelectedShift('standardCheckIn', event.target.value)} required /></div>
                 <div className="form-group"><label>Giờ ra chuẩn</label><input type="time" value={selectedShift?.standardCheckOut || ''} onChange={event => updateSelectedShift('standardCheckOut', event.target.value)} required /></div>
               </div>
-              <div className="attendance-settings__grid" style={{ marginTop: 12 }}>
-                <div className="form-group"><label>Chuẩn ngày công (phút)</label><input type="number" min="1" step="1" value={settings.standardWorkMinutes || 480} onChange={event => setSettings(current => ({ ...current, standardWorkMinutes: Number(event.target.value) || 480 }))} /></div>
-                <div className="form-group"><label>Phút nghỉ không tính công (tuỳ chọn)</label><input type="number" min="0" step="1" value={settings.unpaidBreakMinutes || 0} onChange={event => setSettings(current => ({ ...current, unpaidBreakMinutes: Math.max(0, Number(event.target.value) || 0) }))} /></div>
-              </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0', color: '#334155' }}>
                 <input
                   type="checkbox"

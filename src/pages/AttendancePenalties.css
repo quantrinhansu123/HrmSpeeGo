@@ -123,7 +123,12 @@
 
 .employee-name-suggest {
   position: relative;
-  min-width: 220px;
+  min-width: 170px;
+}
+
+.employee-name-suggest__menu small {
+  color: #64748b;
+  font-size: 11px;
 }
 
 .employee-name-suggest__menu {

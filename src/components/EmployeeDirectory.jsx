@@ -106,6 +106,10 @@ function EmployeeDirectory({
             <section className="hr-overview">
                 {stats.map(([label, value, icon, tone]) => (
                     <button key={label} className={`hr-stat hr-stat--${tone}`} onClick={() => {
+                        if (label === 'Tổng nhân sự') {
+                            setActiveTab('list')
+                            onResetFilters?.()
+                        }
                         if (label === 'Hợp đồng sắp hết hạn') setActiveTab('expiring')
                         if (label === 'Nhân sự thử việc') { setActiveTab('list'); setFilterStatus('Thử việc') }
                         if (label === 'Nhân sự chính thức') { setActiveTab('list'); setFilterStatus('Chính thức') }

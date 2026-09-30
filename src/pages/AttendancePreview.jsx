@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceLogsByMonth, fbGetEmployeesDirectory, fbListCollectionIds, fbSet } from '../services/firebase'
 import {
@@ -22,7 +22,7 @@ import {
   getAttendanceHoliday,
   STANDARD_WORK_MINUTES
 } from '../utils/attendanceCalculations'
-import { canManageAttendance } from '../utils/staffAccess'
+import { canManageAttendance, isCoreStaffUser } from '../utils/staffAccess'
 import { openAttendancePrintWindow } from '../utils/attendancePdf'
 import { resolveAttendanceDepartment } from '../utils/attendanceDepartment'
 import './AttendancePreview.css'
@@ -84,6 +84,44 @@ function ManualWorkdayInput({ value, isManual, disabled, onSave, employeeName, d
       }}
       aria-label={`Chỉnh công ${employeeName || ''} ngày ${date}`}
       title={isManual ? 'Đã chỉnh tay. Xóa giá trị để trở về tự động.' : 'Nhập 0–1 để chỉnh tay số công.'}
+    />
+  )
+}
+
+function AttendanceNoteInput({ value, disabled, onSave, employeeName, date }) {
+  const [draft, setDraft] = useState(value || '')
+  const cancelBlurRef = useRef(false)
+
+  useEffect(() => {
+    setDraft(value || '')
+  }, [value])
+
+  const commit = () => {
+    if (cancelBlurRef.current) {
+      cancelBlurRef.current = false
+      return
+    }
+    const next = draft.trim()
+    if (next !== (value || '')) onSave(next)
+  }
+
+  return (
+    <textarea
+      value={draft}
+      maxLength={500}
+      rows={2}
+      disabled={disabled}
+      placeholder="Nhập ghi chú..."
+      aria-label={`Ghi chú ${employeeName || ''} ngày ${date}`}
+      onChange={event => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={event => {
+        if (event.key === 'Escape') {
+          cancelBlurRef.current = true
+          setDraft(value || '')
+          event.currentTarget.blur()
+        }
+      }}
     />
   )
 }
@@ -223,6 +261,8 @@ function AttendancePreview() {
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [manualWorkdays, setManualWorkdays] = useState({})
   const [manualSavingKey, setManualSavingKey] = useState('')
+  const [attendanceNotes, setAttendanceNotes] = useState({})
+  const [noteSavingKey, setNoteSavingKey] = useState('')
   const [manualNotice, setManualNotice] = useState('')
   const [confirmations, setConfirmations] = useState({})
   const [confirmSaving, setConfirmSaving] = useState(false)
@@ -236,6 +276,7 @@ function AttendancePreview() {
   const [detailViewMode, setDetailViewMode] = useState('matrix')
   const [isResetModalOpen, setIsResetModalOpen] = useState(false)
   const canEditWorkdays = canManageAttendance(user)
+  const canEditNotes = isCoreStaffUser(user)
 
   const daysInSelectedMonth = useMemo(() => {
     const [y, m] = String(month || '').split('-').map(Number)
@@ -384,14 +425,16 @@ function AttendancePreview() {
     setLoading(true)
     setError('')
     try {
-      const [snapshot, storedSettings, storedManuals] = await Promise.all([
+      const [snapshot, storedSettings, storedManuals, storedNotes] = await Promise.all([
         fbGet(`hr/attendanceMonthSummaries/${targetMonth}`, companyId),
         fbGet('hr/attendanceSettings/default', companyId),
         fbGet(`hr/manualWorkdays/${targetMonth}`, companyId),
+        fbGet(`hr/attendanceNotes/${targetMonth}`, companyId),
         loadConfirmations(targetMonth)
       ])
       setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
       setManualWorkdays(storedManuals || {})
+      setAttendanceNotes(storedNotes || {})
       applySnapshot(snapshot, targetMonth)
     } catch (requestError) {
       console.error('Không tải được bảng công đã tổng hợp:', requestError)
@@ -399,6 +442,7 @@ function AttendancePreview() {
       applySnapshot(null, targetMonth)
       setConfirmations({})
       setManualWorkdays({})
+      setAttendanceNotes({})
     } finally {
       setLoading(false)
     }
@@ -431,17 +475,19 @@ function AttendancePreview() {
           : (nonEmptyIndex >= 0 ? nonEmptyIndex : (currentIndex >= 0 ? currentIndex : 0))
         const initialMonth = months[initialIndex] || current
         const initialSnapshot = snapshots[initialIndex] || null
-        const [resolvedSnapshot, storedSettings, storedManuals] = await Promise.all([
+        const [resolvedSnapshot, storedSettings, storedManuals, storedNotes] = await Promise.all([
           initialSnapshot
             ? Promise.resolve(initialSnapshot)
             : fbGet(`hr/attendanceMonthSummaries/${initialMonth}`, companyId),
           fbGet('hr/attendanceSettings/default', companyId),
           fbGet(`hr/manualWorkdays/${initialMonth}`, companyId),
+          fbGet(`hr/attendanceNotes/${initialMonth}`, companyId),
           loadConfirmations(initialMonth)
         ])
         if (cancelled) return
         setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
         setManualWorkdays(storedManuals || {})
+        setAttendanceNotes(storedNotes || {})
         setMonth(initialMonth)
         applySnapshot(resolvedSnapshot, initialMonth)
         setLoadedCompanyId(companyId)
@@ -451,6 +497,7 @@ function AttendancePreview() {
           setError('Không thể tải dữ liệu bảng công.')
           setLoadedCompanyId(companyId)
           setManualWorkdays({})
+          setAttendanceNotes({})
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -777,6 +824,30 @@ function AttendancePreview() {
     }
   }
 
+  const handleSaveAttendanceNote = async (employeeId, day, rawValue) => {
+    const employeeKey = String(employeeId)
+    const dayKey = String(day)
+    const note = String(rawValue || '').trim().slice(0, 500)
+    const previous = attendanceNotes
+    const nextEmployeeNotes = { ...(previous[employeeKey] || {}) }
+    if (note) nextEmployeeNotes[dayKey] = note
+    else delete nextEmployeeNotes[dayKey]
+    const next = { ...previous, [employeeKey]: nextEmployeeNotes }
+    const savingKey = `${employeeKey}:${dayKey}`
+    setAttendanceNotes(next)
+    setNoteSavingKey(savingKey)
+    setManualNotice('')
+    try {
+      await fbSet(`hr/attendanceNotes/${month}/${employeeKey}`, nextEmployeeNotes, companyId)
+      setManualNotice(note ? 'Đã lưu ghi chú.' : 'Đã xóa ghi chú.')
+    } catch (requestError) {
+      setAttendanceNotes(previous)
+      setManualNotice('Không lưu được ghi chú: ' + (requestError.message || requestError))
+    } finally {
+      setNoteSavingKey('')
+    }
+  }
+
   const handleImportComplete = async (result = '') => {
     setIsImportOpen(false)
     const primaryMonth = typeof result === 'string'
@@ -942,6 +1013,11 @@ function AttendancePreview() {
           .delete()
           .eq('collection', 'manualWorkdays')
           .or(`id.eq.manualWorkdays::${targetMonth},id.like.manualWorkdays::${targetMonth}__%`)
+        await supabase
+          .from('hr_records')
+          .delete()
+          .eq('collection', 'attendanceNotes')
+          .or(`id.eq.attendanceNotes::${targetMonth},id.like.attendanceNotes::${targetMonth}__%`)
       }
 
       // 6. Xóa bảng phạt tháng liên quan nếu có
@@ -969,6 +1045,7 @@ function AttendancePreview() {
         applySnapshot(null, targetMonth)
         setConfirmations({})
         setManualWorkdays({})
+        setAttendanceNotes({})
         setExcelLogs([])
       }
 
@@ -981,7 +1058,7 @@ function AttendancePreview() {
         'attendanceAdjustments'
       ]
       if (clearConfirmations) collectionsToDelete.push('attendanceMonthConfirmations')
-      if (clearManuals) collectionsToDelete.push('manualWorkdays')
+      if (clearManuals) collectionsToDelete.push('manualWorkdays', 'attendanceNotes')
       collectionsToDelete.push('attendanceMonthPenalties')
 
       const { error: delErr } = await supabase
@@ -1113,10 +1190,11 @@ function AttendancePreview() {
         standardCheckIn,
         standardCheckOut,
         notes: dayNotes(dayData),
+        manualNote: attendanceNotes[String(detailRow.employeeId)]?.[String(day)] || '',
         hasData: Boolean(dayData)
       }
     })
-  }, [attendanceSettings, detailRow, manualWorkdays, month])
+  }, [attendanceSettings, attendanceNotes, detailRow, manualWorkdays, month])
   const detailStandardLabel = useMemo(() => {
     if (!detailDays.length) return ''
     const sample = detailDays.find(item => item.standardCheckIn && item.standardCheckOut) || detailDays[0]
@@ -1430,7 +1508,7 @@ function AttendancePreview() {
                         : '—'}
                     </td>
                     <td className={item.manualWorkday !== undefined ? 'manual-workday-cell is-manual' : 'manual-workday-cell'}>
-                      {canEditWorkdays ? (
+                      {canEditNotes ? (
                         <ManualWorkdayInput
                           value={item.manualWorkday !== undefined ? item.manualWorkday : item.workdays}
                           isManual={item.manualWorkday !== undefined}
@@ -1443,7 +1521,18 @@ function AttendancePreview() {
                     </td>
                     <td>{item.hours || '—'}</td>
                     <td>{item.overtimeHours || '—'}</td>
-                    <td className="note">{item.notes || '—'}</td>
+                    <td className="note">
+                      {item.notes && <div className="attendance-auto-note">{item.notes}</div>}
+                      {canEditWorkdays ? (
+                        <AttendanceNoteInput
+                          value={item.manualNote}
+                          disabled={noteSavingKey === `${String(detailRow.employeeId)}:${item.day}`}
+                          employeeName={detailRow.employeeName}
+                          date={item.date}
+                          onSave={value => handleSaveAttendanceNote(detailRow.employeeId, item.day, value)}
+                        />
+                      ) : (item.manualNote || (!item.notes ? '—' : ''))}
+                    </td>
                   </tr>
                 ))}
               </tbody>

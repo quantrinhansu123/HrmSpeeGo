@@ -27,15 +27,24 @@ const currentMonthValue = () => new Date().toISOString().slice(0, 7)
 const employeeLabel = employee => {
   if (!employee) return ''
   const name = employee.name || employee.employeeName || ''
-  const code = employee.code || employee.employeeCode || ''
-  return code ? `${code} - ${name}` : name
+  return name
+}
+
+const findPenaltyEmployee = (employees, employeeId, employeeCode) => {
+  const id = String(employeeId || '').trim()
+  const code = String(employeeCode || '').trim()
+  return employees.find(item => id && String(item.id) === id)
+    || employees.find(item => code && String(item.code) === code)
+    || employees.find(item => id && String(item.code) === id)
 }
 
 function EmployeeNameSuggest({ employees, employeeId, employeeName, employeeCode, onSelect }) {
-  const selected = employees.find(item => String(item.id) === String(employeeId))
+  const selected = findPenaltyEmployee(employees, employeeId, employeeCode)
   const selectedText = selected
     ? employeeLabel(selected)
-    : employeeLabel({ name: employeeName, code: employeeCode })
+    : (/^(?:nv_[a-z0-9]+|[0-9a-f]{8}-[0-9a-f-]{27,})$/i.test(String(employeeName || ''))
+      ? 'Chưa tìm thấy tên nhân viên'
+      : employeeLabel({ name: employeeName }))
   const [query, setQuery] = useState(selectedText)
   const [open, setOpen] = useState(false)
 
@@ -48,7 +57,7 @@ function EmployeeNameSuggest({ employees, employeeId, employeeName, employeeCode
     const list = !keyword
       ? employees
       : employees.filter(employee =>
-          employeeLabel(employee).toLocaleLowerCase('vi').includes(keyword)
+          `${employeeLabel(employee)} ${employee.code || ''}`.toLocaleLowerCase('vi').includes(keyword)
         )
     return list.slice(0, 25)
   }, [employees, query])
@@ -98,7 +107,7 @@ function EmployeeNameSuggest({ employees, employeeId, employeeName, employeeCode
                   setOpen(false)
                 }}
               >
-                {employeeLabel(employee)}
+                {employeeLabel(employee)}{employee.code && <small> · {employee.code}</small>}
               </button>
             ))
           )}
@@ -269,10 +278,14 @@ function AttendancePenalties() {
     }
     setSaving(true)
     try {
-      const rowsToSave = normalizePenaltyRows(rows).map(row => ({
-        ...row,
-        amount: Number(row.amount || 0)
-      }))
+      const rowsToSave = normalizePenaltyRows(rows).map(row => {
+        const employee = findPenaltyEmployee(employees, row.employeeId, row.employeeCode)
+        return {
+          ...row,
+          employeeName: employee?.name || row.employeeName,
+          amount: Number(row.amount || 0)
+        }
+      })
       const saved = await savePenaltiesByMonth(targetMonth, rowsToSave)
       setRows(normalizePenaltyRows(saved.rows))
       setGeneratedAt(saved.generatedAt)

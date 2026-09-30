@@ -110,6 +110,9 @@ function AttendanceImportModal({
   const [aiLoading, setAiLoading] = useState(false)
   const [aiAvailable, setAiAvailable] = useState(null)
   const [previewData, setPreviewData] = useState(null)
+  const [showAllMatches, setShowAllMatches] = useState(false)
+  const [showDailyPreview, setShowDailyPreview] = useState(false)
+  const [visibleLogCount, setVisibleLogCount] = useState(30)
   const [manualMapping, setManualMapping] = useState(null)
   const [monthlySheetSelection, setMonthlySheetSelection] = useState(null)
   const [importMonth, setImportMonth] = useState(new Date().toISOString().slice(0, 7)) // YYYY-MM
@@ -164,6 +167,9 @@ function AttendanceImportModal({
   const handleFileChange = (e) => {
     setFile(e.target.files[0])
     setPreviewData(null)
+    setShowAllMatches(false)
+    setShowDailyPreview(false)
+    setVisibleLogCount(30)
     setManualMapping(null)
     setMonthlySheetSelection(null)
   }
@@ -2423,6 +2429,9 @@ function AttendanceImportModal({
     setFile(null)
     setReferenceImage(null)
     setPreviewData(null)
+    setShowAllMatches(false)
+    setShowDailyPreview(false)
+    setVisibleLogCount(30)
     setManualMapping(null)
     setMonthlySheetSelection(null)
     onClose()
@@ -2464,6 +2473,13 @@ function AttendanceImportModal({
   const previewGroupByKey = new Map(
     (previewData?.matchGroups || []).map(group => [group.key, group])
   )
+  const groupsNeedingReview = (previewData?.matchGroups || []).filter(group =>
+    (group.status === 'review' || !group.selectedEmployeeId) &&
+    group.status !== 'create' && group.status !== 'skipped'
+  )
+  const displayedMatchGroups = showAllMatches
+    ? (previewData?.matchGroups || [])
+    : groupsNeedingReview
   const previewDate = value => {
     const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
     return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '-'
@@ -2587,7 +2603,7 @@ function AttendanceImportModal({
                   </li>
                 )}
                 <li style={{ color: '#15803d' }}>
-                  <strong>Đã ghép với Lumi:</strong> {matchedEmployeeCount}
+                  <strong>Đã ghép nhân viên:</strong> {matchedEmployeeCount}
                 </li>
                 {newEmployeeCount > 0 && (
                   <li style={{ color: '#0369a1' }}>
@@ -2642,13 +2658,21 @@ function AttendanceImportModal({
                 <strong>{previewData.isDetailedAttendanceList
                   ? 'Khớp nhân viên theo Mã + Họ tên:'
                   : 'Khớp nhân viên theo Họ tên + Bộ phận:'}</strong>
+                <span style={{ marginLeft: 8, color: '#475569' }}>
+                  {groupsNeedingReview.length
+                    ? `${groupsNeedingReview.length} nhân viên cần chọn thủ công`
+                    : `Đã xử lý ${previewData.matchGroups.length} nhân viên`}
+                </span>
+                <button type="button" className="btn" style={{ marginLeft: 8, padding: '4px 8px' }} onClick={() => setShowAllMatches(value => !value)}>
+                  {showAllMatches ? 'Chỉ xem cần kiểm tra' : 'Xem tất cả nhân viên'}
+                </button>
                 {selectionIssues.length > 0 && (
                   <div role="alert" style={{ color: '#b91c1c', marginTop: '6px' }}>
                     {selectionIssues.slice(0, 5).map((issue, index) => <div key={index}>{issue}</div>)}
                   </div>
                 )}
               </div>
-              <div
+              {displayedMatchGroups.length > 0 && <div
                 style={{
                   maxHeight: '300px',
                   overflow: 'auto',
@@ -2663,14 +2687,12 @@ function AttendanceImportModal({
                     <tr style={{ background: '#eee', position: 'sticky', top: 0, zIndex: 2 }}>
                       <th style={{ padding: '6px' }}>Tên trong file</th>
                       <th style={{ padding: '6px' }}>Bộ phận trong file</th>
-                      <th style={{ padding: '6px' }}>Tổng công trong file</th>
-                      <th style={{ padding: '6px' }}>Hồ sơ Lumi</th>
-                      <th style={{ padding: '6px' }}>Độ giống</th>
+                      <th style={{ padding: '6px' }}>Hồ sơ SpeeGo</th>
                       <th style={{ padding: '6px' }}>Kết quả</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {previewData.matchGroups.map(group => {
+                    {displayedMatchGroups.map(group => {
                       const suggestedEmployee = employeesById.get(String(group.suggestedEmployeeId))
                       const selectedEmployee = employeesById.get(String(group.selectedEmployeeId))
                       const statusColor = group.status === 'skipped'
@@ -2689,8 +2711,7 @@ function AttendanceImportModal({
                             <div style={{ color: '#6b7280' }}>{group.rowCount} ngày có dữ liệu</div>
                           </td>
                           <td style={{ padding: '6px' }}>{group.sourceDepartment || '-'}</td>
-                          <td style={{ padding: '6px' }}>{group.sourceTotalWork ?? '-'}</td>
-                          <td style={{ padding: '6px', minWidth: '310px' }}>
+                          <td style={{ padding: '6px', minWidth: '260px' }}>
                             <select
                               value={group.selectedEmployeeId}
                               onChange={(e) => handleMatchChange(group.key, e.target.value)}
@@ -2700,14 +2721,14 @@ function AttendanceImportModal({
                                 borderColor: group.selectedEmployeeId ? '#86efac' : '#fca5a5'
                               }}
                             >
-                              <option value="">-- Chọn nhân viên Lumi --</option>
+                              <option value="">-- Chọn nhân viên SpeeGo --</option>
                               {canCreateEmployees && (
                                 (!previewData.isMonthlyMatrix && !previewData.isDetailedAttendanceList) ||
                                 group.candidates.length === 0
                               ) && (
                                 <option value="__create__">-- Tạo hồ sơ mới từ tên trong file --</option>
                               )}
-                              <option value="__skip__">-- Không có trong Lumi (bỏ qua) --</option>
+                              <option value="__skip__">-- Không có trong SpeeGo (bỏ qua) --</option>
                               {(previewData.isMonthlyMatrix || previewData.isDetailedAttendanceList
                                 ? group.candidates.map(candidate => candidate.employee)
                                 : employeesForMatching).map(employee => (
@@ -2727,9 +2748,6 @@ function AttendanceImportModal({
                               </div>
                             )}
                           </td>
-                          <td style={{ padding: '6px', whiteSpace: 'nowrap' }}>
-                            {Math.round(group.confidence * 100)}%
-                          </td>
                           <td style={{ padding: '6px', color: statusColor }}>
                             <strong>
                               {group.status === 'skipped'
@@ -2747,11 +2765,13 @@ function AttendanceImportModal({
                     })}
                   </tbody>
                 </table>
+              </div>}
+              <div style={{ marginTop: '12px' }}>
+                <button type="button" className="btn" onClick={() => setShowDailyPreview(value => !value)}>
+                  {showDailyPreview ? 'Ẩn chi tiết theo ngày' : `Xem chi tiết theo ngày (${previewData.logs.length} dòng)`}
+                </button>
               </div>
-              <div style={{ marginTop: '10px' }}>
-                <strong>Preview attendance theo ngày:</strong>
-              </div>
-              <div style={{ maxHeight: '260px', overflowY: 'auto', marginTop: '8px', fontSize: '0.85rem', border: '1px solid #ddd', borderRadius: '6px' }}>
+              {showDailyPreview && <div style={{ maxHeight: '260px', overflowY: 'auto', marginTop: '8px', fontSize: '0.85rem', border: '1px solid #ddd', borderRadius: '6px' }}>
                 <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#eee' }}>
@@ -2766,22 +2786,22 @@ function AttendanceImportModal({
                           <th style={{ padding: '5px' }}>Giờ ra</th>
                         </>
                       ) : <th style={{ padding: '5px' }}>Giá trị công</th>}
-                      <th style={{ padding: '5px' }}>{previewData.isDetailedAttendanceList ? 'Công tính từ giờ' : 'Work unit'}</th>
-                      <th style={{ padding: '5px' }}>Match status</th>
+                      <th style={{ padding: '5px' }}>Công</th>
+                      <th style={{ padding: '5px' }}>Kết quả</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {previewData.logs.map((log, index) => {
+                    {previewData.logs.slice(0, visibleLogCount).map((log, index) => {
                       const group = previewGroupByKey.get(log._sourceEmployeeKey)
                       const matchStatus = group?.status === 'skipped'
                         ? 'Bỏ qua'
                         : group?.status === 'create'
                           ? 'Tạo mới'
                           : group?.selectedEmployeeId
-                            ? 'Matched'
+                            ? 'Đã ghép'
                             : group?.status === 'review'
-                              ? 'Ambiguous'
-                              : 'Unmatched'
+                              ? 'Cần kiểm tra'
+                              : 'Chưa ghép'
                       return (
                         <tr key={index} style={{ borderBottom: '1px solid #ddd' }}>
                           <td style={{ padding: '5px', textAlign: 'center' }}>{index + 1}</td>
@@ -2802,7 +2822,12 @@ function AttendanceImportModal({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </div>}
+              {showDailyPreview && visibleLogCount < previewData.logs.length && (
+                <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => setVisibleLogCount(count => count + 100)}>
+                  Xem thêm 100 dòng
+                </button>
+              )}
             </div>
           )}
 

@@ -32,20 +32,20 @@ function parsePath(path) {
     const collection = parts[1]
     if (parts.length === 2) return { kind: 'collection', collection }
 
-    // hr/manualWorkdays/{month} loads all per-employee overrides in that month.
-    if (collection === 'manualWorkdays' && parts.length === 3) {
+    // Monthly attendance overrides and notes are stored per employee.
+    if (['manualWorkdays', 'attendanceNotes'].includes(collection) && parts.length === 3) {
       return {
-        kind: 'manual_workdays_month',
+        kind: 'employee_month_records',
         collection,
         month: parts[2]
       }
     }
 
-    // hr/manualWorkdays/{month}/{empId}
-    if (collection === 'manualWorkdays' && parts.length >= 4) {
+    // hr/{collection}/{month}/{empId}
+    if (['manualWorkdays', 'attendanceNotes'].includes(collection) && parts.length >= 4) {
       return {
         kind: 'record',
-        collection: 'manualWorkdays',
+        collection,
         id: `${parts[2]}__${parts[3]}`
       }
     }
@@ -109,13 +109,13 @@ async function getRecord(collection, id) {
   return data?.data ?? null
 }
 
-async function listManualWorkdaysByMonth(month) {
-  const legacy = (await getRecord('manualWorkdays', month)) || {}
-  const prefix = `manualWorkdays::${month}__`
+async function listEmployeeMonthRecords(collection, month) {
+  const legacy = (await getRecord(collection, month)) || {}
+  const prefix = `${collection}::${month}__`
   const { data, error } = await supabase
     .from('hr_records')
     .select('id, data')
-    .eq('collection', 'manualWorkdays')
+    .eq('collection', collection)
     .like('id', `${prefix}%`)
 
   if (error) throw error
@@ -248,8 +248,8 @@ export const fbGet = async (path) => {
 
   if (parsed.kind === 'hr_root') return getHrRoot()
 
-  if (parsed.kind === 'manual_workdays_month') {
-    return listManualWorkdaysByMonth(parsed.month)
+  if (parsed.kind === 'employee_month_records') {
+    return listEmployeeMonthRecords(parsed.collection, parsed.month)
   }
 
   if (parsed.kind === 'collection') {
