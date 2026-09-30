@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceLogsByMonth, fbGetEmployeesDirectory, fbListCollectionIds, fbSet } from '../services/firebase'
 import {
@@ -88,42 +88,20 @@ function ManualWorkdayInput({ value, isManual, disabled, onSave, employeeName, d
   )
 }
 
-function AttendanceNoteInput({ value, disabled, onSave, employeeName, date }) {
-  const [draft, setDraft] = useState(value || '')
-  const cancelBlurRef = useRef(false)
+const normalizeDailyNotes = notes => Object.fromEntries(
+  Object.entries(notes || {})
+    .map(([day, value]) => [day, String(value || '').trim().slice(0, 500)])
+    .filter(([, value]) => value)
+    .sort(([a], [b]) => Number(a) - Number(b))
+)
 
-  useEffect(() => {
-    setDraft(value || '')
-  }, [value])
-
-  const commit = () => {
-    if (cancelBlurRef.current) {
-      cancelBlurRef.current = false
-      return
-    }
-    const next = draft.trim()
-    if (next !== (value || '')) onSave(next)
-  }
-
-  return (
-    <textarea
-      value={draft}
-      maxLength={500}
-      rows={2}
-      disabled={disabled}
-      placeholder="Nhập ghi chú..."
-      aria-label={`Ghi chú ${employeeName || ''} ngày ${date}`}
-      onChange={event => setDraft(event.target.value)}
-      onBlur={commit}
-      onKeyDown={event => {
-        if (event.key === 'Escape') {
-          cancelBlurRef.current = true
-          setDraft(value || '')
-          event.currentTarget.blur()
-        }
-      }}
-    />
-  )
+const summaryNoteLines = (row, attendanceNotes, month) => {
+  const lines = []
+  if (String(row.notes || '').trim()) lines.push(String(row.notes).trim())
+  const monthNumber = String(month || '').split('-')[1] || ''
+  Object.entries(normalizeDailyNotes(attendanceNotes[String(row.employeeId)]))
+    .forEach(([day, note]) => lines.push(`${String(day).padStart(2, '0')}/${monthNumber}: ${note}`))
+  return lines
 }
 
 const enrichExcelLog = (log, employeesById) => {
@@ -262,7 +240,9 @@ function AttendancePreview() {
   const [manualWorkdays, setManualWorkdays] = useState({})
   const [manualSavingKey, setManualSavingKey] = useState('')
   const [attendanceNotes, setAttendanceNotes] = useState({})
-  const [noteSavingKey, setNoteSavingKey] = useState('')
+  const [noteDrafts, setNoteDrafts] = useState({})
+  const [noteSaving, setNoteSaving] = useState(false)
+  const [noteNotice, setNoteNotice] = useState('')
   const [manualNotice, setManualNotice] = useState('')
   const [confirmations, setConfirmations] = useState({})
   const [confirmSaving, setConfirmSaving] = useState(false)
@@ -277,6 +257,9 @@ function AttendancePreview() {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false)
   const canEditWorkdays = canManageAttendance(user)
   const canEditNotes = isCoreStaffUser(user)
+  const savedDetailNotes = normalizeDailyNotes(attendanceNotes[String(detailRow?.employeeId)])
+  const hasUnsavedNotes = Boolean(detailRow) &&
+    JSON.stringify(normalizeDailyNotes(noteDrafts)) !== JSON.stringify(savedDetailNotes)
 
   const daysInSelectedMonth = useMemo(() => {
     const [y, m] = String(month || '').split('-').map(Number)
@@ -653,7 +636,7 @@ function AttendancePreview() {
       formatWorkdays(actualWorkdaysFor(row)),
       formatWorkdays(paidLeaveWorkdaysFor(row)),
       formatWorkdays(payableWorkdaysFor(row)),
-      row.notes || '-',
+      summaryNoteLines(row, attendanceNotes, month).join(' | ') || '-',
       row.overtimeHours ?? '-',
       row.congLamLe ?? row.holidayWorkdays ?? '-',
       row.congLe ?? '-'
@@ -824,27 +807,35 @@ function AttendancePreview() {
     }
   }
 
-  const handleSaveAttendanceNote = async (employeeId, day, rawValue) => {
-    const employeeKey = String(employeeId)
-    const dayKey = String(day)
-    const note = String(rawValue || '').trim().slice(0, 500)
-    const previous = attendanceNotes
-    const nextEmployeeNotes = { ...(previous[employeeKey] || {}) }
-    if (note) nextEmployeeNotes[dayKey] = note
-    else delete nextEmployeeNotes[dayKey]
-    const next = { ...previous, [employeeKey]: nextEmployeeNotes }
-    const savingKey = `${employeeKey}:${dayKey}`
-    setAttendanceNotes(next)
-    setNoteSavingKey(savingKey)
+  const openDetailRow = row => {
+    setNoteDrafts({ ...(attendanceNotes[String(row.employeeId)] || {}) })
+    setNoteNotice('')
     setManualNotice('')
+    setDetailRow(row)
+  }
+
+  const closeDetailRow = () => {
+    if (noteSaving) return
+    if (hasUnsavedNotes && !window.confirm('Ghi chú chưa được lưu. Bạn muốn đóng và bỏ thay đổi?')) return
+    setDetailRow(null)
+    setNoteNotice('')
+  }
+
+  const handleSaveAttendanceNotes = async () => {
+    if (!detailRow || !hasUnsavedNotes || noteSaving) return
+    const employeeKey = String(detailRow.employeeId)
+    const nextEmployeeNotes = normalizeDailyNotes(noteDrafts)
+    setNoteSaving(true)
+    setNoteNotice('')
     try {
       await fbSet(`hr/attendanceNotes/${month}/${employeeKey}`, nextEmployeeNotes, companyId)
-      setManualNotice(note ? 'Đã lưu ghi chú.' : 'Đã xóa ghi chú.')
+      setAttendanceNotes(previous => ({ ...previous, [employeeKey]: nextEmployeeNotes }))
+      setNoteDrafts(nextEmployeeNotes)
+      setNoteNotice('Đã lưu ghi chú. Cột Notes đã được cập nhật.')
     } catch (requestError) {
-      setAttendanceNotes(previous)
-      setManualNotice('Không lưu được ghi chú: ' + (requestError.message || requestError))
+      setNoteNotice('Không lưu được ghi chú: ' + (requestError.message || requestError))
     } finally {
-      setNoteSavingKey('')
+      setNoteSaving(false)
     }
   }
 
@@ -1338,7 +1329,7 @@ function AttendancePreview() {
                 </td>
                 <td
                   className="name is-clickable"
-                  onClick={() => setDetailRow(row)}
+                  onClick={() => openDetailRow(row)}
                   title="Xem chi tiết từng ngày"
                 >
                   {row.employeeName}
@@ -1350,7 +1341,7 @@ function AttendancePreview() {
                 <td>{row.shift}</td>
                 <td
                   className={`workdays-actual ${canEditWorkdays ? 'is-clickable workdays-total' : ''}`}
-                  onClick={() => canEditWorkdays && setDetailRow(row)}
+                  onClick={() => canEditWorkdays && openDetailRow(row)}
                   title={canEditWorkdays ? 'Mở chi tiết để chỉnh tay số công từng ngày' : undefined}
                 >
                   {formatWorkdays(actualWorkdaysFor(row))}
@@ -1364,7 +1355,13 @@ function AttendancePreview() {
                   <strong>{formatWorkdays(payableWorkdaysFor(row))}</strong>
                   <small>{formatWorkdays(actualWorkdaysFor(row))} làm + {formatWorkdays(paidLeaveWorkdaysFor(row))} phép</small>
                 </td>
-                <td>{row.notes || ''}</td>
+                <td className="attendance-summary-notes">
+                  <div className="attendance-summary-notes-content">
+                    {summaryNoteLines(row, attendanceNotes, month).map((line, noteIndex) => (
+                      <div key={`${noteIndex}-${line}`}>{line}</div>
+                    ))}
+                  </div>
+                </td>
                 <td>{row.overtimeHours || ''}</td>
                 <td></td>
                 <td></td>
@@ -1442,7 +1439,7 @@ function AttendancePreview() {
       />
     )}
     {detailRow && (
-      <div className="attendance-day-detail-overlay" onClick={() => setDetailRow(null)}>
+      <div className="attendance-day-detail-overlay" onClick={closeDetailRow}>
         <div className="attendance-day-detail-modal" onClick={event => event.stopPropagation()}>
           <header>
             <div>
@@ -1455,7 +1452,7 @@ function AttendancePreview() {
                 {` · Tháng ${month}`}
               </p>
             </div>
-            <button type="button" onClick={() => setDetailRow(null)}>Đóng</button>
+            <button type="button" onClick={closeDetailRow} disabled={noteSaving}>Đóng</button>
           </header>
           <div className="attendance-day-detail-summary">
             <span>Công thực tế: <strong>{formatWorkdays(actualWorkdaysFor(detailRow))}</strong></span>
@@ -1524,12 +1521,18 @@ function AttendancePreview() {
                     <td className="note">
                       {item.notes && <div className="attendance-auto-note">{item.notes}</div>}
                       {canEditWorkdays ? (
-                        <AttendanceNoteInput
-                          value={item.manualNote}
-                          disabled={noteSavingKey === `${String(detailRow.employeeId)}:${item.day}`}
-                          employeeName={detailRow.employeeName}
-                          date={item.date}
-                          onSave={value => handleSaveAttendanceNote(detailRow.employeeId, item.day, value)}
+                        <textarea
+                          value={noteDrafts[String(item.day)] || ''}
+                          maxLength={500}
+                          rows={2}
+                          disabled={noteSaving}
+                          placeholder="Nhập ghi chú..."
+                          aria-label={`Ghi chú ${detailRow.employeeName || ''} ngày ${item.date}`}
+                          onChange={event => {
+                            const value = event.target.value
+                            setNoteDrafts(previous => ({ ...previous, [String(item.day)]: value }))
+                            setNoteNotice('')
+                          }}
                         />
                       ) : (item.manualNote || (!item.notes ? '—' : ''))}
                     </td>
@@ -1538,6 +1541,18 @@ function AttendancePreview() {
               </tbody>
             </table>
           </div>
+          {canEditWorkdays && (
+            <footer className="attendance-day-detail-footer">
+              <span role="status">{noteNotice || (hasUnsavedNotes ? 'Có ghi chú chưa lưu.' : '')}</span>
+              <button
+                type="button"
+                onClick={handleSaveAttendanceNotes}
+                disabled={!hasUnsavedNotes || noteSaving}
+              >
+                {noteSaving ? 'Đang lưu...' : 'Lưu ghi chú'}
+              </button>
+            </footer>
+          )}
         </div>
       </div>
     )}
