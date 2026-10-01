@@ -763,14 +763,14 @@ function EmployeeModal({
                     />
                   </div>
                   <div className="form-group">
-                    <label>Email đăng nhập</label>
+                    <label>Email</label>
                     <input
                       type="email"
                       name="email"
                       value={formData.email}
                       onChange={handleChange}
                       disabled={!editable}
-                      placeholder="dùng để đăng nhập hệ thống"
+                      placeholder="email liên hệ"
                     />
                   </div>
                 </div>

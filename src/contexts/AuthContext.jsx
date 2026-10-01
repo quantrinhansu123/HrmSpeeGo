@@ -3,6 +3,28 @@ import { supabase } from '../services/supabase'
 import { mapUserToApp } from '../utils/helpers'
 
 const AuthContext = createContext(null)
+const LOCAL_SESSION_KEY = 'hrmspeego.accountSession'
+const INVALID_LOGIN = 'Tên tài khoản hoặc mật khẩu không chính xác.'
+
+const readLocalSession = () => {
+  try {
+    const raw = localStorage.getItem(LOCAL_SESSION_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.id ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const writeLocalSession = profile => {
+  if (!profile?.id) {
+    localStorage.removeItem(LOCAL_SESSION_KEY)
+    return
+  }
+  const { password, ...safe } = profile
+  localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(safe))
+}
 
 const loadProfile = async (authUser) => {
   if (!authUser?.id) return null
@@ -15,6 +37,15 @@ const loadProfile = async (authUser) => {
   return { ...mapUserToApp(data), id: data.id, authUserId: authUser.id, email: data.email || authUser.email || '' }
 }
 
+const profileFromAccount = row => {
+  if (!row?.id) return null
+  return {
+    ...mapUserToApp(row),
+    id: row.id,
+    email: row.email || ''
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -23,11 +54,17 @@ export function AuthProvider({ children }) {
     let active = true
     const syncSession = async (session) => {
       try {
-        const profile = await loadProfile(session?.user)
-        if (active) setUser(profile)
+        if (session?.user) {
+          const profile = await loadProfile(session.user)
+          if (!active) return
+          writeLocalSession(null)
+          setUser(profile)
+          return
+        }
+        if (active) setUser(readLocalSession())
       } catch (error) {
         console.error('Không tải được hồ sơ đăng nhập:', error)
-        if (active) setUser(null)
+        if (active) setUser(readLocalSession())
       } finally {
         if (active) setLoading(false)
       }
@@ -42,15 +79,73 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const login = async (email, password) => {
+  const loginWithSupabaseAuth = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
     const profile = await loadProfile(data.user)
+    writeLocalSession(null)
     setUser(profile)
     return profile
   }
 
+  const login = async (account, password) => {
+    const cleanAccount = String(account || '').trim()
+    const cleanPassword = String(password || '').trim()
+    if (!cleanAccount || !cleanPassword) {
+      throw new Error(INVALID_LOGIN)
+    }
+
+    const { data, error } = await supabase.rpc('login_with_account', {
+      p_account: cleanAccount,
+      p_password: cleanPassword
+    })
+
+    if (error) {
+      const message = String(error.message || '')
+      if (/login_with_account|schema cache|could not find the function/i.test(message)) {
+        throw new Error('Chưa bật hàm đăng nhập trên database. Hãy chạy file supabase/migrations/20261001160000_login_with_account.sql trong SQL Editor.')
+      }
+      if (cleanAccount.includes('@')) return loginWithSupabaseAuth(cleanAccount, cleanPassword)
+      throw new Error(INVALID_LOGIN)
+    }
+
+    if (data?.password_matched) {
+      const email = String(data.email || '').trim()
+      if (email) {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password: cleanPassword
+        })
+        if (!authError) {
+          const { data: authData } = await supabase.auth.getUser()
+          try {
+            const profile = await loadProfile(authData.user)
+            writeLocalSession(null)
+            setUser(profile)
+            return profile
+          } catch (profileError) {
+            console.error('Không tải được hồ sơ Auth, dùng hồ sơ tài khoản:', profileError)
+          }
+        }
+      }
+      const profile = profileFromAccount(data)
+      if (!profile) throw new Error(INVALID_LOGIN)
+      writeLocalSession(profile)
+      setUser(profile)
+      return profile
+    }
+
+    const email = String(data?.email || (cleanAccount.includes('@') ? cleanAccount : '')).trim()
+    if (!email) throw new Error(INVALID_LOGIN)
+    try {
+      return await loginWithSupabaseAuth(email, cleanPassword)
+    } catch {
+      throw new Error(INVALID_LOGIN)
+    }
+  }
+
   const logout = async () => {
+    writeLocalSession(null)
     await supabase.auth.signOut()
     setUser(null)
   }
