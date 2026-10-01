@@ -74,7 +74,7 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
 
     return (
         <div className="status-history-view animate-fade-in">
-            <div style={{
+            <div className="status-history-toolbar" style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -84,7 +84,7 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
             }}>
-                <div className="tabs" style={{ display: 'flex', gap: '10px' }}>
+                <div className="tabs status-history-mode-tabs" style={{ display: 'flex', gap: '10px' }}>
                     <button
                         className={`tab-btn ${activeTab === 'detail' ? 'active' : ''}`}
                         onClick={() => setActiveTab('detail')}
@@ -127,11 +127,12 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                     </button>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8f9fa', padding: '4px 8px', borderRadius: '6px', border: '1px solid #eee' }}>
+                <div className="status-history-toolbar-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div className="status-history-dates" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8f9fa', padding: '4px 8px', borderRadius: '6px', border: '1px solid #eee' }}>
                         <span style={{ fontSize: '0.9rem', color: '#666' }}>Lọc ngày:</span>
                         <input
                             type="date"
+                            aria-label="Từ ngày"
                             value={fromDate}
                             onChange={(e) => setFromDate(e.target.value)}
                             style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.9rem' }}
@@ -139,6 +140,7 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                         <span style={{ color: '#999' }}>-</span>
                         <input
                             type="date"
+                            aria-label="Đến ngày"
                             value={toDate}
                             onChange={(e) => setToDate(e.target.value)}
                             style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.9rem' }}
@@ -165,7 +167,7 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                                 Thống kê biến động nhân sự {fromDate ? `từ ${fromDate}` : ''} {toDate ? `đến ${toDate}` : ''}
                             </h4>
                         </div>
-                        <table className="table" style={{ marginBottom: 0 }}>
+                        <table className="table status-history-desktop-table" style={{ marginBottom: 0 }}>
                             <thead>
                                 <tr>
                                     <th style={{ width: '50%' }}>Chỉ tiêu</th>
@@ -195,6 +197,13 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                                 </tr>
                             </tbody>
                         </table>
+                        <div className="status-history-mobile-summary">
+                            <div><span>Tổng nhân viên Thử việc</span><strong>{summaryStats.thuViec}</strong></div>
+                            <div><span>Tổng nhân viên Chính thức</span><strong>{summaryStats.chinhThuc}</strong></div>
+                            <div><span>Tổng nhân viên Tạm nghỉ</span><strong>{summaryStats.tamNghi}</strong></div>
+                            <div><span>Tổng nhân viên Nghỉ việc</span><strong>{summaryStats.nghiViec}</strong></div>
+                            <div><span>Tổng lượt biến động</span><strong>{filteredLogs.length}</strong></div>
+                        </div>
                     </div>
                 )}
 
@@ -202,7 +211,7 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                 {activeTab === 'detail' && (
                     <div className="card" style={{ padding: '0', overflow: 'hidden', border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
                         <div style={{ padding: '15px', borderBottom: '1px solid #eee', background: '#fff' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="status-history-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#333' }}>
                                     <i className="fas fa-list-alt" style={{ marginRight: '8px' }}></i>
                                     Nhật ký thay đổi trạng thái
@@ -212,7 +221,7 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                                 </span>
                             </div>
                         </div>
-                        <div style={{ overflowX: 'scroll', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', border: '1px solid #e0e0e0' }}>
+                        <div className="status-history-desktop-table" style={{ overflowX: 'scroll', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', border: '1px solid #e0e0e0' }}>
                             <table className="table" style={{ marginBottom: 0, minWidth: '101%' }}>
                                 <thead>
                                     <tr>
@@ -256,6 +265,19 @@ function StatusHistoryView({ companyId, employees, onDataChange }) {
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+                        <div className="status-history-mobile-list">
+                            {filteredLogs.length > 0 ? filteredLogs.map((log, idx) => (
+                                <article className="status-history-mobile-item" key={log.id || idx}>
+                                    <div className="status-history-mobile-item-head">
+                                        <strong>{log.employeeName || ''}</strong>
+                                        <span className={`employee-status ${log.newStatus === 'Chính thức' ? 'success' : log.newStatus === 'Thử việc' ? 'warning' : log.newStatus === 'Nghỉ việc' ? 'danger' : ''}`}><i></i>{log.newStatus || ''}</span>
+                                    </div>
+                                    <p>{log.employeeCode || log.employeeId || ''}{log.effectiveDate ? ` · ${new Date(log.effectiveDate).toLocaleDateString('vi-VN')}` : ''}</p>
+                                    <p>Người thực hiện: {log.actor || 'HR'}</p>
+                                    {log.note && <p className="status-history-mobile-note">{log.note}</p>}
+                                </article>
+                            )) : <div className="status-history-mobile-empty">Không có dữ liệu trong khoảng thời gian này</div>}
                         </div>
                     </div>
                 )}
