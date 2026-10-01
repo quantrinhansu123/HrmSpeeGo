@@ -29,7 +29,7 @@ function EmployeeDirectory({
     filterBranch, setFilterBranch,
     filterDept, setFilterDept, filterStatus, setFilterStatus, filterContract, setFilterContract,
     filterShift = '', setFilterShift,
-    statFilter = '', onSelectStat, onClearStat, activityByEmployee = {}, activityLoading = false, activityError = '',
+    statFilter = '', onSelectStat, onClearStat, activityByEmployee = {}, activityLoading = false, activityError = '', contractError = '',
     selectedEmployee, setSelectedEmployee, isModalOpen, setIsModalOpen, isReadOnly, setIsReadOnly,
     onReload, onExport, onDownloadTemplate, onImport, onDelete, onResolveEmployee,
     onResetData, onResetFilters, adminEmail
@@ -59,7 +59,7 @@ function EmployeeDirectory({
     const noShiftCount = activeEmployees.filter(employee => !getShift(employee)).length
     const stats = STAT_CARDS.map(card => ({
         ...card,
-        value: card.activity && (activityLoading || activityError)
+        value: (card.activity && (activityLoading || activityError)) || (card.key === 'expiring' && contractError)
             ? '—'
             : getEmployeeStatRows(employees, card.key, activityByEmployee, now).length,
         title: card.title || (card.key === 'frequentLate'
@@ -120,7 +120,7 @@ function EmployeeDirectory({
                     <button key={key} type="button"
                         className={`hr-stat hr-stat--${tone}${(key === 'all' ? !statFilter && activeTab === 'list' : statFilter === key) ? ' is-selected' : ''}`}
                         onClick={() => onSelectStat?.(key)}
-                        disabled={activity && (activityLoading || Boolean(activityError))}
+                        disabled={(activity && (activityLoading || Boolean(activityError))) || (key === 'expiring' && Boolean(contractError))}
                         aria-pressed={key === 'all' ? !statFilter && activeTab === 'list' : statFilter === key}
                         title={title}>
                         <span className="hr-stat__icon"><i className={`fas ${icon}`}></i></span>
@@ -129,10 +129,11 @@ function EmployeeDirectory({
                 ))}
             </section>
             {activityError && <p className="employees-stat-error" role="alert">{activityError}</p>}
+            {contractError && <p className="employees-stat-error" role="alert">{contractError}</p>}
 
             <nav className="employees-tabs">
                 <button className={activeTab === 'list' ? 'active' : ''} onClick={() => { setActiveTab('list'); onClearStat?.() }}><i className="fas fa-list"></i> Danh sách nhân viên</button>
-                <button className={activeTab === 'expiring' ? 'active danger' : ''} onClick={() => onSelectStat?.('expiring')}><i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn <span>{expiring.length}</span></button>
+                <button className={activeTab === 'expiring' ? 'active danger' : ''} onClick={() => onSelectStat?.('expiring')} disabled={Boolean(contractError)}><i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn <span>{contractError ? '—' : expiring.length}</span></button>
                 <button className={activeTab === 'history' ? 'active' : ''} onClick={() => { setActiveTab('history'); onClearStat?.() }}><i className="fas fa-clock-rotate-left"></i> Lịch sử biến động</button>
             </nav>
 

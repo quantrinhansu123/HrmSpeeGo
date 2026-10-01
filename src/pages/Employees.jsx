@@ -10,6 +10,7 @@ import { formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserTo
 import { fetchUsersDirectory } from '../services/employeeDirectory'
 import { fbGet, fbListCollectionIds } from '../services/firebase'
 import { aggregateEmployeeActivity, matchesEmployeeStat } from '../utils/employeeDirectoryStats'
+import { withEmployeeContract } from '../utils/employeeContracts'
 
 const loadXlsx = () => import('xlsx')
 
@@ -53,6 +54,7 @@ function Employees() {
     const [activityByEmployee, setActivityByEmployee] = useState({})
     const [activityLoading, setActivityLoading] = useState(true)
     const [activityError, setActivityError] = useState('')
+    const [contractError, setContractError] = useState('')
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [selectedEmployee, setSelectedEmployee] = useState(null)
     const [isReadOnly, setIsReadOnly] = useState(false)
@@ -112,7 +114,15 @@ function Employees() {
         try {
             setLoading(true)
             const data = await fetchUsersDirectory(companyId)
-            setEmployees((data || []).map(u => mapUserToApp(u)))
+            let contracts = {}
+            try {
+                contracts = await fbGet('hr/employeeContracts') || {}
+                setContractError('')
+            } catch (error) {
+                console.error('Không tải được hợp đồng nhân viên:', error)
+                setContractError('Không tải được thông tin hợp đồng.')
+            }
+            setEmployees((data || []).map(u => withEmployeeContract(mapUserToApp(u), contracts, companyId)))
             setLoading(false)
         } catch (err) {
             console.error("Error loading employees:", err)
@@ -129,7 +139,11 @@ function Employees() {
             .eq('id', employee.id)
             .maybeSingle()
         if (error || !data) return employee
-        return mapUserToApp(data)
+        return {
+            ...mapUserToApp(data),
+            loai_hop_dong: employee.loai_hop_dong || '',
+            ngay_het_han: employee.ngay_het_han || ''
+        }
     }
 
     const filterEmployees = () => {
@@ -893,6 +907,7 @@ function Employees() {
         activityByEmployee={activityByEmployee}
         activityLoading={activityLoading}
         activityError={activityError}
+        contractError={contractError}
         selectedEmployee={selectedEmployee}
         setSelectedEmployee={setSelectedEmployee}
         isModalOpen={isModalOpen}

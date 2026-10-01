@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../services/supabase'
+import { fbSet } from '../services/firebase'
 import { mapAppToUser, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import { employeeContractKey } from '../utils/employeeContracts'
 import {
   DEFAULT_ATTENDANCE_SHIFT,
   SALE_ATTENDANCE_SHIFT
@@ -148,6 +150,8 @@ function EmployeeModal({
     ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
     ngay_vao_lam: '',
     ngay_lam_chinh_thuc: '',
+    loai_hop_dong: '',
+    ngay_het_han: '',
     cccd: '',
     ngay_cap: '',
     noi_cap: '',
@@ -205,6 +209,8 @@ function EmployeeModal({
         ca_lam_viec: employee.ca_lam_viec || DEFAULT_ATTENDANCE_SHIFT.name,
         ngay_vao_lam: employee.ngay_vao_lam || '',
         ngay_lam_chinh_thuc: employee.ngay_lam_chinh_thuc || '',
+        loai_hop_dong: employee.loai_hop_dong || '',
+        ngay_het_han: employee.ngay_het_han || '',
         cccd: employee.cccd || '',
         ngay_cap: employee.ngay_cap || '',
         noi_cap: employee.noi_cap || '',
@@ -265,6 +271,8 @@ function EmployeeModal({
       ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
       ngay_vao_lam: '',
       ngay_lam_chinh_thuc: '',
+      loai_hop_dong: '',
+      ngay_het_han: '',
       cccd: '',
       ngay_cap: '',
       noi_cap: '',
@@ -538,8 +546,13 @@ function EmployeeModal({
       const newStatus = formData.trang_thai
       const filledDocs = getFilledDocuments()
       const payloadForm = { ...formData, files: filledDocs }
+      const contract = {
+        contractType: String(formData.loai_hop_dong || '').trim(),
+        contractEndDate: formData.ngay_het_han || ''
+      }
       delete payloadForm.password
       delete payloadForm.passwordConfirm
+      let savedEmployeeId = employee?.id || ''
 
       if (employee && employee.id) {
         const dbPayload = { ...mapAppToUser(payloadForm) }
@@ -588,6 +601,7 @@ function EmployeeModal({
         const dbPayload = { ...mapAppToUser(payloadForm) }
         dbPayload.password = nextPassword || '123456'
         dbPayload.id = crypto.randomUUID()
+        savedEmployeeId = dbPayload.id
 
         const mutationResult = await runUsersMutationWithSchemaFallback(
           (payload) => supabase
@@ -598,6 +612,18 @@ function EmployeeModal({
         const { error } = mutationResult
 
         if (error) throw error
+      }
+      if (contract.contractType || contract.contractEndDate || employee?.loai_hop_dong || employee?.ngay_het_han) {
+        try {
+          await fbSet(`hr/employeeContracts/${employeeContractKey(companyId, savedEmployeeId)}`, contract)
+        } catch (contractError) {
+          console.error('Không lưu được thông tin hợp đồng:', contractError)
+          onSave()
+          onClose()
+          resetForm()
+          alert('Hồ sơ nhân viên đã lưu, nhưng thông tin hợp đồng chưa lưu được. Hãy mở lại hồ sơ để nhập lại hợp đồng.')
+          return
+        }
       }
       onSave()
       onClose()
@@ -976,6 +1002,30 @@ function EmployeeModal({
                       type="date"
                       name="ngay_lam_chinh_thuc"
                       value={formData.ngay_lam_chinh_thuc}
+                      onChange={handleChange}
+                      disabled={!editable}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Loại hợp đồng</label>
+                    <input
+                      type="text"
+                      name="loai_hop_dong"
+                      value={formData.loai_hop_dong}
+                      onChange={handleChange}
+                      placeholder="Ví dụ: Xác định thời hạn"
+                      disabled={!editable}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Ngày hết hạn hợp đồng</label>
+                    <input
+                      type="date"
+                      name="ngay_het_han"
+                      value={formData.ngay_het_han}
                       onChange={handleChange}
                       disabled={!editable}
                     />
