@@ -5,6 +5,7 @@ import ResetDataModal from './ResetDataModal'
 
 const EmployeeModal = lazy(() => import('./EmployeeModal'))
 const StatusHistoryView = lazy(() => import('./StatusHistoryView'))
+const MOBILE_PAGE_SIZE = 10
 
 const getName = (employee) => employee.ho_va_ten || employee.name || employee.Tên || 'Chưa cập nhật'
 const getTinhTrang = (employee) => getEmployeeEmploymentStatus(employee)
@@ -42,6 +43,25 @@ function EmployeeDirectory({
     const [mobileStatsExpanded, setMobileStatsExpanded] = useState(false)
     const [mobileTabsOpen, setMobileTabsOpen] = useState(false)
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+    const [mobilePage, setMobilePage] = useState(1)
+    const mobileListHeaderRef = useRef(null)
+    const mobilePageCount = Math.ceil(filteredEmployees.length / MOBILE_PAGE_SIZE)
+    const currentMobilePage = Math.min(mobilePage, Math.max(1, mobilePageCount))
+    const mobilePageStart = (currentMobilePage - 1) * MOBILE_PAGE_SIZE
+    const mobileEmployees = filteredEmployees.slice(mobilePageStart, mobilePageStart + MOBILE_PAGE_SIZE)
+
+    useEffect(() => {
+        setMobilePage(1)
+    }, [searchTerm, filterBranch, filterDept, filterStatus, filterContract, filterShift, statFilter, activeTab, filteredEmployees])
+
+    const changeMobilePage = page => {
+        setMobilePage(Math.max(1, Math.min(page, mobilePageCount)))
+        setOpenMenu(null)
+        mobileListHeaderRef.current?.scrollIntoView({
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+            block: 'start'
+        })
+    }
 
     const activeEmployees = useMemo(
         () => employees.filter(employee => !isResigned(employee)),
@@ -104,7 +124,7 @@ function EmployeeDirectory({
     useEffect(() => {
         const closeOnOutsideClick = event => {
             if (!event.target.closest('.employees-mobile-actions')) setMobileMoreOpen(false)
-            if (!event.target.closest('.employees-tabs-wrap')) setMobileTabsOpen(false)
+            if (!event.target.closest('.employees-tabs-wrap') && !event.target.closest('.employees-mobile-list-header') && !event.target.closest('.employees-mobile-tabs-menu')) setMobileTabsOpen(false)
         }
         const closeOnEscape = event => {
             if (event.key !== 'Escape') return
@@ -120,21 +140,111 @@ function EmployeeDirectory({
         }
     }, [])
 
+    const mobileListHeader = (
+            <div className="employees-mobile-list-header" ref={mobileListHeaderRef}>
+                <button
+                    type="button"
+                    className="employees-mobile-tabs-dropdown-trigger"
+                    onClick={() => setMobileTabsOpen(open => !open)}
+                    aria-expanded={mobileTabsOpen}
+                    aria-haspopup="menu"
+                >
+                    <span>
+                        {activeTab === 'history'
+                            ? 'Lịch sử biến động'
+                            : activeTab === 'expiring'
+                                ? `Hợp đồng sắp hết hạn (${contractError ? '—' : expiring.length})`
+                                : `Danh sách nhân viên (${filteredEmployees.length})`}
+                    </span>
+                    <i className={`fas ${mobileTabsOpen ? 'fa-chevron-up' : 'fa-chevron-down'}`}></i>
+                </button>
+                {activeTab !== 'history' && (
+                    <span className="employees-mobile-count">
+                        Hiển thị {filteredEmployees.length} nhân viên
+                    </span>
+                )}
+                {mobileTabsOpen && (
+                    <div className="employees-mobile-tabs-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            type="button"
+                            className={activeTab === 'list' ? 'active' : ''}
+                            onClick={() => { setMobileTabsOpen(false); setActiveTab('list'); onClearStat?.() }}
+                        >
+                            <i className="fas fa-list"></i> Danh sách nhân viên ({activeEmployees.length})
+                        </button>
+                        <button
+                            type="button"
+                            className={activeTab === 'expiring' ? 'active danger' : ''}
+                            onClick={() => { setMobileTabsOpen(false); onSelectStat?.('expiring') }}
+                            disabled={Boolean(contractError)}
+                        >
+                            <i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn ({contractError ? '—' : expiring.length})
+                        </button>
+                        <button
+                            type="button"
+                            className={activeTab === 'history' ? 'active' : ''}
+                            onClick={() => { setMobileTabsOpen(false); setActiveTab('history'); onClearStat?.() }}
+                        >
+                            <i className="fas fa-clock-rotate-left"></i> Lịch sử biến động
+                        </button>
+                    </div>
+                )}
+            </div>
+    )
+
     return (
         <div className={`employees-page${openingEmployee ? ' is-opening' : ''}`}>
+            {/* Section 1: Page Header & Primary Action with Overflow Menu */}
             <header className="employees-hero">
                 <div className="employees-hero__intro">
-                    <h1><i className="fas fa-users"></i> Quản lý nhân sự</h1>
-                    <p>Quản lý tập trung hồ sơ, hợp đồng và tình trạng nhân viên</p>
+                    <div className="employees-hero__header-row">
+                        <div className="employees-hero__icon">
+                            <i className="fas fa-users"></i>
+                        </div>
+                        <div className="employees-hero__titles">
+                            <h1><i className="fas fa-users desktop-icon"></i> Quản lý nhân sự</h1>
+                            <p>
+                                <span className="employees-hero__description-desktop">Quản lý tập trung hồ sơ, hợp đồng và tình trạng nhân viên</span>
+                                <span className="employees-hero__description-mobile">Quản lý tập trung hồ sơ và tình trạng nhân viên</span>
+                            </p>
+                        </div>
+                    </div>
                     <div className="employees-mobile-actions">
-                        <button type="button" className="btn btn-primary" onClick={() => openEmployee(null, false)}><i className="fas fa-plus"></i> Thêm nhân viên</button>
-                        <button type="button" className="btn employees-mobile-more-trigger" aria-label="Tác vụ khác" aria-expanded={mobileMoreOpen} onClick={() => setMobileMoreOpen(open => !open)}><i className="fas fa-ellipsis"></i></button>
-                        {mobileMoreOpen && <div className="employees-mobile-more-menu">
-                            <button type="button" onClick={() => { setMobileMoreOpen(false); onDownloadTemplate?.() }}><i className="fas fa-download"></i> Tải mẫu Excel</button>
-                            <button type="button" onClick={() => { setMobileMoreOpen(false); importInputRef.current?.click() }}><i className="fas fa-file-import"></i> Nhập Excel</button>
-                            <button type="button" onClick={() => { setMobileMoreOpen(false); onExport?.() }}><i className="fas fa-file-excel"></i> Xuất Excel</button>
-                            <button type="button" className="danger" onClick={() => { setMobileMoreOpen(false); setIsResetModalOpen(true) }}><i className="fas fa-trash-can"></i> Reset dữ liệu</button>
-                        </div>}
+                        <button type="button" className="btn btn-primary employees-mobile-add-btn" onClick={() => openEmployee(null, false)}>
+                            <i className="fas fa-plus"></i>
+                            <span>Thêm nhân viên</span>
+                        </button>
+                        <div className="employees-mobile-more-wrap">
+                            <button
+                                type="button"
+                                className="btn employees-mobile-more-trigger"
+                                aria-label="Tác vụ khác"
+                                aria-expanded={mobileMoreOpen}
+                                aria-haspopup="menu"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    setMobileMoreOpen(open => !open)
+                                }}
+                            >
+                                <i className="fas fa-ellipsis"></i>
+                            </button>
+                            {mobileMoreOpen && (
+                                <div className="employees-mobile-more-menu" role="menu" onClick={(e) => e.stopPropagation()}>
+                                    <button type="button" onClick={() => { setMobileMoreOpen(false); onDownloadTemplate?.() }}>
+                                        <i className="fas fa-download"></i> Tải mẫu Excel
+                                    </button>
+                                    <button type="button" onClick={() => { setMobileMoreOpen(false); importInputRef.current?.click() }}>
+                                        <i className="fas fa-file-import"></i> Nhập Excel
+                                    </button>
+                                    <button type="button" onClick={() => { setMobileMoreOpen(false); onExport?.() }}>
+                                        <i className="fas fa-file-excel"></i> Xuất Excel
+                                    </button>
+                                    <button type="button" className="danger" onClick={() => { setMobileMoreOpen(false); setIsResetModalOpen(true) }}>
+                                        <i className="fas fa-trash-can"></i> Reset dữ liệu
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="employees-hero__actions">
@@ -149,7 +259,8 @@ function EmployeeDirectory({
                 </div>
             </header>
 
-            <section className={`hr-overview${mobileStatsExpanded ? ' is-mobile-expanded' : ''}`}>
+            {/* Section 2: Desktop 9-Stat Overview Grid */}
+            <section className="hr-overview hr-overview--desktop">
                 {stats.map(({ key, label, value, icon, tone, title, activity }) => (
                     <button key={key} type="button"
                         className={`hr-stat hr-stat--${tone}${(key === 'all' ? !statFilter && activeTab === 'list' : statFilter === key) ? ' is-selected' : ''}`}
@@ -162,23 +273,78 @@ function EmployeeDirectory({
                     </button>
                 ))}
             </section>
-            <button type="button" className="employees-mobile-stats-toggle" aria-expanded={mobileStatsExpanded} onClick={() => setMobileStatsExpanded(expanded => !expanded)}>
-                {mobileStatsExpanded ? 'Thu gọn chỉ số' : 'Xem tất cả chỉ số'} <i className={`fas ${mobileStatsExpanded ? 'fa-chevron-up' : 'fa-chevron-down'}`}></i>
-            </button>
+
+            {/* Section 2 (Mobile): Compact 3-Metric Statistics Row with Accordion Link */}
+            <section className="employees-mobile-stats-card">
+                <div className="employees-mobile-stats-row">
+                    <button
+                        type="button"
+                        className="employees-mobile-stat-col"
+                        onClick={() => onSelectStat?.('all')}
+                    >
+                        <span className="employees-mobile-stat-val primary">{stats[0]?.value}</span>
+                        <span className="employees-mobile-stat-label">Tổng nhân sự</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="employees-mobile-stat-col"
+                        onClick={() => onSelectStat?.('probation')}
+                    >
+                        <span className="employees-mobile-stat-val warning">{stats[1]?.value}</span>
+                        <span className="employees-mobile-stat-label">Thử việc</span>
+                    </button>
+                    <button
+                        type="button"
+                        className="employees-mobile-stat-col"
+                        onClick={() => onSelectStat?.('official')}
+                    >
+                        <span className="employees-mobile-stat-val success">{stats[2]?.value}</span>
+                        <span className="employees-mobile-stat-label">Chính thức</span>
+                    </button>
+                </div>
+                {mobileStatsExpanded && (
+                    <div className="employees-mobile-stats-expanded">
+                        {stats.slice(3).map(({ key, label, value, icon, tone, title, activity }) => (
+                            <button
+                                key={key}
+                                type="button"
+                                className={`employees-mobile-stat-extra hr-stat--${tone}${statFilter === key ? ' is-selected' : ''}`}
+                                onClick={() => onSelectStat?.(key)}
+                                disabled={(activity && (activityLoading || Boolean(activityError))) || (key === 'expiring' && Boolean(contractError))}
+                                title={title}
+                            >
+                                <span className="extra-icon"><i className={`fas ${icon}`}></i></span>
+                                <span className="extra-info">
+                                    <strong>{value}</strong>
+                                    <small>{label}</small>
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+                <button
+                    type="button"
+                    className="employees-mobile-stats-toggle"
+                    aria-expanded={mobileStatsExpanded}
+                    onClick={() => setMobileStatsExpanded(expanded => !expanded)}
+                >
+                    <span>{mobileStatsExpanded ? 'Thu gọn chỉ số' : 'Xem tất cả chỉ số'}</span>
+                    <i className={`fas ${mobileStatsExpanded ? 'fa-chevron-up' : 'fa-chevron-down'}`}></i>
+                </button>
+            </section>
             {activityError && <p className="employees-stat-error" role="alert">{activityError}</p>}
             {contractError && <p className="employees-stat-error" role="alert">{contractError}</p>}
 
+            {/* Desktop Tabs */}
             <div className="employees-tabs-wrap">
-                <button type="button" className="employees-mobile-tabs-trigger" aria-expanded={mobileTabsOpen} onClick={() => setMobileTabsOpen(open => !open)}>
-                    <span><i className={`fas ${activeTab === 'history' ? 'fa-clock-rotate-left' : activeTab === 'expiring' ? 'fa-triangle-exclamation' : 'fa-list'}`}></i> {activeTab === 'history' ? 'Lịch sử biến động' : activeTab === 'expiring' ? 'Hợp đồng sắp hết hạn' : 'Danh sách nhân viên'}</span>
-                    <i className={`fas ${mobileTabsOpen ? 'fa-chevron-up' : 'fa-chevron-down'}`}></i>
-                </button>
-                <nav className={`employees-tabs${mobileTabsOpen ? ' is-mobile-open' : ''}`} aria-label="Mục nhân sự">
-                    <button className={activeTab === 'list' ? 'active' : ''} onClick={() => { setMobileTabsOpen(false); setActiveTab('list'); onClearStat?.() }}><i className="fas fa-list"></i> Danh sách nhân viên</button>
-                    <button className={activeTab === 'expiring' ? 'active danger' : ''} onClick={() => { setMobileTabsOpen(false); onSelectStat?.('expiring') }} disabled={Boolean(contractError)}><i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn <span>{contractError ? '—' : expiring.length}</span></button>
-                    <button className={activeTab === 'history' ? 'active' : ''} onClick={() => { setMobileTabsOpen(false); setActiveTab('history'); onClearStat?.() }}><i className="fas fa-clock-rotate-left"></i> Lịch sử biến động</button>
+                <nav className="employees-tabs" aria-label="Mục nhân sự">
+                    <button className={activeTab === 'list' ? 'active' : ''} onClick={() => { setActiveTab('list'); onClearStat?.() }}><i className="fas fa-list"></i> Danh sách nhân viên</button>
+                    <button className={activeTab === 'expiring' ? 'active danger' : ''} onClick={() => onSelectStat?.('expiring')} disabled={Boolean(contractError)}><i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn <span>{contractError ? '—' : expiring.length}</span></button>
+                    <button className={activeTab === 'history' ? 'active' : ''} onClick={() => { setActiveTab('history'); onClearStat?.() }}><i className="fas fa-clock-rotate-left"></i> Lịch sử biến động</button>
                 </nav>
             </div>
+
+            {activeTab === 'history' && mobileListHeader}
 
             {activeTab === 'history' ? (
                 <Suspense fallback={<div className="loadingState">Đang tải lịch sử...</div>}>
@@ -191,24 +357,34 @@ function EmployeeDirectory({
                     </span>
                     <button type="button" onClick={() => { setActiveTab('list'); onClearStat?.() }}>Xóa lọc thống kê</button>
                 </div>}
+
+                {/* Section 3: Desktop Filter Card */}
                 <section className="employees-filter-card">
-                    <div className="employees-filter-primary">
-                        <label className="employees-search"><i className="fas fa-search"></i><input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Tìm theo họ tên, email, số điện thoại..." aria-label="Tìm nhân viên" /><input className="employees-search-mobile-input" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Tìm tên, email, SĐT..." aria-label="Tìm nhân viên" /></label>
-                        <button type="button" className="btn employees-mobile-filter-trigger" aria-expanded={mobileFiltersOpen} onClick={() => setMobileFiltersOpen(open => !open)}><i className="fas fa-filter"></i> Lọc{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</button>
-                    </div>
-                    {mobileFiltersOpen && <button type="button" className="employees-mobile-filter-backdrop" aria-label="Đóng bộ lọc" onClick={() => setMobileFiltersOpen(false)} />}
-                    <div className={`employees-filter-fields${mobileFiltersOpen ? ' is-mobile-open' : ''}`}>
-                    <div className="employees-filter-sheet-head"><strong>Bộ lọc</strong><button type="button" aria-label="Đóng bộ lọc" onClick={() => setMobileFiltersOpen(false)}><i className="fas fa-xmark"></i></button></div>
+                    <label className="employees-search">
+                        <i className="fas fa-search"></i>
+                        <input
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Tìm theo họ tên, email, số điện thoại..."
+                            aria-label="Tìm nhân viên"
+                        />
+                    </label>
                     <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
                         <option value="">Tất cả chi nhánh</option>
-                        {branches.map(value => <option key={value}>{value}</option>)}
+                        {branches.map(value => <option key={value} value={value}>{value}</option>)}
                         <option value="__none__">Chưa có chi nhánh</option>
                     </select>
-                    <select value={filterDept} onChange={e => setFilterDept(e.target.value)}><option value="">Tất cả phòng ban</option>{departments.map(value => <option key={value}>{value}</option>)}</select>
-                    <select value={filterContract} onChange={e => setFilterContract(e.target.value)}><option value="">Tất cả hợp đồng</option>{contracts.map(value => <option key={value}>{value}</option>)}</select>
+                    <select value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+                        <option value="">Tất cả phòng ban</option>
+                        {departments.map(value => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select value={filterContract} onChange={e => setFilterContract(e.target.value)}>
+                        <option value="">Tất cả hợp đồng</option>
+                        {contracts.map(value => <option key={value} value={value}>{value}</option>)}
+                    </select>
                     <select value={filterShift} onChange={e => setFilterShift(e.target.value)}>
                         <option value="">Tất cả ca</option>
-                        {shifts.map(value => <option key={value}>{value}</option>)}
+                        {shifts.map(value => <option key={value} value={value}>{value}</option>)}
                         {noShiftCount > 0 && <option value="__none__">Chưa gán ca</option>}
                     </select>
                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
@@ -218,14 +394,124 @@ function EmployeeDirectory({
                         <option value="Tạm nghỉ">Tạm nghỉ</option>
                         <option value="Nghỉ việc">Đã nghỉ</option>
                     </select>
-                    <button className="btn btn-icon" title="Làm mới & đặt lại bộ lọc" aria-label="Làm mới và đặt lại bộ lọc" onClick={onResetFilters || onReload}><i className="fas fa-rotate"></i><span className="employees-mobile-reset-label">Làm mới và xóa lọc</span></button>
-                    </div>
+                    <button className="btn btn-icon" title="Làm mới & đặt lại bộ lọc" aria-label="Làm mới và đặt lại bộ lọc" onClick={onResetFilters || onReload}>
+                        <i className="fas fa-rotate"></i>
+                    </button>
                 </section>
 
+                {/* Section 3 (Mobile): Search and Filter Bar */}
+                <section className="employees-mobile-filter-bar">
+                    <div className="employees-mobile-search">
+                        <i className="fas fa-search" aria-hidden="true"></i>
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Tìm tên, email, SĐT..."
+                            aria-label="Tìm tên, email, SĐT"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        className={`employees-mobile-filter-btn${activeFilterCount > 0 ? ' has-filter' : ''}`}
+                        onClick={() => setMobileFiltersOpen(true)}
+                        aria-label="Lọc"
+                    >
+                        <i className="fas fa-filter" aria-hidden="true"></i>
+                        <span>Lọc{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</span>
+                    </button>
+                </section>
+
+                {/* Mobile Filter Sheet Drawer */}
+                {mobileFiltersOpen && (
+                    <>
+                        <button
+                            type="button"
+                            className="employees-mobile-filter-backdrop"
+                            aria-label="Đóng bộ lọc"
+                            onClick={() => setMobileFiltersOpen(false)}
+                        />
+                        <div className="employees-mobile-filter-sheet">
+                            <div className="employees-filter-sheet-head">
+                                <strong>Bộ lọc</strong>
+                                <button type="button" aria-label="Đóng bộ lọc" onClick={() => setMobileFiltersOpen(false)}>
+                                    <i className="fas fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div className="employees-filter-sheet-body">
+                                <div className="filter-group">
+                                    <label>Chi nhánh</label>
+                                    <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+                                        <option value="">Tất cả chi nhánh</option>
+                                        {branches.map(value => <option key={value} value={value}>{value}</option>)}
+                                        <option value="__none__">Chưa có chi nhánh</option>
+                                    </select>
+                                </div>
+                                <div className="filter-group">
+                                    <label>Phòng ban</label>
+                                    <select value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+                                        <option value="">Tất cả phòng ban</option>
+                                        {departments.map(value => <option key={value} value={value}>{value}</option>)}
+                                    </select>
+                                </div>
+                                <div className="filter-group">
+                                    <label>Hợp đồng</label>
+                                    <select value={filterContract} onChange={e => setFilterContract(e.target.value)}>
+                                        <option value="">Tất cả hợp đồng</option>
+                                        {contracts.map(value => <option key={value} value={value}>{value}</option>)}
+                                    </select>
+                                </div>
+                                <div className="filter-group">
+                                    <label>Ca làm việc</label>
+                                    <select value={filterShift} onChange={e => setFilterShift(e.target.value)}>
+                                        <option value="">Tất cả ca</option>
+                                        {shifts.map(value => <option key={value} value={value}>{value}</option>)}
+                                        {noShiftCount > 0 && <option value="__none__">Chưa gán ca</option>}
+                                    </select>
+                                </div>
+                                <div className="filter-group">
+                                    <label>Trạng thái</label>
+                                    <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                                        <option value="">Tất cả trạng thái</option>
+                                        <option value="Thử việc">Thử việc</option>
+                                        <option value="Chính thức">Chính thức</option>
+                                        <option value="Tạm nghỉ">Tạm nghỉ</option>
+                                        <option value="Nghỉ việc">Đã nghỉ</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="employees-filter-sheet-foot">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => {
+                                        onResetFilters?.() || onReload?.();
+                                        setMobileFiltersOpen(false);
+                                    }}
+                                >
+                                    <i className="fas fa-rotate"></i> Đặt lại
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={() => setMobileFiltersOpen(false)}
+                                >
+                                    Áp dụng
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {mobileListHeader}
+
+                {/* Section 4: Employee List & Table */}
                 <section className="employees-table-card">
                     <div className="employees-table-card__caption">
                         <span>Hiển thị <strong>{filteredEmployees.length}</strong> nhân viên</span>
                     </div>
+
+                    {/* Desktop Table View */}
                     <div className="employees-table-wrap">
                         <table className="employees-table">
                             <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Chức danh</th><th>Ca</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Tình trạng</th><th></th></tr></thead>
@@ -292,32 +578,107 @@ function EmployeeDirectory({
                         </table>
                         {!filteredEmployees.length && <div className="employee-card-empty">Không tìm thấy nhân viên phù hợp</div>}
                     </div>
+
+                    {/* Section 4 (Mobile): Modern Card List */}
                     <div className="employees-mobile-list">
-                        {filteredEmployees.map((employee, index) => {
+                        {mobileEmployees.map((employee, index) => {
                             const name = getName(employee)
                             const status = getTinhTrang(employee)
                             const avatar = employee.avatarDataUrl || employee.avatarUrl || employee.avatar
-                            const rowKey = `mobile:${employee.id || index}`
-                            return <div className="employees-mobile-item" key={employee.id || index}>
-                                <button type="button" className="employees-mobile-person" onClick={() => openEmployee(employee)} aria-label={`Xem hồ sơ ${name}`}>
-                                    <span className="employee-avatar">{avatar ? <img src={avatar} alt="" loading="lazy" decoding="async" /> : name.charAt(0)}</span>
-                                    <span className="employees-mobile-person-info">
-                                        <strong>{name}</strong>
-                                        {employee.employeeId && <small className="employees-mobile-code">{employee.employeeId}</small>}
-                                        {(employee.bo_phan || employee.vi_tri) && <small>{[employee.bo_phan, employee.vi_tri].filter(Boolean).join(' · ')}</small>}
-                                        <span className={`employee-status ${status === 'Chính thức' ? 'success' : status === 'Thử việc' ? 'warning' : status === 'Nghỉ việc' ? 'danger' : ''}`}><i></i>{status === 'Nghỉ việc' ? 'Đã nghỉ' : status || 'Chưa cập nhật'}</span>
-                                    </span>
-                                </button>
-                                <button type="button" className="employees-mobile-row-menu" aria-label={`Thao tác với ${name}`} aria-expanded={openMenu?.id === rowKey} onClick={event => { event.stopPropagation(); setOpenMenu(openMenu?.id === rowKey ? null : { id: rowKey }) }}><i className="fas fa-ellipsis"></i></button>
-                                {openMenu?.id === rowKey && <div className="employees-mobile-row-dropdown" onClick={event => event.stopPropagation()}>
-                                    <button type="button" onClick={() => openEmployee(employee, true)}><i className="fas fa-eye"></i> Xem</button>
-                                    <button type="button" onClick={() => openEmployee(employee, false)}><i className="fas fa-edit"></i> Sửa</button>
-                                    <button type="button" className="danger" onClick={() => { setOpenMenu(null); onDelete?.(employee.id, name) }}><i className="fas fa-trash"></i> Xóa</button>
-                                </div>}
-                            </div>
+                            const rowKey = `mobile:${employee.id || mobilePageStart + index}`
+                            const statusText = status === 'Nghỉ việc' ? 'Đã nghỉ' : (status || 'Chưa cập nhật')
+                            const statusTone = status === 'Nghỉ việc'
+                                ? 'danger'
+                                : status === 'Thử việc'
+                                    ? 'probation'
+                                    : status === 'Tạm nghỉ'
+                                        ? 'paused'
+                                        : 'active'
+                            const roleText = employee.vi_tri || employee.bo_phan || 'Chưa cập nhật'
+
+                            return (
+                                <div className="employees-mobile-card" key={employee.id || mobilePageStart + index}>
+                                    <div
+                                        className="employees-mobile-card-main"
+                                        onClick={() => openEmployee(employee, true)}
+                                        role="button"
+                                        tabIndex={0}
+                                        aria-label={`Xem thông tin ${name}`}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openEmployee(employee, true) }}
+                                    >
+                                        <div className={`employees-mobile-avatar${avatar ? ' has-img' : ''}`}>
+                                            {avatar ? (
+                                                <img src={avatar} alt="" loading="lazy" decoding="async" />
+                                            ) : (
+                                                name.charAt(0)
+                                            )}
+                                        </div>
+                                        <div className="employees-mobile-details">
+                                            <h3 className="employees-mobile-name">{name}</h3>
+                                            <div className="employees-mobile-meta">
+                                                {employee.employeeId && <span className="employees-mobile-id">{employee.employeeId}</span>}
+                                                {employee.employeeId && (employee.vi_tri || employee.bo_phan) && <span className="employees-mobile-sep">•</span>}
+                                                <span className="employees-mobile-role">{roleText}</span>
+                                            </div>
+                                            <div className="employees-mobile-status-wrap">
+                                                <span className={`employees-mobile-badge employees-mobile-badge--${statusTone}`}>
+                                                    <span className="badge-dot"></span>
+                                                    {statusText}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="employees-mobile-action-btn"
+                                        aria-label={`Thao tác với ${name}`}
+                                        aria-expanded={openMenu?.id === rowKey}
+                                        aria-haspopup="menu"
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            setOpenMenu(openMenu?.id === rowKey ? null : { id: rowKey })
+                                        }}
+                                    >
+                                        <i className="fas fa-ellipsis"></i>
+                                    </button>
+                                    {openMenu?.id === rowKey && (
+                                        <div className="employees-mobile-dropdown" role="menu" onClick={(e) => e.stopPropagation()}>
+                                            <button type="button" onClick={() => { setOpenMenu(null); openEmployee(employee, true); }}>
+                                                <i className="fas fa-eye"></i> Xem
+                                            </button>
+                                            <button type="button" onClick={() => { setOpenMenu(null); openEmployee(employee, false); }}>
+                                                <i className="fas fa-edit"></i> Sửa
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="danger"
+                                                onClick={() => {
+                                                    setOpenMenu(null)
+                                                    onDelete?.(employee.id, name)
+                                                }}
+                                            >
+                                                <i className="fas fa-trash"></i> Xóa
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )
                         })}
                         {!filteredEmployees.length && <div className="employee-card-empty">Không tìm thấy nhân viên phù hợp</div>}
                     </div>
+                    {mobilePageCount > 1 && (
+                        <nav className="employees-mobile-pagination" aria-label="Phân trang nhân viên">
+                            <button type="button" disabled={currentMobilePage === 1} onClick={() => changeMobilePage(currentMobilePage - 1)}>
+                                <span aria-hidden="true">‹</span> Trước
+                            </button>
+                            <span className="employees-mobile-pagination-status" role="status" aria-live="polite">
+                                Trang {currentMobilePage} / {mobilePageCount}
+                            </span>
+                            <button type="button" disabled={currentMobilePage === mobilePageCount} onClick={() => changeMobilePage(currentMobilePage + 1)}>
+                                Sau <span aria-hidden="true">›</span>
+                            </button>
+                        </nav>
+                    )}
                 </section>
             </>}
 

@@ -26,6 +26,7 @@ import { canManageAttendance, isCoreStaffUser } from '../utils/staffAccess'
 import { openAttendancePrintWindow } from '../utils/attendancePdf'
 import { resolveAttendanceDepartment } from '../utils/attendanceDepartment'
 import './AttendancePreview.css'
+import MobileActions from '../components/MobileActions'
 
 const EXCEL_DETAIL_PAGE_SIZE = 100
 const EXCEL_DETAIL_PAGE_SIZE_OPTIONS = [50, 100, 200]
@@ -1238,6 +1239,7 @@ function AttendancePreview() {
         >
           Tải Excel & Lưu bảng công
         </button>
+        <MobileActions>
         <button
           type="button"
           className="attendance-preview-detail-btn"
@@ -1274,6 +1276,7 @@ function AttendancePreview() {
             <i className="fas fa-trash-can"></i> Xóa bảng công
           </button>
         )}
+        </MobileActions>
       </div>
     </header>
 
@@ -1806,32 +1809,32 @@ function AttendancePreview() {
                         const early = Number(log.earlyMinutes ?? log.raSom ?? 0) || 0
                         return (
                           <tr key={log.id || `${log.employeeId}-${dateStr}-${index}`}>
-                            <td>{excelPageStart + index}</td>
-                            <td>{log.displayEmployeeCode || log.sourceEmployeeCode || log.employeeCode || '-'}</td>
-                            <td>{log.employeeName || '-'}</td>
-                            <td>{companyName}</td>
-                            <td>{log.machineName || log.tenTheoMayChamCong || '-'}</td>
-                            <td>{log.department || log.phongBan || '-'}</td>
-                            <td>
+                            <td data-label="STT">{excelPageStart + index}</td>
+                            <td data-label="Mã NV">{log.displayEmployeeCode || log.sourceEmployeeCode || log.employeeCode || '-'}</td>
+                            <td data-label="Họ tên">{log.employeeName || '-'}</td>
+                            <td data-label="Công ty">{companyName}</td>
+                            <td data-label="Tên máy CC">{log.machineName || log.tenTheoMayChamCong || '-'}</td>
+                            <td data-label="Phòng ban">{log.department || log.phongBan || '-'}</td>
+                            <td data-label="Ngày">
                               {dateStr
                                 ? new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN')
                                 : '-'}
                             </td>
-                            <td>{log.dayOfWeek || log.thu || dayOfWeekFromDate(dateStr) || '-'}</td>
-                            <td>{formatTimeHM(log.vao || log.checkIn) || '-'}</td>
-                            <td>{formatTimeHM(log.ra || log.checkOut) || '-'}</td>
-                            <td>{log.cong ?? '-'}</td>
-                            <td>{hours ? hours.toFixed(2) : '-'}</td>
-                            <td>{log.congPlus ?? '-'}</td>
-                            <td className={late > 0 ? 'is-late' : ''}>{late > 0 ? `${late}p` : '-'}</td>
-                            <td className={early > 0 ? 'is-early' : ''}>{early > 0 ? `${early}p` : '-'}</td>
-                            <td>{log.tc1 ?? '-'}</td>
-                            <td>{log.tc2 ?? '-'}</td>
-                            <td>{log.tc3 ?? '-'}</td>
-                            <td>{log.profileShift || log.shiftName || log.tenCa || '-'}</td>
-                            <td>{log.kyHieu || log.status || '-'}</td>
-                            <td>{log.kyHieuPlus || '-'}</td>
-                            <td><strong>{tongGio ? tongGio.toFixed(2) : '-'}</strong></td>
+                            <td data-label="Thứ">{log.dayOfWeek || log.thu || dayOfWeekFromDate(dateStr) || '-'}</td>
+                            <td data-label="Vào">{formatTimeHM(log.vao || log.checkIn) || '-'}</td>
+                            <td data-label="Ra">{formatTimeHM(log.ra || log.checkOut) || '-'}</td>
+                            <td data-label="Công">{log.cong ?? '-'}</td>
+                            <td data-label="Giờ">{hours ? hours.toFixed(2) : '-'}</td>
+                            <td data-label="Công+">{log.congPlus ?? '-'}</td>
+                            <td data-label="Vào trễ" className={late > 0 ? 'is-late' : ''}>{late > 0 ? `${late}p` : '-'}</td>
+                            <td data-label="Ra sớm" className={early > 0 ? 'is-early' : ''}>{early > 0 ? `${early}p` : '-'}</td>
+                            <td data-label="TC1">{log.tc1 ?? '-'}</td>
+                            <td data-label="TC2">{log.tc2 ?? '-'}</td>
+                            <td data-label="TC3">{log.tc3 ?? '-'}</td>
+                            <td data-label="Ca">{log.profileShift || log.shiftName || log.tenCa || '-'}</td>
+                            <td data-label="KH">{log.kyHieu || log.status || '-'}</td>
+                            <td data-label="KH+">{log.kyHieuPlus || '-'}</td>
+                            <td data-label="Tổng giờ"><strong>{tongGio ? tongGio.toFixed(2) : '-'}</strong></td>
                           </tr>
                         )
                       })

@@ -547,40 +547,40 @@ function OnlineAttendance() {
                   return (
                     <tr key={log.id || idx}>
                       <td>{idx + 1}</td>
-                      <td><strong>{displayDate(log.date)}</strong></td>
-                      <td>{log.dayOfWeek || '—'}</td>
-                      <td><span className="oa-time-tag">{checkInFull}</span></td>
-                      <td>
+                      <td data-label="Ngày"><strong>{displayDate(log.date)}</strong></td>
+                      <td data-label="Thứ">{log.dayOfWeek || '—'}</td>
+                      <td data-label="Check-in"><span className="oa-time-tag">{checkInFull}</span></td>
+                      <td data-label="Ảnh Check-in">
                         {log.checkInPhoto ? (
                           <a href={log.checkInPhoto} target="_blank" rel="noreferrer" title="Bấm xem ảnh Cloudinary">
                             <img src={log.checkInPhoto} alt="Ảnh vào" className="oa-table-thumb" />
                           </a>
                         ) : '—'}
                       </td>
-                      <td><span className="oa-time-tag">{checkOutFull}</span></td>
-                      <td>
+                      <td data-label="Check-out"><span className="oa-time-tag">{checkOutFull}</span></td>
+                      <td data-label="Ảnh Check-out">
                         {log.checkOutPhoto ? (
                           <a href={log.checkOutPhoto} target="_blank" rel="noreferrer" title="Bấm xem ảnh Cloudinary">
                             <img src={log.checkOutPhoto} alt="Ảnh ra" className="oa-table-thumb" />
                           </a>
                         ) : '—'}
                       </td>
-                      <td><strong>{log.hours || log.gio || 0}h</strong></td>
-                      <td>
+                      <td data-label="Tổng giờ"><strong>{log.hours || log.gio || 0}h</strong></td>
+                      <td data-label="Đi muộn">
                         {isLate ? (
                           <span className="oa-badge badge-danger">{log.lateMinutes || log.vaoTre}p</span>
                         ) : (
                           <span className="oa-badge badge-success">0p</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Về sớm">
                         {isEarly ? (
                           <span className="oa-badge badge-warning">{log.earlyMinutes || log.raSom}p</span>
                         ) : (
                           <span className="oa-badge badge-success">0p</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Trạng thái">
                         <span className={`oa-badge ${isLate ? 'badge-danger' : 'badge-success'}`}>
                           {log.status || (isLate ? 'Muộn' : 'Đúng giờ')}
                         </span>

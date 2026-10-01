@@ -93,9 +93,9 @@ function LeaveBoard() {
                 const data = settings[employee.id]?.[year]
                 return <tr key={employee.id}>
                   <th scope="row"><strong>{employee.ho_va_ten || employee.employeeId}</strong><small>{employee.employeeId}</small></th>
-                  <td>{formatTenure(employee.ngay_vao_lam, asOf)}</td>
-                  <td className="leave-board-total">{data ? data.total_leave : 'Chưa cài'}</td>
-                  {LEAVE_MONTHS.map(month => <td key={month}>{data?.months?.[month] ?? '—'}</td>)}
+                  <td data-label="Thâm niên">{formatTenure(employee.ngay_vao_lam, asOf)}</td>
+                  <td data-label={`Phép năm ${year}`} className="leave-board-total">{data ? data.total_leave : 'Chưa cài'}</td>
+                  {LEAVE_MONTHS.map(month => <td data-label={`Tháng ${month}`} key={month}>{data?.months?.[month] ?? '—'}</td>)}
                 </tr>
               })}
             </tbody>

@@ -120,9 +120,9 @@ function LeaveDays() {
         <table>
           <thead><tr><th scope="col">Tên người nghỉ</th><th scope="col">Ngày nghỉ phép</th><th scope="col">Lý do</th></tr></thead>
           <tbody>{visibleRecords.map(record => <tr key={record.id}>
-            <td>{record.employee_name}</td>
-            <td>{formatLeaveDate(record.leave_date)}</td>
-            <td>{record.reason || '—'}</td>
+            <td data-label="Tên người nghỉ">{record.employee_name}</td>
+            <td data-label="Ngày nghỉ phép">{formatLeaveDate(record.leave_date)}</td>
+            <td data-label="Lý do">{record.reason || '—'}</td>
           </tr>)}</tbody>
         </table>
       </div>}

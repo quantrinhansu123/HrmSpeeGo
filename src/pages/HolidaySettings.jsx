@@ -483,13 +483,17 @@ function HolidaySettings() {
               </div>
               {penaltyCategories.map(item => (
                 <div className="holiday-settings-penalty-row" key={item.key}>
+                  <label className="mobile-field-label" htmlFor={`penalty-label-${item.key}`}>Nội dung phạt</label>
                   <input
+                    id={`penalty-label-${item.key}`}
                     type="text"
                     value={item.label}
                     placeholder="Ví dụ: Đi muộn"
                     onChange={event => updatePenaltyCategory(item.key, 'label', event.target.value)}
                   />
+                  <label className="mobile-field-label" htmlFor={`penalty-amount-${item.key}`}>Mức phạt (đ)</label>
                   <input
+                    id={`penalty-amount-${item.key}`}
                     type="number"
                     min="0"
                     step="1000"

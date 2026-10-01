@@ -2700,11 +2700,11 @@ function Approvals() {
                                       openDetail(r.id)
                                     }}
                                   >
-                                    <td>{idx + 1}</td>
-                                    <td>{r.templateType || 'ĐỀ XUẤT'}</td>
-                                    <td>{r.subject || '—'}</td>
-                                    <td>{formatDateTime(r.createdAt)}</td>
-                                    <td><span className={`apv-badge ${badge.cls}`}>{badge.label}</span></td>
+                                    <td data-label="STT">{idx + 1}</td>
+                                    <td data-label="Loại đề xuất">{r.templateType || 'ĐỀ XUẤT'}</td>
+                                    <td data-label="Về việc">{r.subject || '—'}</td>
+                                    <td data-label="Ngày giờ đề xuất">{formatDateTime(r.createdAt)}</td>
+                                    <td data-label="Trạng thái"><span className={`apv-badge ${badge.cls}`}>{badge.label}</span></td>
                                   </tr>
                                 )
                               })}
