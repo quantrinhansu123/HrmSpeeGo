@@ -3,12 +3,9 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../services/supabase'
 import { fbGet, fbUpdate, fbGetAttendanceByEmployee } from '../services/firebase'
-import { uploadToCloudinary, getCloudinaryConfig, saveCloudinaryConfig } from '../utils/cloudinary'
+import { uploadToCloudinary } from '../utils/cloudinary'
 import {
   applyCalculatedAttendanceTiming,
-  ATTENDANCE_SHIFT_IDS,
-  buildAttendanceShiftSettingsPayload,
-  getAttendanceShiftOptions,
   normalizeAttendanceShiftSettings,
   resolveAttendanceShift
 } from '../utils/attendanceShift'
@@ -63,27 +60,14 @@ function OnlineAttendance() {
   // 1. Đồng hồ thời gian thực
   const [currentTime, setCurrentTime] = useState(new Date())
 
-  // 2. Định vị GPS
-  const [location, setLocation] = useState(null)
-  const [locationLoading, setLocationLoading] = useState(false)
-  const [locationError, setLocationError] = useState('')
-
-  // 3. Chụp ảnh & Tải ảnh Cloudinary
+  // 2. Chụp ảnh & Tải ảnh Cloudinary
   const [photoPreview, setPhotoPreview] = useState(null)
   const [isCameraActive, setIsCameraActive] = useState(false)
   const videoRef = useRef(null)
   const streamRef = useRef(null)
-  const fileInputRef = useRef(null)
 
-  // 4. Cài đặt ca làm việc & Cloudinary
-  const [showShiftModal, setShowShiftModal] = useState(false)
+  // 3. Cài đặt ca làm việc
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
-  const [shiftDrafts, setShiftDrafts] = useState(() => normalizeAttendanceShiftSettings())
-  const [selectedShiftId, setSelectedShiftId] = useState(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
-  const [cloudNameInput, setCloudNameInput] = useState('')
-  const [cloudPresetInput, setCloudPresetInput] = useState('')
-  const [adminPin, setAdminPin] = useState('')
-  const [isUnlocked, setIsUnlocked] = useState(false)
 
   // 5. Lịch sử chấm công (List) & Bộ lọc tháng
   const [historyLogs, setHistoryLogs] = useState([])
@@ -142,45 +126,10 @@ function OnlineAttendance() {
       .then(settings => {
         const normalized = normalizeAttendanceShiftSettings(settings)
         setAttendanceSettings(normalized)
-        setShiftDrafts(normalized)
       })
       .catch(() => {})
 
-    const { cloudName, uploadPreset } = getCloudinaryConfig()
-    setCloudNameInput(cloudName)
-    setCloudPresetInput(uploadPreset)
   }, [])
-
-  // Hàm lấy vị trí GPS
-  const getCurrentLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setLocationError('Trình duyệt không hỗ trợ định vị GPS')
-      return
-    }
-    setLocationLoading(true)
-    setLocationError('')
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: Math.round(pos.coords.accuracy),
-          timestamp: new Date().toISOString()
-        })
-        setLocationLoading(false)
-      },
-      err => {
-        setLocationError(`Không thể lấy vị trí: ${err.message}`)
-        setLocationLoading(false)
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    )
-  }, [])
-
-  // Tự động lấy vị trí khi vào trang
-  useEffect(() => {
-    getCurrentLocation()
-  }, [getCurrentLocation])
 
   // Camera management
   const startCamera = async () => {
@@ -195,7 +144,7 @@ function OnlineAttendance() {
         videoRef.current.srcObject = stream
       }
     } catch (err) {
-      setError(`Không thể bật camera: ${err.message}. Bạn có thể chọn tải ảnh từ máy tính.`)
+      setError(`Không thể bật camera: ${err.message}`)
       setIsCameraActive(false)
     }
   }
@@ -218,17 +167,6 @@ function OnlineAttendance() {
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
     setPhotoPreview(dataUrl)
     stopCamera()
-  }
-
-  const handleFilePhoto = e => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setPhotoPreview(reader.result)
-      stopCamera()
-    }
-    reader.readAsDataURL(file)
   }
 
   // Tải dữ liệu chấm công hôm nay
@@ -331,22 +269,17 @@ function OnlineAttendance() {
         throw new Error(requestError.message)
       }
 
-      // 3. Cập nhật thêm ảnh Cloudinary và tọa độ GPS vào bản ghi
-      if (uploadedPhotoUrl || location) {
+      // 3. Cập nhật thêm ảnh Cloudinary vào bản ghi
+      if (uploadedPhotoUrl) {
         try {
           const recordDate = data?.date || new Date().toISOString().slice(0, 10)
           const recordId = `online_${user.id || user.auth_user_id}_${recordDate.replace(/-/g, '')}`
-          const patch = {}
-          if (action === 'in') {
-            if (uploadedPhotoUrl) patch.checkInPhoto = uploadedPhotoUrl
-            if (location) patch.checkInLocation = location
-          } else {
-            if (uploadedPhotoUrl) patch.checkOutPhoto = uploadedPhotoUrl
-            if (location) patch.checkOutLocation = location
-          }
+          const patch = action === 'in'
+            ? { checkInPhoto: uploadedPhotoUrl }
+            : { checkOutPhoto: uploadedPhotoUrl }
           await fbUpdate(`hr/attendanceLogs/${recordId}`, patch)
         } catch (updateErr) {
-          console.warn('Lưu ảnh/vị trí phụ:', updateErr.message)
+          console.warn('Lưu ảnh phụ:', updateErr.message)
         }
       }
 
@@ -357,14 +290,13 @@ function OnlineAttendance() {
         record: {
           ...(current?.record || {}),
           ...(data?.record || {}),
-          [action === 'in' ? 'checkInPhoto' : 'checkOutPhoto']: uploadedPhotoUrl,
-          [action === 'in' ? 'checkInLocation' : 'checkOutLocation']: location
+          [action === 'in' ? 'checkInPhoto' : 'checkOutPhoto']: uploadedPhotoUrl
         }
       }))
 
       setPhotoPreview(null)
       stopCamera()
-      setNotice(action === 'in' ? '✓ Check-in thành công kèm ảnh & vị trí!' : '✓ Check-out thành công!')
+      setNotice(action === 'in' ? '✓ Check-in thành công!' : '✓ Check-out thành công!')
       loadHistory()
     } catch (err) {
       setError(err.message || 'Lỗi khi chấm công')
@@ -372,57 +304,6 @@ function OnlineAttendance() {
       setSubmitting(false)
     }
   }
-
-  // Lưu cài đặt ca
-  const saveShiftSettings = async () => {
-    if (!isAdminOrManager && !isUnlocked) {
-      alert('Chỉ Quản trị viên / Sếp mới có quyền thay đổi cài đặt ca! Vui lòng nhập mã PIN (123456) để mở khóa.')
-      return
-    }
-    const invalidShift = getAttendanceShiftOptions(shiftDrafts).find(
-      shift => shift.standardCheckIn >= shift.standardCheckOut
-    )
-    if (invalidShift) {
-      setSelectedShiftId(invalidShift.id)
-      alert(`Giờ ra chuẩn của ${invalidShift.name} phải sau giờ vào chuẩn.`)
-      return
-    }
-    try {
-      const nextSettings = normalizeAttendanceShiftSettings(shiftDrafts)
-      await fbUpdate(
-        'hr/attendanceSettings/default',
-        buildAttendanceShiftSettingsPayload(nextSettings)
-      )
-      saveCloudinaryConfig(cloudNameInput, cloudPresetInput)
-      setAttendanceSettings(nextSettings)
-      setShowShiftModal(false)
-      setNotice('✓ Đã cập nhật cài đặt ca và Cloudinary thành công.')
-    } catch (err) {
-      alert('Lỗi lưu cài đặt: ' + err.message)
-    }
-  }
-
-  const openShiftSettings = () => {
-    setShiftDrafts(normalizeAttendanceShiftSettings(attendanceSettings))
-    setSelectedShiftId(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE)
-    setShowShiftModal(true)
-  }
-
-  const updateSelectedShift = (field, value) => {
-    setShiftDrafts(current => ({
-      ...current,
-      shifts: {
-        ...current.shifts,
-        [selectedShiftId]: {
-          ...current.shifts[selectedShiftId],
-          [field]: value
-        }
-      }
-    }))
-  }
-
-  const shiftOptions = getAttendanceShiftOptions(shiftDrafts)
-  const selectedShift = shiftDrafts.shifts[selectedShiftId]
 
   const hoursStr = String(currentTime.getHours()).padStart(2, '0')
   const minutesStr = String(currentTime.getMinutes()).padStart(2, '0')
@@ -441,23 +322,14 @@ function OnlineAttendance() {
           </p>
         </div>
         <div className="oa-header-actions">
-          <button
-            type="button"
-            className="oa-btn-settings"
-            onClick={openShiftSettings}
-            title="Cài đặt ca làm việc & Cloudinary"
-          >
-            ⚙️ Cài đặt ca
-          </button>
           <Link className="oa-btn-view" to={isAdminOrManager ? '/bang-cong-preview' : '/bang-cong'}>
             Xem bảng công
           </Link>
         </div>
       </div>
 
-      {/* Hero: Đồng hồ thời gian thực & Vị trí */}
+      {/* Hero: Đồng hồ thời gian thực */}
       <div className="oa-dashboard-grid">
-        {/* Đồng hồ số */}
         <div className="oa-clock-card">
           <div className="oa-card-label">ĐỒNG HỒ HỆ THỐNG (GIỜ VIỆT NAM)</div>
           <div className="oa-digital-clock">
@@ -471,30 +343,6 @@ function OnlineAttendance() {
           <div className="oa-shift-badge">
             Ca làm việc: <strong>{standardIn} - {standardOut}</strong>
           </div>
-        </div>
-
-        {/* Vị trí GPS */}
-        <div className="oa-location-card">
-          <div className="oa-card-label">VỊ TRÍ ĐỊNH VỊ GPS</div>
-          {locationLoading ? (
-            <div className="oa-loc-status is-loading">📡 Đang xác định tọa độ GPS...</div>
-          ) : location ? (
-            <div className="oa-loc-info">
-              <div className="oa-loc-coords">
-                📍 <strong>{location.latitude.toFixed(5)}° N, {location.longitude.toFixed(5)}° E</strong>
-              </div>
-              <div className="oa-loc-accuracy">
-                Độ chính xác: ±{location.accuracy}m · <em>Vị trí hợp lệ</em>
-              </div>
-            </div>
-          ) : (
-            <div className="oa-loc-status is-error">
-              {locationError || 'Chưa lấy được vị trí GPS. Hãy cho phép trình duyệt truy cập vị trí.'}
-            </div>
-          )}
-          <button type="button" className="oa-btn-refresh-loc" onClick={getCurrentLocation}>
-            🔄 Làm mới vị trí
-          </button>
         </div>
       </div>
 
@@ -595,21 +443,6 @@ function OnlineAttendance() {
               <button type="button" className="oa-btn-open-cam" onClick={startCamera}>
                 🎥 Bật Camera máy tính
               </button>
-              <button
-                type="button"
-                className="oa-btn-upload-file"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                📸 Chụp / Chọn ảnh (Điện thoại)
-              </button>
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                capture="user"
-                style={{ display: 'none' }}
-                onChange={handleFilePhoto}
-              />
             </div>
           )}
 
@@ -760,135 +593,6 @@ function OnlineAttendance() {
           </table>
         </div>
       </div>
-
-      {/* Modal Cài đặt ca làm việc & Cloudinary */}
-      {showShiftModal && (
-        <div className="oa-modal-overlay" onClick={() => setShowShiftModal(false)}>
-          <div className="oa-modal-box" onClick={e => e.stopPropagation()}>
-            <div className="oa-modal-header">
-              <h3>Cài đặt Ca làm việc & Cloudinary</h3>
-              <button type="button" className="oa-modal-close" onClick={() => setShowShiftModal(false)}>
-                ✕
-              </button>
-            </div>
-
-            <div className="oa-modal-body">
-              {!isAdminOrManager && !isUnlocked && (
-                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '12px 14px', borderRadius: '8px', marginBottom: '16px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#92400e', marginBottom: '4px' }}>
-                    🔒 Quyền Quản lý / Sếp:
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#78350f', marginBottom: '8px' }}>
-                    Nhân viên không thể tự sửa ca làm việc. Để chỉnh sửa, vui lòng nhập mã PIN Sếp (<strong>123456</strong>):
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="password"
-                      placeholder="Nhập mã PIN sếp..."
-                      value={adminPin}
-                      onChange={e => setAdminPin(e.target.value)}
-                      style={{ padding: '6px 10px', fontSize: '13px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }}
-                    />
-                    <button
-                      type="button"
-                      style={{ padding: '6px 14px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer' }}
-                      onClick={() => {
-                        if (adminPin === '123456' || adminPin === 'admin') {
-                          setIsUnlocked(true)
-                        } else {
-                          alert('Mã PIN sếp không chính xác!')
-                        }
-                      }}
-                    >
-                      Mở khóa
-                    </button>
-                  </div>
-                </div>
-              )}
-              {(!isAdminOrManager && isUnlocked) && (
-                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '8px 12px', borderRadius: '6px', marginBottom: '14px', color: '#065f46', fontSize: '12px', fontWeight: 600 }}>
-                  ✓ Đã mở khóa quyền Sếp thành công! Bạn có thể chỉnh sửa ca và Cloudinary bên dưới.
-                </div>
-              )}
-
-              <h4>1. Cài đặt Giờ vào / Giờ ra theo ca</h4>
-              <div className="oa-preset-shifts">
-                {shiftOptions.map(shift => (
-                  <button
-                    key={shift.id}
-                    type="button"
-                    className={`oa-shift-chip ${selectedShiftId === shift.id ? 'is-active' : ''}`}
-                    disabled={!isAdminOrManager && !isUnlocked}
-                    onClick={() => setSelectedShiftId(shift.id)}
-                  >
-                    {shift.name} ({shift.standardCheckIn} - {shift.standardCheckOut})
-                  </button>
-                ))}
-              </div>
-
-              <div className="oa-form-row">
-                <div className="oa-form-group">
-                  <label>Giờ vào chuẩn (Bắt đầu ca)</label>
-                  <input
-                    type="time"
-                    disabled={!isAdminOrManager && !isUnlocked}
-                    value={selectedShift?.standardCheckIn || ''}
-                    onChange={e => updateSelectedShift('standardCheckIn', e.target.value)}
-                  />
-                </div>
-                <div className="oa-form-group">
-                  <label>Giờ ra chuẩn (Kết thúc ca)</label>
-                  <input
-                    type="time"
-                    disabled={!isAdminOrManager && !isUnlocked}
-                    value={selectedShift?.standardCheckOut || ''}
-                    onChange={e => updateSelectedShift('standardCheckOut', e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <h4 style={{ marginTop: '20px' }}>2. Cấu hình Cloudinary (Lưu trữ ảnh online)</h4>
-              <p style={{ fontSize: '13px', color: '#64748b' }}>
-                Ảnh khuôn mặt chấm công sẽ tự động tải lên tài khoản Cloudinary này.
-              </p>
-              <div className="oa-form-group">
-                <label>Cloud Name</label>
-                <input
-                  type="text"
-                  disabled={!isAdminOrManager && !isUnlocked}
-                  placeholder="Ví dụ: ksny3wwy"
-                  value={cloudNameInput}
-                  onChange={e => setCloudNameInput(e.target.value)}
-                />
-              </div>
-              <div className="oa-form-group">
-                <label>Upload Preset (Unsigned)</label>
-                <input
-                  type="text"
-                  disabled={!isAdminOrManager && !isUnlocked}
-                  placeholder="Ví dụ: nr5kwa0r"
-                  value={cloudPresetInput}
-                  onChange={e => setCloudPresetInput(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="oa-modal-footer">
-              <button type="button" className="btn" onClick={() => setShowShiftModal(false)}>
-                Đóng
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!isAdminOrManager && !isUnlocked}
-                onClick={saveShiftSettings}
-              >
-                Lưu cài đặt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

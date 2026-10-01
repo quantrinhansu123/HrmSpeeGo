@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import './EmployeeLogin.css'
 
 function EmployeeLogin() {
-  const [email, setEmail] = useState('')
+  const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -16,7 +16,7 @@ function EmployeeLogin() {
     setLoading(true)
     setError('')
     try {
-      const profile = await login(email.trim(), password)
+      const profile = await login(account.trim(), password)
       if (!profile || profile.role !== 'user') {
         await logout()
         setError('Vui lòng sử dụng trang đăng nhập quản trị cho tài khoản này')
@@ -25,7 +25,7 @@ function EmployeeLogin() {
       navigate('/bang-cong', { replace: true })
     } catch (loginError) {
       console.error('Employee login error:', loginError)
-      setError('Email hoặc mật khẩu không chính xác')
+      setError('Tên tài khoản hoặc mật khẩu không chính xác')
     } finally {
       setLoading(false)
     }
@@ -39,7 +39,7 @@ function EmployeeLogin() {
         <p>Đăng nhập để xem Bảng công của bạn</p>
         {error && <div className="employee-login__error">{error}</div>}
         <form onSubmit={handleSubmit}>
-          <label><span>Email nhân viên</span><input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="nhanvien@speego.vn" autoComplete="username" required /></label>
+          <label><span>Tên tài khoản</span><input type="text" value={account} onChange={event => setAccount(event.target.value)} placeholder="Tên đăng nhập" autoComplete="username" required /></label>
           <label><span>Mật khẩu</span><input type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Nhập mật khẩu" autoComplete="current-password" required /></label>
           <button type="submit" disabled={loading}>{loading ? 'Đang đăng nhập...' : 'Đăng nhập'}</button>
         </form>

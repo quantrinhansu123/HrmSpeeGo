@@ -5,7 +5,7 @@ import { isAccountingUser, isCoreStaffUser } from '../utils/staffAccess'
 import './Login.css'
 
 function Login() {
-  const [email, setEmail] = useState('')
+  const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -20,9 +20,7 @@ function Login() {
     setError('')
     setLoading(true)
     try {
-      const cleanEmail = email.trim()
-      const cleanPassword = password.trim()
-      const profile = await login(cleanEmail, cleanPassword)
+      const profile = await login(account.trim(), password.trim())
       if (isAccountingUser(profile) && !isCoreStaffUser(profile)) {
         const target = ['/bang-cong-preview', '/holiday-settings', '/cham-cong-online'].includes(from)
           ? from
@@ -43,12 +41,12 @@ function Login() {
     } catch (loginError) {
       console.error('Login error:', loginError)
       const msg = loginError?.message || ''
-      if (msg.includes('Invalid login credentials')) {
-        setError('Email hoặc mật khẩu không chính xác. Hãy kiểm tra lại mật khẩu (chú ý tắt tự động điền mật khẩu cũ).')
+      if (msg.includes('Invalid login credentials') || msg.includes('Tên tài khoản hoặc mật khẩu')) {
+        setError('Tên tài khoản hoặc mật khẩu không chính xác. Hãy kiểm tra lại mật khẩu (chú ý tắt tự động điền mật khẩu cũ).')
       } else if (msg) {
         setError(msg)
       } else {
-        setError('Email hoặc mật khẩu không chính xác.')
+        setError('Tên tài khoản hoặc mật khẩu không chính xác.')
       }
     } finally {
       setLoading(false)
@@ -69,8 +67,8 @@ function Login() {
 
           <form onSubmit={handleLogin}>
             <label className="system-login__field">
-              <span>Email</span>
-              <div><i className="fas fa-envelope"></i><input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="nhanvien@speego.vn" autoComplete="username" required /></div>
+              <span>Tên tài khoản</span>
+              <div><i className="fas fa-user"></i><input type="text" value={account} onChange={event => setAccount(event.target.value)} placeholder="Tên đăng nhập" autoComplete="username" required /></div>
             </label>
             <label className="system-login__field">
               <span>Mật khẩu</span>
