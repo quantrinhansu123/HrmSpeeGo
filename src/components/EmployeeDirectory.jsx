@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { formatDateDisplay, getEmployeeEmploymentStatus } from '../utils/helpers'
+import { getEmployeeStatRows } from '../utils/employeeDirectoryStats'
 import ResetDataModal from './ResetDataModal'
 
 const EmployeeModal = lazy(() => import('./EmployeeModal'))
@@ -11,11 +12,24 @@ const getShift = (employee) => String(employee?.ca_lam_viec || employee?.shift |
 const isResigned = (employee) =>
     getTinhTrang(employee) === 'Nghỉ việc'
 
+const STAT_CARDS = [
+    { key: 'all', label: 'Tổng nhân sự', icon: 'fa-users', tone: 'blue' },
+    { key: 'probation', label: 'Nhân sự thử việc', icon: 'fa-user-clock', tone: 'orange' },
+    { key: 'official', label: 'Nhân sự chính thức', icon: 'fa-user-check', tone: 'green' },
+    { key: 'expiring', label: 'Hợp đồng sắp hết hạn', icon: 'fa-file-circle-exclamation', tone: 'red', title: 'Hợp đồng hết hạn trong 60 ngày tới' },
+    { key: 'missingDocuments', label: 'Hồ sơ thiếu giấy tờ', icon: 'fa-folder-open', tone: 'purple', title: 'Hồ sơ chưa có CCCD hoặc ngày sinh' },
+    { key: 'frequentLate', label: 'Đi muộn nhiều', icon: 'fa-clock', tone: 'red', activity: true },
+    { key: 'frequentLeave', label: 'Nghỉ phép nhiều', icon: 'fa-calendar-minus', tone: 'orange', activity: true },
+    { key: 'birthday', label: 'Sinh nhật tháng này', icon: 'fa-cake-candles', tone: 'pink' },
+    { key: 'anniversary', label: 'Sắp đến thâm niên', icon: 'fa-award', tone: 'teal', title: 'Kỷ niệm ngày vào làm trong 30 ngày tới' }
+]
+
 function EmployeeDirectory({
     companyId, employees, filteredEmployees, activeTab, setActiveTab, searchTerm, setSearchTerm,
     filterBranch, setFilterBranch,
     filterDept, setFilterDept, filterStatus, setFilterStatus, filterContract, setFilterContract,
     filterShift = '', setFilterShift,
+    statFilter = '', onSelectStat, onClearStat, activityByEmployee = {}, activityLoading = false, activityError = '',
     selectedEmployee, setSelectedEmployee, isModalOpen, setIsModalOpen, isReadOnly, setIsReadOnly,
     onReload, onExport, onDownloadTemplate, onImport, onDelete, onResolveEmployee,
     onResetData, onResetFilters, adminEmail
@@ -36,27 +50,25 @@ function EmployeeDirectory({
         return Number.isNaN(date.getTime()) ? null : Math.ceil((date.getTime() - Date.now()) / 86400000)
     }
 
-    const expiring = activeEmployees.filter(employee => {
-        const days = daysUntil(employee.ngay_het_han || employee.contractEndDate || employee.ngay_het_han_hop_dong)
-        return days !== null && days >= 0 && days <= 60
-    })
-    const month = new Date().getMonth()
+    const now = new Date()
+    const expiring = getEmployeeStatRows(employees, 'expiring', activityByEmployee, now)
     const branches = [...new Set(activeEmployees.map(employee => employee.chi_nhanh).filter(Boolean))].sort()
     const departments = [...new Set(activeEmployees.map(employee => employee.bo_phan).filter(Boolean))].sort()
     const contracts = [...new Set(activeEmployees.map(employee => employee.loai_hop_dong || employee.contractType).filter(Boolean))].sort()
     const shifts = [...new Set(activeEmployees.map(getShift).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
     const noShiftCount = activeEmployees.filter(employee => !getShift(employee)).length
-    const stats = [
-        ['Tổng nhân sự', activeEmployees.length, 'fa-users', 'blue'],
-        ['Nhân sự thử việc', activeEmployees.filter(e => getTinhTrang(e) === 'Thử việc').length, 'fa-user-clock', 'orange'],
-        ['Nhân sự chính thức', activeEmployees.filter(e => getTinhTrang(e) === 'Chính thức').length, 'fa-user-check', 'green'],
-        ['Hợp đồng sắp hết hạn', expiring.length, 'fa-file-circle-exclamation', 'red'],
-        ['Hồ sơ thiếu giấy tờ', activeEmployees.filter(e => !e.cccd || !e.so_bhxh || !e.ngay_sinh).length, 'fa-folder-open', 'purple'],
-        ['Đi muộn nhiều', activeEmployees.filter(e => Number(e.so_lan_di_muon || 0) > 3).length, 'fa-clock', 'red'],
-        ['Nghỉ phép nhiều', activeEmployees.filter(e => Number(e.phep_da_su_dung || 0) > 8).length, 'fa-calendar-minus', 'orange'],
-        ['Sinh nhật tháng này', activeEmployees.filter(e => { const d = new Date(e.ngay_sinh); return !Number.isNaN(d.getTime()) && d.getMonth() === month }).length, 'fa-cake-candles', 'pink'],
-        ['Sắp đến thâm niên', activeEmployees.filter(e => { const d = new Date(e.ngay_vao_lam); return !Number.isNaN(d.getTime()) && d.getMonth() === month }).length, 'fa-award', 'teal']
-    ]
+    const stats = STAT_CARDS.map(card => ({
+        ...card,
+        value: card.activity && (activityLoading || activityError)
+            ? '—'
+            : getEmployeeStatRows(employees, card.key, activityByEmployee, now).length,
+        title: card.title || (card.key === 'frequentLate'
+            ? `Trên 3 lần đi muộn trong năm ${now.getFullYear()}, theo Bảng công đã tổng hợp`
+            : card.key === 'frequentLeave'
+                ? `Trên 8 công phép trong năm ${now.getFullYear()}, theo Bảng công đã tổng hợp`
+                : card.label)
+    }))
+    const selectedStat = stats.find(card => card.key === statFilter)
 
     const openEmployee = async (employee, readOnly = true) => {
         if (openingEmployee) return
@@ -104,26 +116,24 @@ function EmployeeDirectory({
             </header>
 
             <section className="hr-overview">
-                {stats.map(([label, value, icon, tone]) => (
-                    <button key={label} className={`hr-stat hr-stat--${tone}`} onClick={() => {
-                        if (label === 'Tổng nhân sự') {
-                            setActiveTab('list')
-                            onResetFilters?.()
-                        }
-                        if (label === 'Hợp đồng sắp hết hạn') setActiveTab('expiring')
-                        if (label === 'Nhân sự thử việc') { setActiveTab('list'); setFilterStatus('Thử việc') }
-                        if (label === 'Nhân sự chính thức') { setActiveTab('list'); setFilterStatus('Chính thức') }
-                    }}>
+                {stats.map(({ key, label, value, icon, tone, title, activity }) => (
+                    <button key={key} type="button"
+                        className={`hr-stat hr-stat--${tone}${(key === 'all' ? !statFilter && activeTab === 'list' : statFilter === key) ? ' is-selected' : ''}`}
+                        onClick={() => onSelectStat?.(key)}
+                        disabled={activity && (activityLoading || Boolean(activityError))}
+                        aria-pressed={key === 'all' ? !statFilter && activeTab === 'list' : statFilter === key}
+                        title={title}>
                         <span className="hr-stat__icon"><i className={`fas ${icon}`}></i></span>
                         <span><strong>{value}</strong><small>{label}</small></span>
                     </button>
                 ))}
             </section>
+            {activityError && <p className="employees-stat-error" role="alert">{activityError}</p>}
 
             <nav className="employees-tabs">
-                <button className={activeTab === 'list' ? 'active' : ''} onClick={() => setActiveTab('list')}><i className="fas fa-list"></i> Danh sách nhân viên</button>
-                <button className={activeTab === 'expiring' ? 'active danger' : ''} onClick={() => setActiveTab('expiring')}><i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn <span>{expiring.length}</span></button>
-                <button className={activeTab === 'history' ? 'active' : ''} onClick={() => setActiveTab('history')}><i className="fas fa-clock-rotate-left"></i> Lịch sử biến động</button>
+                <button className={activeTab === 'list' ? 'active' : ''} onClick={() => { setActiveTab('list'); onClearStat?.() }}><i className="fas fa-list"></i> Danh sách nhân viên</button>
+                <button className={activeTab === 'expiring' ? 'active danger' : ''} onClick={() => onSelectStat?.('expiring')}><i className="fas fa-triangle-exclamation"></i> Hợp đồng sắp hết hạn <span>{expiring.length}</span></button>
+                <button className={activeTab === 'history' ? 'active' : ''} onClick={() => { setActiveTab('history'); onClearStat?.() }}><i className="fas fa-clock-rotate-left"></i> Lịch sử biến động</button>
             </nav>
 
             {activeTab === 'history' ? (
@@ -131,6 +141,12 @@ function EmployeeDirectory({
                     <StatusHistoryView companyId={companyId} employees={employees} onDataChange={onReload} />
                 </Suspense>
             ) : <>
+                {selectedStat && <div className="employees-stat-filter" role="status">
+                    <span>Đang xem: <strong>{selectedStat.label}</strong> ({selectedStat.value} nhân viên)
+                        <small>{selectedStat.title}</small>
+                    </span>
+                    <button type="button" onClick={() => { setActiveTab('list'); onClearStat?.() }}>Xóa lọc thống kê</button>
+                </div>}
                 <section className="employees-filter-card">
                     <label className="employees-search"><i className="fas fa-search"></i><input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Tìm theo họ tên, email, số điện thoại..." /></label>
                     <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>

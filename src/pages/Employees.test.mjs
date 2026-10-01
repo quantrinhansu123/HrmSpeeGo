@@ -18,7 +18,7 @@ const compiled = await build({
     jsx: 'transform', jsxFactory: 'h', jsxFragment: 'fragment',
     banner: { js: 'const fragment = "fragment"; const h = (type, props, ...children) => ({type, props: props || {}, children: children.flat(Infinity)});' },
     plugins: [{ name: 'employee-import-test', setup(api) {
-        api.onResolve({ filter: /^react$|[\\/]services[\\/](supabase|employeeDirectory)$|[\\/]contexts[\\/]AuthContext$|[\\/]components[\\/]EmployeeDirectory$/ }, args => ({ path: args.path, namespace: 'test' }))
+        api.onResolve({ filter: /^react$|[\\/]services[\\/](supabase|firebase|employeeDirectory)$|[\\/]contexts[\\/]AuthContext$|[\\/]components[\\/]EmployeeDirectory$/ }, args => ({ path: args.path, namespace: 'test' }))
         api.onLoad({ filter: /.*/, namespace: 'test' }, args => ({ contents:
             args.path === 'react' ? `
                 export const hooks = { values: [], index: 0 };
@@ -31,6 +31,9 @@ const compiled = await build({
                 export const useEffect = () => {};`
             : args.path.endsWith('AuthContext') ? `export const useAuth = () => ({ user: { id: 'admin', role: 'admin' } });`
             : args.path.endsWith('/EmployeeDirectory') ? `export default function EmployeeDirectory() {}`
+            : args.path.endsWith('firebase') ? `
+                export const fbGet = async () => null;
+                export const fbListCollectionIds = async () => [];`
             : args.path.endsWith('employeeDirectory') ? `
                 import { db } from '../services/supabase';
                 export const fetchUsersDirectory = async () => {

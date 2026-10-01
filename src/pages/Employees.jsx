@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { getCompanyIdForUser } from '../utils/companyContext'
 import { formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
 import { fetchUsersDirectory } from '../services/employeeDirectory'
+import { fbGet, fbListCollectionIds } from '../services/firebase'
+import { aggregateEmployeeActivity, matchesEmployeeStat } from '../utils/employeeDirectoryStats'
 
 const loadXlsx = () => import('xlsx')
 
@@ -47,6 +49,10 @@ function Employees() {
     const [filterBirthMonth, setFilterBirthMonth] = useState('')
     const [filterContract, setFilterContract] = useState('')
     const [filterShift, setFilterShift] = useState('')
+    const [statFilter, setStatFilter] = useState('')
+    const [activityByEmployee, setActivityByEmployee] = useState({})
+    const [activityLoading, setActivityLoading] = useState(true)
+    const [activityError, setActivityError] = useState('')
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [selectedEmployee, setSelectedEmployee] = useState(null)
     const [isReadOnly, setIsReadOnly] = useState(false)
@@ -63,8 +69,44 @@ function Employees() {
     }, [companyId])
 
     useEffect(() => {
+        let cancelled = false
+        ;(async () => {
+            setActivityLoading(true)
+            setActivityError('')
+            setActivityByEmployee({})
+            try {
+                const year = String(new Date().getFullYear())
+                const months = (await fbListCollectionIds('attendanceMonthSummaries', companyId))
+                    .filter(value => value.startsWith(`${year}-`))
+                const snapshots = await Promise.all(months.map(value =>
+                    fbGet(`hr/attendanceMonthSummaries/${value}`, companyId)
+                ))
+                if (!cancelled) setActivityByEmployee(aggregateEmployeeActivity(snapshots))
+            } catch (error) {
+                console.error('Không tải được thống kê chấm công cho hồ sơ nhân sự:', error)
+                if (!cancelled) setActivityError('Không tải được thống kê đi muộn và nghỉ phép từ Bảng công.')
+            } finally {
+                if (!cancelled) setActivityLoading(false)
+            }
+        })()
+        return () => { cancelled = true }
+    }, [companyId])
+
+    useEffect(() => {
         filterEmployees()
-    }, [employees, searchTerm, filterBranch, filterDept, filterStatus, filterBirthMonth, filterContract, filterShift, activeTab])
+    }, [employees, searchTerm, filterBranch, filterDept, filterStatus, filterBirthMonth, filterContract, filterShift, statFilter, activityByEmployee, activeTab])
+
+    const handleSelectStat = key => {
+        setSearchTerm('')
+        setFilterBranch('')
+        setFilterDept('')
+        setFilterStatus('')
+        setFilterBirthMonth('')
+        setFilterContract('')
+        setFilterShift('')
+        setStatFilter(key === 'all' ? '' : key)
+        setActiveTab(key === 'expiring' ? 'expiring' : 'list')
+    }
 
     const loadEmployees = async () => {
         try {
@@ -119,15 +161,7 @@ function Employees() {
             const matchShift = !filterShift
                 || (filterShift === '__none__' ? !shiftName : shiftName === filterShift)
 
-            let matchExpiry = true
-            if (activeTab === 'expiring') {
-                const expiryValue = item.ngay_het_han || item.contractEndDate || item.ngay_het_han_hop_dong
-                const expiryDate = expiryValue ? new Date(expiryValue) : null
-                const daysLeft = expiryDate && !Number.isNaN(expiryDate.getTime())
-                    ? Math.ceil((expiryDate.getTime() - Date.now()) / 86400000)
-                    : null
-                matchExpiry = daysLeft !== null && daysLeft >= 0 && daysLeft <= 60
-            }
+            const matchStat = !statFilter || matchesEmployeeStat(item, statFilter, activityByEmployee)
 
             // Filter Birth Month
             let matchMonth = true
@@ -158,13 +192,15 @@ function Employees() {
                 }
             }
 
-            return matchSearch && matchBranch && matchDept && matchStatus && matchMonth && matchContract && matchShift && matchExpiry
+            return matchSearch && matchBranch && matchDept && matchStatus && matchMonth && matchContract && matchShift && matchStat
         })
 
         setFilteredEmployees(filtered)
     }
 
     const handleResetFilters = async () => {
+        setStatFilter('')
+        setActiveTab('list')
         setSearchTerm('')
         setFilterBranch('')
         setFilterDept('')
@@ -851,6 +887,12 @@ function Employees() {
         setFilterContract={setFilterContract}
         filterShift={filterShift}
         setFilterShift={setFilterShift}
+        statFilter={statFilter}
+        onSelectStat={handleSelectStat}
+        onClearStat={() => setStatFilter('')}
+        activityByEmployee={activityByEmployee}
+        activityLoading={activityLoading}
+        activityError={activityError}
         selectedEmployee={selectedEmployee}
         setSelectedEmployee={setSelectedEmployee}
         isModalOpen={isModalOpen}

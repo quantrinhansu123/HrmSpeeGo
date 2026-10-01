@@ -1793,6 +1793,13 @@ tr:hover {
 .hr-overview { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
 .hr-stat { appearance: none; border: 1px solid #e8edf3; background: #fff; border-radius: 12px; padding: 15px; display: flex; gap: 12px; align-items: center; text-align: left; cursor: pointer; box-shadow: 0 2px 8px rgba(15, 23, 42, .035); transition: transform .15s, box-shadow .15s; }
 .hr-stat:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15, 23, 42, .08); }
+.hr-stat.is-selected { border-color: #0b3b75; box-shadow: 0 0 0 2px rgba(11, 59, 117, .12); }
+.hr-stat:disabled { opacity: .6; cursor: wait; }
+.hr-stat:disabled:hover { transform: none; box-shadow: 0 2px 8px rgba(15, 23, 42, .035); }
+.employees-stat-error { margin: 0 0 12px; padding: 9px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fff1f2; color: #b42318; font-size: .85rem; }
+.employees-stat-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #bdd6ef; border-radius: 8px; background: #edf6ff; color: #0b3b75; font-size: .85rem; }
+.employees-stat-filter small { display: block; margin-top: 3px; color: #526477; font-size: .76rem; }
+.employees-stat-filter button { border: 0; background: none; color: #0b3b75; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .hr-stat__icon { width: 39px; height: 39px; border-radius: 10px; display: grid; place-items: center; background: #eff6ff; color: #2563eb; flex: 0 0 auto; }
 .hr-stat strong { display: block; font-size: 1.25rem; line-height: 1.1; color: #111827; }
 .hr-stat small { display: block; margin-top: 4px; color: #667085; line-height: 1.25; font-size: .73rem; }
