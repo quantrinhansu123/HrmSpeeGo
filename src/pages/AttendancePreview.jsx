@@ -7,7 +7,10 @@ import {
   serializeAttendanceSummaryRows
 } from '../utils/attendanceSummary'
 import AttendanceImportModal from '../components/AttendanceImportModal'
+import PayrollTable from '../components/PayrollTable'
 import ResetAttendanceModal from '../components/ResetAttendanceModal'
+import { getPenaltiesByMonth } from '../services/attendancePenaltiesDb'
+import { loadEmployeeLeaveSettings } from '../services/employeeLeave'
 import { supabase } from '../services/supabase'
 import { dayOfWeekFromDate, formatTimeHM } from '../components/AttendanceModal'
 import {
@@ -256,6 +259,13 @@ function AttendancePreview() {
   const [excelPageSize, setExcelPageSize] = useState(EXCEL_DETAIL_PAGE_SIZE)
   const [detailViewMode, setDetailViewMode] = useState('matrix')
   const [isResetModalOpen, setIsResetModalOpen] = useState(false)
+  const [sheet, setSheet] = useState('attendance')
+  const [payrollBundle, setPayrollBundle] = useState({
+    penalties: [],
+    leave: {},
+    employees: {},
+    kpis: []
+  })
   const canEditWorkdays = canManageAttendance(user)
   const canEditNotes = isCoreStaffUser(user)
   const savedDetailNotes = normalizeDailyNotes(attendanceNotes[String(detailRow?.employeeId)])
@@ -382,6 +392,44 @@ function AttendancePreview() {
       return rows.find(row => String(row.employeeId) === String(previous.employeeId)) || null
     })
   }, [rows])
+
+  useEffect(() => {
+    if (!hasSnapshot || !month || !companyId) return undefined
+    let cancelled = false
+    const loadPayroll = async () => {
+      const [penalties, leave, employees, kpis] = await Promise.all([
+        getPenaltiesByMonth(month).catch(() => []),
+        loadEmployeeLeaveSettings(companyId).catch(() => ({})),
+        fbGetEmployeesDirectory().catch(() => ({})),
+        fbGet('hr/kpiResults').catch(() => ({}))
+      ])
+      if (cancelled) return
+      setPayrollBundle({
+        penalties: penalties || [],
+        leave: leave || {},
+        employees: employees || {},
+        kpis: kpis && typeof kpis === 'object' ? Object.values(kpis) : []
+      })
+    }
+    loadPayroll()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId, hasSnapshot, month])
+
+  const payrollEmployees = useMemo(
+    () => new Map(Object.entries(payrollBundle.employees || {})),
+    [payrollBundle.employees]
+  )
+  const payrollKpis = useMemo(() => {
+    const map = new Map()
+    ;(payrollBundle.kpis || []).forEach(result => {
+      if (!result?.employeeId) return
+      if (result.month && result.month !== month) return
+      map.set(String(result.employeeId), result)
+    })
+    return map
+  }, [month, payrollBundle.kpis])
 
   const loadConfirmations = useCallback(async (targetMonth) => {
     if (!targetMonth) {
@@ -1287,6 +1335,21 @@ function AttendancePreview() {
       </div>
     ) : (
       <>
+        <div className="attendance-preview-views" role="tablist" aria-label="Loại bảng">
+          <button type="button" className={sheet === 'attendance' ? 'is-active' : ''} onClick={() => setSheet('attendance')}>Bảng công</button>
+          <button type="button" className={sheet === 'payroll' ? 'is-active' : ''} onClick={() => setSheet('payroll')}>Bảng lương</button>
+        </div>
+        {sheet === 'payroll' ? (
+          <PayrollTable
+            rows={rows}
+            employeesById={payrollEmployees}
+            penalties={payrollBundle.penalties}
+            leaveSettings={payrollBundle.leave}
+            kpiByEmployee={payrollKpis}
+            month={month}
+          />
+        ) : (
+        <>
         <div className="attendance-preview-scroll"><table className="attendance-preview-table is-compact">
           <thead>
             <tr className="groups">
@@ -1454,6 +1517,8 @@ function AttendancePreview() {
           </div>
         </section>
         <section className="attendance-preview-legend"><strong>Chú thích:</strong><span>X: Nghỉ theo lịch/không phép theo trạng thái</span><span>P1: Nghỉ phép năm</span><span>1 / 0.5: Công trong ngày</span><span>Lễ: Ngày lễ cấu hình, không tự tính công</span></section>
+        </>
+        )}
       </>
     )}
     {isImportOpen && (

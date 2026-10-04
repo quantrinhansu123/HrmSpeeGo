@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { loadEmployeeLeaveSettings, loadLeaveEmployees } from '../services/employeeLeave'
 import { getCompanyIdForUser } from '../utils/companyContext'
-import { formatTenure, LEAVE_MONTHS } from '../utils/employeeLeave'
+import { formatTenure } from '../utils/employeeLeave'
 import './EmployeeLeave.css'
 
 function LeaveBoard() {
@@ -13,6 +13,7 @@ function LeaveBoard() {
   const [settings, setSettings] = useState({})
   const [year, setYear] = useState(String(new Date().getFullYear()))
   const [search, setSearch] = useState('')
+  const [department, setDepartment] = useState('')
   const [asOf, setAsOf] = useState(new Date())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -44,17 +45,24 @@ function LeaveBoard() {
     ...Object.values(settings).flatMap(data => Object.keys(data))
   ])].sort((a, b) => Number(a) - Number(b)), [settings])
 
+  const departments = useMemo(() => [...new Set(employees.map(employee => employee.bo_phan).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'vi')), [employees])
+  const hasUnassignedDepartment = employees.some(employee => !employee.bo_phan)
+
   const rows = useMemo(() => employees.filter(employee => {
     const query = search.trim().toLocaleLowerCase('vi')
-    return !query || `${employee.ho_va_ten} ${employee.employeeId}`.toLocaleLowerCase('vi').includes(query)
-  }), [employees, search])
+    const matchesSearch = !query || `${employee.ho_va_ten} ${employee.employeeId} ${employee.bo_phan || ''}`.toLocaleLowerCase('vi').includes(query)
+    const matchesDepartment = !department
+      || (department === '__none__' ? !employee.bo_phan : employee.bo_phan === department)
+    return matchesSearch && matchesDepartment
+  }), [employees, search, department])
 
   return (
     <div className="leave-board-page">
       <header className="leave-board-header">
         <div>
           <h1>Bảng phép</h1>
-          <p>Theo dõi thâm niên, tổng phép năm và phân bổ phép tháng của nhân sự.</p>
+          <p>Theo dõi thâm niên và tổng phép năm của nhân sự.</p>
         </div>
         <div className="leave-board-header-actions">
           <button type="button" className="btn" onClick={reload} disabled={loading}>
@@ -68,6 +76,13 @@ function LeaveBoard() {
         <label>Năm phép
           <select value={year} onChange={event => setYear(event.target.value)}>
             {years.map(item => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label>Phòng ban
+          <select value={department} onChange={event => setDepartment(event.target.value)}>
+            <option value="">Tất cả phòng ban</option>
+            {hasUnassignedDepartment && <option value="__none__">Chưa phân bộ phận</option>}
+            {departments.map(item => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
         <label>Tìm nhân sự
@@ -86,16 +101,14 @@ function LeaveBoard() {
               <th scope="col">Nhân sự</th>
               <th scope="col">Thâm niên</th>
               <th scope="col">Phép năm {year}</th>
-              {LEAVE_MONTHS.map(month => <th scope="col" key={month}>Tháng {month}</th>)}
             </tr></thead>
             <tbody>
               {rows.map(employee => {
                 const data = settings[employee.id]?.[year]
                 return <tr key={employee.id}>
-                  <th scope="row"><strong>{employee.ho_va_ten || employee.employeeId}</strong><small>{employee.employeeId}</small></th>
+                  <th scope="row"><strong>{employee.ho_va_ten || employee.employeeId}</strong><small>{[employee.employeeId, employee.bo_phan].filter(Boolean).join(' · ') || '—'}</small></th>
                   <td data-label="Thâm niên">{formatTenure(employee.ngay_vao_lam, asOf)}</td>
                   <td data-label={`Phép năm ${year}`} className="leave-board-total">{data ? data.total_leave : 'Chưa cài'}</td>
-                  {LEAVE_MONTHS.map(month => <td data-label={`Tháng ${month}`} key={month}>{data?.months?.[month] ?? '—'}</td>)}
                 </tr>
               })}
             </tbody>

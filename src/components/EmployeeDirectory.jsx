@@ -78,6 +78,7 @@ function EmployeeDirectory({
     const expiring = getEmployeeStatRows(employees, 'expiring', activityByEmployee, now)
     const branches = [...new Set(activeEmployees.map(employee => employee.chi_nhanh).filter(Boolean))].sort()
     const departments = [...new Set(activeEmployees.map(employee => employee.bo_phan).filter(Boolean))].sort()
+    const teams = [...new Set(activeEmployees.map(employee => employee.team).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
     const contracts = [...new Set(activeEmployees.map(employee => employee.loai_hop_dong || employee.contractType).filter(Boolean))].sort()
     const shifts = [...new Set(activeEmployees.map(getShift).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'))
     const noShiftCount = activeEmployees.filter(employee => !getShift(employee)).length
@@ -514,7 +515,7 @@ function EmployeeDirectory({
                     {/* Desktop Table View */}
                     <div className="employees-table-wrap">
                         <table className="employees-table">
-                            <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Chức danh</th><th>Ca</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Tình trạng</th><th></th></tr></thead>
+                            <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Team</th><th>Leader</th><th>Chức danh</th><th>Ca</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Tình trạng</th><th></th></tr></thead>
                             <tbody>{filteredEmployees.map((employee, index) => {
                                 const name = getName(employee)
                                 const status = getTinhTrang(employee)
@@ -522,7 +523,10 @@ function EmployeeDirectory({
                                 const days = daysUntil(employee.ngay_het_han || employee.contractEndDate || employee.ngay_het_han_hop_dong)
                                 return <tr key={employee.id || index} onClick={() => openEmployee(employee)}>
                                     <td><div className="employee-identity"><span className="employee-avatar">{avatar ? <img src={avatar} alt="" loading="lazy" decoding="async" /> : name.charAt(0)}</span><span><strong>{name}</strong><small>{employee.email || employee.sdt || employee.sđt || 'Chưa có thông tin liên hệ'}</small></span></div></td>
-                                    <td>{employee.bo_phan || 'Chưa phân bổ'}</td><td>{employee.vi_tri || 'Chưa cập nhật'}</td>
+                                    <td>{employee.bo_phan || 'Chưa phân bổ'}</td>
+                                    <td>{employee.team || '—'}</td>
+                                    <td>{employee.is_leader ? 'Có' : '—'}</td>
+                                    <td>{employee.vi_tri || 'Chưa cập nhật'}</td>
                                     <td>{getShift(employee) || 'Chưa gán ca'}</td>
                                     <td>{formatDateDisplay(employee.ngay_vao_lam) || '—'}</td>
                                     <td><span className="contract-cell">{employee.loai_hop_dong || employee.contractType || 'Chưa cập nhật'}{days !== null && days >= 0 && days <= 60 && <small>Còn {days} ngày</small>}</span></td>
@@ -684,7 +688,7 @@ function EmployeeDirectory({
 
             {isModalOpen && (
                 <Suspense fallback={null}>
-                    <EmployeeModal companyId={companyId} employee={selectedEmployee} isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setSelectedEmployee(null); setIsReadOnly(false) }} onSave={onReload} readOnly={isReadOnly} departmentOptions={departments} positionOptions={[...new Set(activeEmployees.map(e => e.vi_tri).filter(Boolean))]} />
+                    <EmployeeModal companyId={companyId} employee={selectedEmployee} isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setSelectedEmployee(null); setIsReadOnly(false) }} onSave={onReload} readOnly={isReadOnly} departmentOptions={departments} teamOptions={teams} positionOptions={[...new Set(activeEmployees.map(e => e.vi_tri).filter(Boolean))]} />
                 </Suspense>
             )}
 

@@ -80,7 +80,9 @@ export const USERS_DIRECTORY_COLUMNS = [
   'phone',
   'branch',
   'department',
+  'team',
   'position',
+  'is_team_leader',
   'employment_status',
   'status',
   'shift',
@@ -161,7 +163,9 @@ export const mapUserToApp = (user) => {
     sđt: user.phone || '',
     chi_nhanh: user.branch || '',
     bo_phan: user.department || '',
+    team: user.team || '',
     vi_tri: user.position || '',
+    is_leader: user.is_team_leader === true,
     trang_thai: user.employment_status || '',
     employmentStatus: user.employment_status || '',
     employment_status: user.employment_status || '',
@@ -259,7 +263,9 @@ export const mapAppToUser = (data) => {
     phone: data.sđt || data.sdt || '',
     branch: data.chi_nhanh || '',
     department: data.bo_phan || '',
+    team: data.team || '',
     position: data.vi_tri || '',
+    is_team_leader: data.is_leader === true || data.is_leader === 'yes',
     // Rỗng phải được lưu rỗng để phân biệt với “Thử việc”; không tự suy diễn
     // nhân sự chưa được HR đánh dấu thành “Chính thức”.
     employment_status: data.trang_thai ?? data.employmentStatus ?? data.employment_status ?? '',
@@ -302,9 +308,14 @@ export const mapAppToUser = (data) => {
 // Parse Supabase schema-cache error, e.g.:
 // "Could not find the 'address' column of 'users' in the schema cache"
 export const getMissingUsersColumnFromError = (error) => {
-  const message = error?.message || ''
-  const match = message.match(/Could not find the '([^']+)' column of 'users' in the schema cache/i)
-  return match?.[1] || null
+  const message = String(error?.message || '')
+  const cacheMatch = message.match(/Could not find the '([^']+)' column of 'users' in the schema cache/i)
+  if (cacheMatch) return cacheMatch[1]
+  if (error?.code && error.code !== '42703') return null
+  const qualifiedMatch = message.match(/column (?:"?users"?\.)?"?([a-z_][a-z0-9_]*)"? does not exist/i)
+  if (qualifiedMatch) return qualifiedMatch[1]
+  const relationMatch = message.match(/column "?([a-z_][a-z0-9_]*)"? of relation "?users"? does not exist/i)
+  return relationMatch?.[1] || null
 }
 
 // Remove unsupported column from payload to keep compatibility across different DB schemas

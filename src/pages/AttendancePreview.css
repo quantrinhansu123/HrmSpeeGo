@@ -1296,3 +1296,118 @@
   cursor: wait;
   opacity: .65;
 }
+
+.attendance-preview-views {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.attendance-preview-views button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.attendance-preview-views button.is-active {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.payroll-table th,
+.payroll-table td {
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.payroll-table .name {
+  position: sticky;
+  left: 42px;
+  z-index: 1;
+  background: #fff;
+  min-width: 160px;
+}
+
+.payroll-penalty {
+  min-width: 220px;
+  white-space: normal;
+}
+
+.payroll-penalty__total {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.payroll-penalty__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.payroll-penalty__row span {
+  color: #334155;
+}
+
+.payroll-table td small {
+  display: block;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.payroll-mobile {
+  display: none;
+}
+
+.payroll-mobile-card {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.payroll-mobile-card header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.payroll-mobile-card header span,
+.payroll-mobile-card dt {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.payroll-mobile-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.payroll-mobile-card dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+@media (max-width: 760px) {
+  .payroll-table {
+    display: none;
+  }
+
+  .payroll-mobile {
+    display: block;
+  }
+}

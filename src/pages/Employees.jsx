@@ -163,7 +163,8 @@ function Employees() {
                 (item.sđt && String(item.sđt || '').includes(searchTerm)) ||
                 (item.sdt && String(item.sdt || '').includes(searchTerm)) ||
                 (item.employeeId && String(item.employeeId).toLowerCase().includes(searchTerm.toLowerCase())) ||
-                shiftName.toLowerCase().includes(searchTerm.toLowerCase())
+                shiftName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (item.team && String(item.team).toLowerCase().includes(searchTerm.toLowerCase()))
 
             const matchBranch = !filterBranch
                 || (filterBranch === '__none__' ? !item.chi_nhanh : item.chi_nhanh === filterBranch)
@@ -1222,6 +1223,7 @@ function Employees() {
                 onSave={loadEmployees}
                 readOnly={isReadOnly}
                 departmentOptions={[...new Set(employees.map(e => e.bo_phan).filter(Boolean))]}
+                teamOptions={[...new Set(employees.map(e => e.team).filter(Boolean))]}
                 positionOptions={[...new Set(employees.map(e => e.vi_tri).filter(Boolean))]}
             />
 

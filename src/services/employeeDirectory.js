@@ -61,6 +61,7 @@ export const createEmployeeDirectoryProfile = async profile => {
     name: employeeName,
     branch: String(profile?.chi_nhanh || profile?.branch || '').trim(),
     department: String(profile?.bo_phan || profile?.department || '').trim(),
+    team: String(profile?.team || '').trim(),
     position: String(profile?.vi_tri || profile?.position || '').trim(),
     shift: String(profile?.ca_lam_viec || profile?.shift || '').trim(),
     employment_status: '',

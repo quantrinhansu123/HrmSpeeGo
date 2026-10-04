@@ -15,9 +15,11 @@ export const isValidLeaveDate = value => {
 export const formatLeaveDate = value =>
   isValidLeaveDate(value) ? value.split('-').reverse().join('/') : '—'
 
+export const LEAVE_REASON_OPTIONS = Object.freeze(['Nghỉ cố định', 'Nghỉ có phép'])
+export const LEAVE_REASON_FROM_APPROVAL = 'Nghỉ có phép'
+
 export const normalizeLeaveReason = value => {
   const reason = String(value || '').trim()
-  if (!reason) throw new Error('Vui lòng nhập lý do nghỉ phép.')
-  if (reason.length > 500) throw new Error('Lý do nghỉ phép không được quá 500 ký tự.')
+  if (!LEAVE_REASON_OPTIONS.includes(reason)) throw new Error('Vui lòng chọn lý do nghỉ phép.')
   return reason
 }

@@ -28,7 +28,7 @@ const TAB_COPY = {
   holidays: 'Khai báo ngày lễ/ngày nghỉ để hiển thị chính xác trên Bảng Công.',
   shifts: 'Cài giờ chuẩn từng ca. Báo cáo đi muộn/về sớm dùng ca của từng nhân viên.',
   penalties: 'Nội dung và mức phạt này dùng khi nhập hoặc nạp Bảng phạt từ chấm công.',
-  leave: 'Thiết lập tổng phép năm và phân bổ phép từng tháng cho mỗi nhân sự.'
+  leave: 'Thiết lập tổng số ngày phép năm cho mỗi nhân sự.'
 }
 
 const sortHolidays = holidays => [...(holidays || [])]

@@ -17,7 +17,7 @@ const throwIfError = error => {
 export const loadLeaveEmployees = async companyId => {
   if (!companyId) throw new Error('Thiếu mã công ty.')
   const { rows } = await loadEmployeeDirectory({
-    columns: 'id, employee_id, name, join_date, employment_status, role, company_id'
+    columns: 'id, employee_id, name, join_date, employment_status, role, company_id, department'
   })
   return rows
     .filter(row => row.company_id ? row.company_id === companyId : companyId === 'speego-original')

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { loadEmployeeLeaveSettings, loadLeaveEmployees, saveEmployeeLeaveSettings } from '../services/employeeLeave'
-import { isLeaveYear, LEAVE_MONTHS, parseLeaveAmount } from '../utils/employeeLeave'
+import { parseLeaveAmount } from '../utils/employeeLeave'
 import '../pages/EmployeeLeave.css'
 
 const currentYear = String(new Date().getFullYear())
@@ -11,8 +11,6 @@ function LeaveSettingsPanel({ companyId }) {
   const [saved, setSaved] = useState({})
   const [drafts, setDrafts] = useState({})
   const [openEmployeeId, setOpenEmployeeId] = useState(null)
-  const [openYear, setOpenYear] = useState('')
-  const [newYear, setNewYear] = useState(currentYear)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [savingId, setSavingId] = useState(null)
@@ -49,28 +47,16 @@ function LeaveSettingsPanel({ companyId }) {
     setNotice('')
     setDrafts(current => {
       const leaveData = current[employeeId] || {}
-      const entry = leaveData[year] || { total_leave: 0, months: {} }
+      const entry = leaveData[year] || { total_leave: 0 }
       return { ...current, [employeeId]: { ...leaveData, [year]: update(entry) } }
     })
   }
 
-  const addYear = employeeId => {
-    const year = String(newYear).trim()
-    if (!isLeaveYear(year)) {
-      setError('Năm phép phải gồm 4 chữ số và từ năm 1900 trở đi.')
-      return
-    }
-    updateYear(employeeId, year, entry => entry)
-    setOpenYear(year)
-  }
-
   const save = async employeeId => {
     const invalidYear = Object.entries(drafts[employeeId] || {}).find(([, entry]) =>
-      (entry.total_leave !== '' && parseLeaveAmount(entry.total_leave) === null) ||
-      Object.values(entry.months || {}).some(value => value !== '' && parseLeaveAmount(value) === null)
+      entry.total_leave !== '' && parseLeaveAmount(entry.total_leave) === null
     )
     if (invalidYear) {
-      setOpenYear(invalidYear[0])
       setError(`Năm ${invalidYear[0]} có số phép không hợp lệ. Hãy nhập số từ 0 trở lên; có thể dùng dấu phẩy hoặc dấu chấm cho số lẻ.`)
       return
     }
@@ -94,7 +80,7 @@ function LeaveSettingsPanel({ companyId }) {
       <div className="leave-settings-toolbar">
         <div>
           <h2>Cài đặt phép nhân sự</h2>
-          <p>Chọn nhân sự, mở năm và nhập tổng phép cùng số phép từng tháng. Các ô tháng để trống sẽ chưa được phân bổ.</p>
+          <p>Chọn nhân sự và nhập tổng số ngày phép năm.</p>
         </div>
         <Link className="btn" to="/bang-phep">Xem Bảng phép</Link>
       </div>
@@ -118,8 +104,6 @@ function LeaveSettingsPanel({ companyId }) {
               <article className="leave-employee" key={employeeId}>
                 <button type="button" className="leave-employee-toggle" aria-expanded={isOpen} onClick={() => {
                   setOpenEmployeeId(isOpen ? null : employeeId)
-                  setOpenYear('')
-                  setNewYear(currentYear)
                   setError('')
                   setNotice('')
                 }}>
@@ -128,44 +112,14 @@ function LeaveSettingsPanel({ companyId }) {
                 </button>
                 {isOpen && (
                   <div className="leave-employee-content">
-                    <div className="leave-year-add">
-                      <label htmlFor={`leave-new-year-${employeeId}`}>Thêm năm</label>
-                      <input id={`leave-new-year-${employeeId}`} type="number" min="1900" max="9999" step="1" value={newYear} onChange={event => setNewYear(event.target.value)} />
-                      <button type="button" className="btn" onClick={() => addYear(employeeId)} disabled={savingId === employeeId}>Thêm / mở năm</button>
-                    </div>
-                    {years.length === 0 && <p className="leave-empty">Chưa cài phép năm nào. Hãy thêm một năm để bắt đầu.</p>}
-                    {years.map(year => {
-                      const entry = leaveData[year]
-                      const expanded = openYear === year
+                    {[...new Set([currentYear, ...years])].sort((a, b) => Number(b) - Number(a)).map(year => {
+                      const entry = leaveData[year] || { total_leave: '' }
                       return (
-                        <div className="leave-year" key={year}>
-                          <button type="button" className="leave-year-toggle" aria-expanded={expanded} onClick={() => setOpenYear(expanded ? '' : year)}>
-                            <span><strong>{year}</strong> · Tổng phép: {entry.total_leave ?? 0} ngày</span>
-                            <i className={`fas fa-chevron-${expanded ? 'up' : 'down'}`} aria-hidden="true" />
-                          </button>
-                          {expanded && (
-                            <fieldset className="leave-year-body" disabled={savingId === employeeId}>
-                              <label className="leave-total-field">Tổng phép năm
-                                <input type="text" inputMode="decimal" value={entry.total_leave ?? 0} onChange={event => updateYear(employeeId, year, current => ({ ...current, total_leave: event.target.value }))} />
-                              </label>
-                              <div className="leave-month-grid">
-                                {LEAVE_MONTHS.map(month => (
-                                  <label key={month}>Tháng {month}
-                                    <input type="text" inputMode="decimal" placeholder="Chưa phân bổ" value={entry.months?.[month] ?? ''} onChange={event => {
-                                      const amount = event.target.value
-                                      updateYear(employeeId, year, current => {
-                                        const months = { ...current.months }
-                                        if (amount === '') delete months[month]
-                                        else months[month] = amount
-                                        return { ...current, months }
-                                      })
-                                    }} />
-                                  </label>
-                                ))}
-                              </div>
-                            </fieldset>
-                          )}
-                        </div>
+                        <fieldset className="leave-year-body" key={year} disabled={savingId === employeeId}>
+                          <label className="leave-total-field">Tổng phép năm {year}
+                            <input type="text" inputMode="decimal" value={entry.total_leave ?? ''} onChange={event => updateYear(employeeId, year, current => ({ ...current, total_leave: event.target.value }))} />
+                          </label>
+                        </fieldset>
                       )
                     })}
                     <div className="leave-actions">

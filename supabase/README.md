@@ -28,7 +28,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 | `performance_reviews` | Đánh giá / grading |
 | **`hr_records`** | **Toàn bộ module còn lại** (thay Firebase) |
 | `employee_leave_settings` | Phép năm/tháng dạng JSONB theo công ty và nhân sự; chạy migration `20260924100000_employee_leave_settings.sql` sau các migration xác thực |
-| `employee_leave_days` | Từng ngày nghỉ phép (tên tài khoản, ngày nghỉ); chạy migration `20260924143000_employee_leave_days.sql` |
+| `employee_leave_days` | Từng ngày nghỉ phép (tên tài khoản, ngày nghỉ, trạng thái duyệt); chạy migration `20260924143000_employee_leave_days.sql` và `20261003120000_employee_leave_day_approval.sql` |
 
 ### Trong `hr_records` (cột `collection`)
 - **Lương / phúc lợi:** `salaryGrades`, `employeeSalaries`, `promotionHistory`, `payrolls`
@@ -50,6 +50,24 @@ Chạy riêng [`migrations/20260924100000_employee_leave_settings.sql`](./migrat
 Để bật trang **Ngày nghỉ phép**, chạy thêm [`migrations/20260924143000_employee_leave_days.sql`](./migrations/20260924143000_employee_leave_days.sql). Bảng này lưu tên từ hồ sơ đăng nhập và ngày nghỉ, không sửa đơn duyệt phép hoặc chấm công.
 
 Chạy tiếp [`migrations/20260924160000_employee_leave_day_reason.sql`](./migrations/20260924160000_employee_leave_day_reason.sql) để lưu lý do nghỉ phép cho bản ghi mới. Ngày nghỉ đã có vẫn được giữ nguyên.
+
+Chạy [`migrations/20261003120000_employee_leave_day_approval.sql`](./migrations/20261003120000_employee_leave_day_approval.sql) để bật trạng thái chờ duyệt và quyền HR/admin duyệt ngày nghỉ. Các bản ghi đã tồn tại được giữ ở trạng thái đã duyệt; yêu cầu mới mặc định chờ duyệt.
+
+Chạy [`migrations/20261004050000_employee_leave_days_grants.sql`](./migrations/20261004050000_employee_leave_days_grants.sql) nếu API báo `permission denied for table employee_leave_days`. File này cấp quyền cho cả đăng nhập Supabase Auth và đăng nhập tài khoản (role `anon`).
+
+Chạy [`migrations/20261004051000_hr_records_anon_access.sql`](./migrations/20261004051000_hr_records_anon_access.sql) nếu API báo `permission denied for table hr_records` hoặc `permission denied for function get_online_attendance_today`.
+
+Chạy [`migrations/20261004060000_approvals_full_access.sql`](./migrations/20261004060000_approvals_full_access.sql) nếu trang Đề xuất báo `permission denied for table users`. File này mở quyền đọc nhân sự và các hàm gửi/duyệt đề xuất.
+
+Chạy [`migrations/20261004073000_team_leader_account_login.sql`](./migrations/20261004073000_team_leader_account_login.sql) nếu `my_team_leader` trả 400 khi đăng nhập bằng tài khoản.
+
+Chạy [`migrations/20261004080000_users_team.sql`](./migrations/20261004080000_users_team.sql) để lưu mục Team trên hồ sơ nhân sự.
+
+Chạy [`migrations/20261004081000_attendance_shift_for_profile.sql`](./migrations/20261004081000_attendance_shift_for_profile.sql) nếu Chấm công online báo `function public.attendance_shift_for_profile(users, jsonb) does not exist`.
+
+Chạy [`migrations/20261004082000_team_leader_title_match.sql`](./migrations/20261004082000_team_leader_title_match.sql) để lưu mục Leader trên hồ sơ và để đề xuất tìm đúng người duyệt.
+
+Chạy [`migrations/20261003130000_approval_monthly_leave_limit.sql`](./migrations/20261003130000_approval_monthly_leave_limit.sql) để hiển thị số lượt sử dụng phép năm trong tháng và giới hạn tối đa 2 lần/tháng cho đề xuất nghỉ phép.
 
 ## Tài khoản mặc định
 - Email: `admin@company.local`

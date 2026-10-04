@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { getDefaultLandingPath } from '../utils/staffAccess'
 import './EmployeeLogin.css'
 
 function EmployeeLogin() {
@@ -17,12 +18,13 @@ function EmployeeLogin() {
     setError('')
     try {
       const profile = await login(account.trim(), password)
-      if (!profile || profile.role !== 'user') {
+      const destination = getDefaultLandingPath(profile)
+      if (!profile || destination === '/login') {
         await logout()
-        setError('Vui lòng sử dụng trang đăng nhập quản trị cho tài khoản này')
+        setError('Tài khoản chưa được cấp quyền sử dụng hệ thống.')
         return
       }
-      navigate('/bang-cong', { replace: true })
+      navigate(destination, { replace: true })
     } catch (loginError) {
       console.error('Employee login error:', loginError)
       setError('Tên tài khoản hoặc mật khẩu không chính xác')

@@ -16,6 +16,7 @@
 .leave-year-add input,
 .leave-year-body input { min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; background: #fff; color: #1e293b; }
 .leave-board-filters input { min-width: 240px; }
+.leave-board-filters select { min-width: 180px; }
 .leave-board-count { margin-left: auto; color: #64748b; font-weight: 600; }
 .leave-board-scroll { width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; background: #fff; border: 1px solid #dbe5f0; border-radius: 12px; }
 .leave-board-table { width: 100%; min-width: 1280px; border-collapse: collapse; font-size: 14px; }

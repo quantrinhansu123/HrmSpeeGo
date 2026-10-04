@@ -1826,7 +1826,7 @@ tr:hover {
 .employees-table-card__caption { display: flex; justify-content: space-between; padding: 14px 17px; color: #475467; border-bottom: 1px solid #edf0f4; font-size: .86rem; }
 .employees-table-card__caption small { color: #98a2b3; }
 .employees-table-wrap { overflow-x: auto; }
-.employees-table { width: 100%; border-collapse: collapse; min-width: 1040px; }
+.employees-table { width: 100%; border-collapse: collapse; min-width: 1240px; }
 .employees-table th { background: #f8fafc; color: #667085; text-transform: uppercase; font-size: .68rem; letter-spacing: .04em; text-align: left; padding: 11px 14px; border-bottom: 1px solid #e9edf2; }
 .employees-table td { padding: 12px 14px; border-bottom: 1px solid #f0f2f5; color: #344054; font-size: .82rem; }
 .employees-table tbody tr { cursor: pointer; transition: background .13s; }

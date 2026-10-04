@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbDelete, fbGet, fbPush, fbUpdate } from '../services/firebase'
+import { approveMatchingLeaveDays } from '../services/leaveDays'
 import { supabase } from '../services/supabase'
 import {
   APPROVAL_PERIOD_LABELS,
@@ -11,13 +12,25 @@ import {
   isPaidLeaveRequest,
   listRequestLeaveDates
 } from '../utils/approvalPolicy'
-import { normalizeString } from '../utils/helpers'
+import { getMissingUsersColumnFromError, normalizeString } from '../utils/helpers'
 import './Approvals.css'
 
 const REQUESTS_PATH = 'hr/approvalRequests'
 const TEMPLATES_PATH = 'hr/approvalTemplates'
 const RECENT_TEMPLATES_KEY = 'apv_recent_templates'
 const MAX_APPROVAL_STEPS = 4
+
+const formatLeaveCount = (value) => {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '0'
+  const rounded = Math.round(number * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',')
+}
+
+const formatLeaveRemaining = (balance) => {
+  if (!balance?.configured) return '—'
+  return formatLeaveCount(balance.remaining)
+}
 
 const BUILTIN_TEMPLATES = [
   {
@@ -212,10 +225,8 @@ function Approvals() {
   const isEmployee = authUser?.role === 'user'
   const [searchParams, setSearchParams] = useSearchParams()
 
-  const requestedView = searchParams.get('view') || 'list'
-  const view = isEmployee && requestedView === 'template-form' ? 'list' : requestedView
-  const requestedTab = searchParams.get('tab') || (isEmployee ? 'sent' : 'inbox')
-  const tab = isEmployee && ['admin', 'templates', 'stats'].includes(requestedTab) ? 'sent' : requestedTab
+  const view = searchParams.get('view') || 'list'
+  const tab = searchParams.get('tab') || 'inbox'
   const subFilter = searchParams.get('filter') || 'todo' // todo | done
   const selectedId = searchParams.get('id') || null
   const templateParam = searchParams.get('template') || ''
@@ -235,6 +246,12 @@ function Approvals() {
   const [leaveBalances, setLeaveBalances] = useState({})
   const [balanceError, setBalanceError] = useState('')
   const [balanceLoading, setBalanceLoading] = useState(false)
+  const [leaveMonthlyUsage, setLeaveMonthlyUsage] = useState({})
+  const [leaveMonthlyUsageError, setLeaveMonthlyUsageError] = useState('')
+  const [leaveMonthlyUsageLoading, setLeaveMonthlyUsageLoading] = useState(false)
+  const [ownLeaveSummary, setOwnLeaveSummary] = useState(null)
+  const [ownLeaveSummaryError, setOwnLeaveSummaryError] = useState('')
+  const [ownLeaveSummaryLoading, setOwnLeaveSummaryLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
 
   const [search, setSearch] = useState('')
@@ -333,6 +350,8 @@ function Approvals() {
   const [rejectPrompt, setRejectPrompt] = useState(false)
   const [decisionComment, setDecisionComment] = useState('')
   const [deciding, setDeciding] = useState(false)
+  const [selectedDoneIds, setSelectedDoneIds] = useState(() => new Set())
+  const [deletingDone, setDeletingDone] = useState(false)
 
   const navigateApv = (patch, { replace = false } = {}) => {
     setSearchParams((prev) => {
@@ -376,8 +395,20 @@ function Approvals() {
       // reads/writes) — only the columns the picker/avatars need are selected so this
       // stays fast even as the table grows (avoids the heavy documents/images blobs
       // that a `select('*')` would drag along).
+      const userColumns = ['id', 'name', 'department', 'team', 'position', 'branch', 'avatar_url', 'employee_id', 'username', 'email', 'role', 'is_team_leader']
+      const loadUsers = async () => {
+        let columns = [...userColumns]
+        for (let attempt = 0; attempt < userColumns.length; attempt += 1) {
+          const result = await supabase.from('users').select(columns.join(', '))
+          if (!result.error) return result
+          const missing = getMissingUsersColumnFromError(result.error)
+          if (!missing || missing === 'id' || !columns.includes(missing)) return result
+          columns = columns.filter(column => column !== missing)
+        }
+        return supabase.from('users').select('id, name')
+      }
       const [usersRes, reqData, tplData] = await Promise.all([
-        supabase.from('users').select('id, name, department, position, branch, avatar_url, employee_id, username, email, role'),
+        loadUsers(),
         fbGet(REQUESTS_PATH),
         fbGet(TEMPLATES_PATH)
       ])
@@ -387,7 +418,9 @@ function Approvals() {
         id: u.id,
         ho_va_ten: u.name || '',
         bo_phan: u.department || '',
+        team: u.team || '',
         vi_tri: u.position || '',
+        is_leader: u.is_team_leader === true,
         chi_nhanh: u.branch || '',
         avatarUrl: u.avatar_url || '',
         employeeId: u.employee_id || u.username || '',
@@ -430,7 +463,11 @@ function Approvals() {
             authUser.username ||
             authUser.ma_nhan_vien ||
             '',
-          role: authUser.role || 'user'
+          role: authUser.role || 'user',
+          department: authUser.bo_phan || authUser.department || '',
+          branch: authUser.chi_nhanh || authUser.branch || '',
+          position: authUser.vi_tri || authUser.position || '',
+          is_leader: authUser.is_leader === true
         }
       : null
 
@@ -458,25 +495,66 @@ function Approvals() {
           : emp.ho_va_ten || emp.name || base.name,
       avatar: base.avatar || emp.avatarUrl || emp.avatarDataUrl || emp.avatar || '',
       employeeCode: base.employeeCode || emp.employeeId || emp.username || '',
-      role: emp.role || base.role || 'user'
+      role: emp.role || base.role || 'user',
+      department: emp.bo_phan || base.department || '',
+      branch: emp.chi_nhanh || base.branch || '',
+      position: emp.vi_tri || base.position || '',
+      is_leader: emp.is_leader === true || base.is_leader === true
     }
   }, [authUser, employees])
 
-  const canManageTemplates = ['admin', 'hr'].includes(authUser?.role)
+  const canManageTemplates = true
+  const isAdmin = String(me?.role || '').toLowerCase() === 'admin'
+  const isTeamLeader = Boolean(
+    me?.is_leader ||
+    /leader/i.test(String(me?.position || '')) ||
+    /trưởng/i.test(String(me?.position || ''))
+  )
 
   useEffect(() => {
-    if (view !== 'create' || !isEmployee) return
-    let active = true
-    setLeaderLoading(true)
-    setLeaderError('')
-    supabase.rpc('my_team_leader').then(({ data, error }) => {
-      if (!active) return
-      setTeamLeader(error ? null : data)
-      setLeaderError(error?.message || '')
+    if (view !== 'create' || !isEmployee || loading) return
+    const department = String(authUser?.bo_phan || authUser?.department || '').trim()
+    const branch = String(authUser?.chi_nhanh || authUser?.branch || '').trim()
+    if (!department) {
+      setTeamLeader(null)
+      setLeaderError('Hồ sơ của bạn chưa có Team/phòng ban. Vui lòng liên hệ HR.')
       setLeaderLoading(false)
+      return
+    }
+    const sameGroup = (employee) => {
+      if (String(employee.id) === String(authUser?.id || '')) return false
+      const sameDepartment = String(employee.bo_phan || '').trim().toLowerCase() === department.toLowerCase()
+      const employeeBranch = String(employee.chi_nhanh || '').trim()
+      const sameBranch = !branch || employeeBranch.toLowerCase() === branch.toLowerCase()
+      return sameDepartment && sameBranch
+    }
+    const markedLeaders = employees.filter((employee) => sameGroup(employee) && employee.is_leader)
+    const byTitle = employees.filter((employee) => {
+      const position = String(employee.vi_tri || '')
+      return sameGroup(employee) && (/leader/i.test(position) || /trưởng/i.test(position))
     })
-    return () => { active = false }
-  }, [view, isEmployee, authUser?.id])
+    const leaders = markedLeaders.length > 0
+      ? markedLeaders
+      : byTitle.length > 0
+        ? byTitle
+        : employees.filter((employee) => sameGroup(employee) && ['admin', 'hr', 'manager'].includes(String(employee.role || '').toLowerCase()))
+    if (leaders.length === 1) {
+      const leader = leaders[0]
+      setTeamLeader({
+        id: leader.id,
+        name: leader.ho_va_ten || '',
+        avatar: leader.avatarUrl || '',
+        department
+      })
+      setLeaderError('')
+    } else {
+      setTeamLeader(null)
+      setLeaderError(leaders.length > 1
+        ? `Team ${department} có nhiều Leader. Vui lòng liên hệ HR xác định một người duyệt.`
+        : `Phòng ${department} chưa có Leader. Hãy mở hồ sơ một người trong phòng và chọn Leader: Có.`)
+    }
+    setLeaderLoading(false)
+  }, [view, isEmployee, loading, authUser, employees])
 
   useEffect(() => {
     if (view !== 'create' || !selectedTemplate) return
@@ -662,6 +740,11 @@ function Approvals() {
     }, {})
   }, [selectedTemplateUsesLeaveDates, leaveStartDate, leaveEndDate, leaveDuration])
   const leaveYearsKey = Object.keys(leaveDaysByYear).join(',')
+  const leaveMonths = useMemo(() => {
+    if (!selectedTemplateUsesLeaveDates) return []
+    return [...new Set(listRequestLeaveDates({ leaveStartDate, leaveEndDate }).map(day => day.slice(0, 7)))]
+  }, [selectedTemplateUsesLeaveDates, leaveStartDate, leaveEndDate])
+  const leaveMonthsKey = leaveMonths.join(',')
 
   useEffect(() => {
     if (view !== 'create' || !selectedTemplateUsesLeaveDates || !leaveYearsKey) return
@@ -682,6 +765,59 @@ function Approvals() {
     })
     return () => { active = false }
   }, [view, selectedTemplateUsesLeaveDates, leaveYearsKey, authUser?.id])
+
+  useEffect(() => {
+    if (view !== 'create' || !selectedTemplateUsesLeaveDates || !leaveMonthsKey) return
+    let active = true
+    setLeaveMonthlyUsageLoading(true)
+    setLeaveMonthlyUsageError('')
+    setLeaveMonthlyUsage({})
+    Promise.all(leaveMonthsKey.split(',').map(async month => {
+      const [year, monthNumber] = month.split('-').map(Number)
+      const { data, error } = await supabase.rpc('my_approval_leave_month_usage', {
+        p_year: year,
+        p_month: monthNumber
+      })
+      if (error) throw error
+      return [month, data]
+    })).then(entries => {
+      if (active) setLeaveMonthlyUsage(Object.fromEntries(entries))
+    }).catch(error => {
+      if (active) setLeaveMonthlyUsageError(error?.message || 'Không tải được số lượt nghỉ trong tháng.')
+    }).finally(() => {
+      if (active) setLeaveMonthlyUsageLoading(false)
+    })
+    return () => { active = false }
+  }, [view, selectedTemplateUsesLeaveDates, leaveMonthsKey, authUser?.id])
+
+  useEffect(() => {
+    if (view !== 'create' || !authUser?.id) return undefined
+    let active = true
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
+    setOwnLeaveSummaryLoading(true)
+    setOwnLeaveSummaryError('')
+    Promise.all([
+      supabase.rpc('my_approval_leave_balance', { p_year: year }),
+      supabase.rpc('my_approval_leave_month_usage', { p_year: year, p_month: month })
+    ]).then(([balanceRes, monthRes]) => {
+      if (!active) return
+      if (balanceRes.error) throw balanceRes.error
+      if (monthRes.error) throw monthRes.error
+      setOwnLeaveSummary({
+        year,
+        balance: balanceRes.data || {},
+        month,
+        usage: monthRes.data || {}
+      })
+    }).catch((error) => {
+      if (active) setOwnLeaveSummaryError(error?.message || 'Không tải được số phép còn lại.')
+    }).finally(() => {
+      if (active) setOwnLeaveSummaryLoading(false)
+    })
+    return () => { active = false }
+  }, [view, authUser?.id])
 
   const myCreateStats = useMemo(() => {
     const emptyBucket = () => ({ total: 0, byTemplate: {} })
@@ -764,22 +900,56 @@ function Approvals() {
   const myDecidedStep = (r) =>
     (r.approvalSteps || []).find((s) => isMe(s.approverId, s.approverName) && !!s.decision)
 
+  const leadsRequester = (r) => {
+    if (!isTeamLeader) return false
+    const department = String(me?.department || '').trim().toLowerCase()
+    if (!department) return false
+    const requester = employees.find((employee) =>
+      (r.requesterId && String(employee.id) === String(r.requesterId)) ||
+      (r.requesterName && normalizeString(employee.ho_va_ten || employee.name || '') === normalizeString(r.requesterName))
+    )
+    const requesterDepartment = String(requester?.bo_phan || '').trim().toLowerCase()
+    if (!requesterDepartment || requesterDepartment !== department) return false
+    const branch = String(me?.branch || '').trim().toLowerCase()
+    const requesterBranch = String(requester?.chi_nhanh || '').trim().toLowerCase()
+    return !branch || !requesterBranch || branch === requesterBranch
+  }
+
+  const canDecideRequest = (r) => {
+    if (!r || r.status !== 'pending') return false
+    if (isMyTurn(r)) return true
+    if (isAdmin || String(me?.role || '').toLowerCase() === 'hr') return true
+    return leadsRequester(r)
+  }
+
   const inboxRequests = useMemo(
-    () => requests.filter((r) => (r.approvalSteps || []).some((s) => isMe(s.approverId, s.approverName))),
-    [requests, me]
+    () => isAdmin
+      ? requests
+      : requests.filter((r) =>
+          (r.approvalSteps || []).some((s) => isMe(s.approverId, s.approverName)) ||
+          leadsRequester(r)
+        ),
+    [requests, me, isAdmin, isTeamLeader, employees]
   )
   const sentRequests = useMemo(
     () => requests.filter((r) => isMe(r.requesterId, r.requesterName)),
     [requests, me]
   )
 
+  const seesWholeInbox = tab === 'inbox' && (isAdmin || isTeamLeader)
   const baseList = tab === 'inbox' ? inboxRequests : tab === 'sent' ? sentRequests : requests
-  const todoList = baseList.filter((r) => (tab === 'inbox' ? isMyTurn(r) : r.status === 'pending'))
+  const todoList = baseList.filter((r) => {
+    if (r.status !== 'pending') return false
+    if (tab !== 'inbox' || isAdmin) return true
+    if (isTeamLeader) return isMyTurn(r) || leadsRequester(r)
+    return isMyTurn(r)
+  })
   const doneList = baseList.filter((r) => {
     if (todoList.includes(r)) return false
     // "Hoàn thành" in Gửi đến only counts requests this account has personally
     // approved/rejected — not ones still waiting on someone earlier in the chain.
-    if (tab === 'inbox') return !!myDecidedStep(r)
+    // Admin sees every finished request. A Leader also sees finished requests from their team.
+    if (tab === 'inbox' && !isAdmin && !(isTeamLeader && leadsRequester(r))) return !!myDecidedStep(r)
     return true
   })
 
@@ -1019,6 +1189,62 @@ function Approvals() {
     navigateApv({ view: 'detail', id, template: null })
   }
 
+  const toggleDoneSelection = (id) => {
+    setSelectedDoneIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAllDone = (checked, ids) => {
+    setSelectedDoneIds((current) => {
+      const next = new Set(current)
+      ids.forEach((id) => {
+        if (checked) next.add(id)
+        else next.delete(id)
+      })
+      return next
+    })
+  }
+
+  const deleteSelectedDone = async (ids) => {
+    if (!ids.length || deletingDone) return
+    if (!window.confirm(`Xóa ${ids.length} đề xuất đã hoàn thành?`)) return
+    setDeletingDone(true)
+    try {
+      const rpc = await supabase.rpc('delete_approval_requests', { p_ids: ids })
+      const missingFunction = /delete_approval_requests|schema cache|could not find the function/i.test(rpc.error?.message || '')
+      let removed = []
+      if (!rpc.error) {
+        removed = Array.isArray(rpc.data) ? rpc.data : []
+      } else if (!missingFunction) {
+        throw rpc.error
+      } else {
+        const { data, error } = await supabase
+          .from('hr_records')
+          .delete()
+          .in('id', ids.map((id) => `approvalRequests::${id}`))
+          .eq('collection', 'approvalRequests')
+          .select('id')
+        if (error) throw error
+        removed = (data || []).map((row) => String(row.id || '').replace(/^approvalRequests::/, ''))
+      }
+      if (removed.length < ids.length) {
+        throw new Error('Không xóa hết đề xuất đã chọn. Hãy chạy file supabase/migrations/20261004130000_delete_finished_approvals.sql trong SQL Editor.')
+      }
+      const removedIds = new Set(removed.map(String))
+      setRequests((current) => current.filter((request) => !removedIds.has(String(request.id))))
+      setSelectedDoneIds(new Set())
+      showToast(`Đã xóa ${removed.length} đề xuất`)
+    } catch (error) {
+      showToast(error?.message || 'Không xóa được đề xuất đã chọn')
+    } finally {
+      setDeletingDone(false)
+    }
+  }
+
   const openStatsDetail = (employeeCode) => navigateApv({ statEmp: employeeCode })
   const closeStatsDetail = () => navigateApv({ statEmp: null })
 
@@ -1082,6 +1308,17 @@ function Approvals() {
             if (!balance?.configured) errs.leaveBalance = `Chưa cài đặt phép năm ${year}. Vui lòng liên hệ HR.`
             else if (Number(balance.remaining) < daysNeeded) {
               errs.leaveBalance = `Năm ${year} chỉ còn ${balance.remaining} ngày phép; đơn cần ${daysNeeded} ngày.`
+            }
+          }
+        }
+        if (leaveMonthlyUsageLoading || leaveMonthlyUsageError || Object.keys(leaveMonthlyUsage).length !== leaveMonths.length) {
+          errs.leaveMonthlyLimit = leaveMonthlyUsageError || 'Đang tải số lượt nghỉ trong tháng. Vui lòng thử lại.'
+        } else {
+          for (const month of leaveMonths) {
+            const usage = leaveMonthlyUsage[month]
+            if (Number(usage?.used) >= Number(usage?.limit || 2)) {
+              errs.leaveMonthlyLimit = `Tháng ${month} đã đủ ${usage?.limit || 2} lần sử dụng phép năm.`
+              break
             }
           }
         }
@@ -1199,11 +1436,21 @@ function Approvals() {
         p_comment: comment
       })
       if (error) throw error
+      const leaveDates = decision === 'approved' ? listRequestLeaveDates(target) : []
+      if (leaveDates.length) {
+        try {
+          await approveMatchingLeaveDays({ employeeId: target.requesterId, dates: leaveDates })
+        } catch (syncError) {
+          console.error('Không đồng bộ được ngày nghỉ phép:', syncError)
+        }
+      }
       showToast(
         decision === 'approved'
-          ? data?.attendanceSyncStatus === 'synced'
-            ? 'Đã duyệt và đồng bộ ngày phép sang chấm công'
-            : 'Đã đồng ý'
+          ? leaveDates.length
+            ? 'Đã duyệt. Ngày nghỉ phép đã được cập nhật.'
+            : data?.attendanceSyncStatus === 'synced'
+              ? 'Đã duyệt và đồng bộ ngày phép sang chấm công'
+              : 'Đã đồng ý'
           : 'Đã từ chối'
       )
       setRejectPrompt(false)
@@ -1601,6 +1848,7 @@ function Approvals() {
                       {me?.employeeCode ? ` · Mã NV: ${me.employeeCode}` : ''}
                     </span>
                   </div>
+                  <div className="apv-my-stats__split">
                   <div className="apv-my-stats__periods">
                     {[
                       ['week', 'Tuần này', myCreateStats.week],
@@ -1638,6 +1886,41 @@ function Approvals() {
                         </div>
                       )
                     })}
+                  </div>
+                  <div>
+                  <div className="apv-my-stats__head apv-my-stats__head--leave">
+                    <strong>Số phép còn lại</strong>
+                    <span>{ownLeaveSummary ? `Năm ${ownLeaveSummary.year} · Tháng ${ownLeaveSummary.month}` : 'Năm nay · Tháng này'}</span>
+                  </div>
+                  {ownLeaveSummaryError ? (
+                    <div className="apv-field-error">{ownLeaveSummaryError}</div>
+                  ) : (
+                    <div className="apv-my-stats__periods apv-my-stats__periods--leave">
+                      <div className="apv-my-stats__period-card">
+                        <div className="apv-my-stats__period-top">
+                          <span>Phép năm</span>
+                          <strong>{ownLeaveSummaryLoading ? '…' : formatLeaveRemaining(ownLeaveSummary?.balance)}</strong>
+                        </div>
+                        <div className="apv-my-stats__current">
+                          {ownLeaveSummary?.balance?.configured
+                            ? <>Còn <b>{formatLeaveCount(ownLeaveSummary.balance.remaining)}</b> / {formatLeaveCount(ownLeaveSummary.balance.total)} ngày</>
+                            : 'Chưa cài đặt phép năm'}
+                        </div>
+                      </div>
+                      <div className="apv-my-stats__period-card">
+                        <div className="apv-my-stats__period-top">
+                          <span>Phép tháng</span>
+                          <strong>{ownLeaveSummaryLoading ? '…' : formatLeaveCount(ownLeaveSummary?.usage?.remaining ?? 0)}</strong>
+                        </div>
+                        <div className="apv-my-stats__current">
+                          Còn <b>{ownLeaveSummaryLoading ? '…' : formatLeaveCount(ownLeaveSummary?.usage?.remaining ?? 0)}</b>
+                          {' / '}
+                          {ownLeaveSummary?.usage?.limit ?? 2} lượt
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  </div>
                   </div>
                 </div>
               </div>
@@ -1720,7 +2003,7 @@ function Approvals() {
 
                 {selectedTemplateUsesLeaveDates && (
                   <div className="apv-leave-fields">
-                    <div className="apv-card-block__title">Thông tin nghỉ có phép</div>
+                    <div className="apv-card-block__title">Thông tin đề xuất xin nghỉ</div>
                     <div className="apv-field-row apv-field-row--equal">
                       <div className="apv-field">
                         <label>Từ ngày <span className="req">*</span></label>
@@ -1754,7 +2037,7 @@ function Approvals() {
                           value={leaveType}
                           onChange={(e) => setLeaveType(e.target.value)}
                         >
-                          <option value="paid">Nghỉ có phép</option>
+                          <option value="paid">Sử dụng phép năm</option>
                           <option value="unpaid">Nghỉ không hưởng lương</option>
                         </select>
                       </div>
@@ -1771,7 +2054,7 @@ function Approvals() {
                       </div>
                     </div>
                     <div className="apv-leave-balance" aria-live="polite">
-                      <strong>Phép năm còn lại</strong>
+                      <strong>Số phép năm</strong>
                       {balanceLoading ? <span>Đang tính số phép...</span> : balanceError ? (
                         <span className="apv-field-error">{balanceError}</span>
                       ) : Object.entries(leaveDaysByYear).map(([year, requested]) => {
@@ -1786,12 +2069,29 @@ function Approvals() {
                       })}
                       {leaveType === 'unpaid' && <small>Nghỉ không hưởng lương không trừ phép năm.</small>}
                     </div>
+                    <div className="apv-leave-balance apv-leave-month-usage" aria-live="polite">
+                      <strong>Số lượt sử dụng phép trong tháng (tối đa 2 lần)</strong>
+                      {leaveMonthlyUsageLoading ? <span>Đang tính số lượt phép...</span> : leaveMonthlyUsageError ? (
+                        <span className="apv-field-error">{leaveMonthlyUsageError}</span>
+                      ) : leaveMonths.map(month => {
+                        const usage = leaveMonthlyUsage[month]
+                        const used = Number(usage?.used || 0)
+                        const limit = Number(usage?.limit || 2)
+                        return <div className="apv-leave-balance__row" key={month}>
+                          <b>{month}</b>
+                          <span>Đã xin: {used}/{limit} lần</span>
+                          <span>Còn: {Math.max(0, limit - used)} lượt</span>
+                        </div>
+                      })}
+                      {leaveType === 'unpaid' && <small>Giới hạn 2 lần/tháng áp dụng khi sử dụng phép năm.</small>}
+                    </div>
                     <div className="apv-leave-fields__note">
                       <i className="fas fa-link"></i>
                       Khi được duyệt ở bước cuối, các ngày nghỉ có phép sẽ tự chuyển sang Chấm công.
                     </div>
                     {errors.leaveDates && <div className="apv-field-error">{errors.leaveDates}</div>}
                     {errors.leaveBalance && <div className="apv-field-error">{errors.leaveBalance}</div>}
+                    {errors.leaveMonthlyLimit && <div className="apv-field-error">{errors.leaveMonthlyLimit}</div>}
                   </div>
                 )}
 
@@ -2003,7 +2303,7 @@ function Approvals() {
             <div className="apv-actionbar">
               <button
                 className="apv-btn apv-btn--primary"
-                disabled={submitting || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && leaveType === 'paid' && balanceLoading)}
+                disabled={submitting || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && leaveType === 'paid' && (balanceLoading || leaveMonthlyUsageLoading))}
                 onClick={handleSubmitRequest}
               >
                 {submitting ? (
@@ -2292,7 +2592,7 @@ function Approvals() {
               )}
             </div>
 
-            {selectedRequest.status === 'pending' && (isMyTurn(selectedRequest) || (tab === 'admin' && canManageTemplates)) && (
+            {canDecideRequest(selectedRequest) && (
               <div className="apv-actionbar" style={{ flexWrap: 'wrap' }}>
                 {!isMyTurn(selectedRequest) && (
                   <div className="apv-actionbar__notice">
@@ -2352,11 +2652,9 @@ function Approvals() {
               >
                 Gửi đi
               </button>
-              {!isEmployee && <>
-                <button className={tab === 'admin' ? 'active' : ''} onClick={() => setTabNav('admin')}>Quản trị</button>
-                <button className={tab === 'templates' ? 'active' : ''} onClick={() => setTabNav('templates')}>Mẫu yêu cầu</button>
-                <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTabNav('stats')}>Thống kê</button>
-              </>}
+              <button className={tab === 'admin' ? 'active' : ''} onClick={() => setTabNav('admin')}>Quản trị</button>
+              <button className={tab === 'templates' ? 'active' : ''} onClick={() => setTabNav('templates')}>Mẫu yêu cầu</button>
+              <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTabNav('stats')}>Thống kê</button>
             </div>
 
             {tab === 'templates' ? (
@@ -2720,12 +3018,33 @@ function Approvals() {
               <>
             <div className="apv-chips">
               <button className={`apv-chip apv-chip--todo ${subFilter === 'todo' ? 'active' : ''}`} onClick={() => setSubFilterNav('todo')}>
-                <i className="fas fa-inbox"></i> {tab === 'admin' ? 'Đang xử lý' : 'Cần làm'} ({todoList.length})
+                <i className="fas fa-inbox"></i> {tab === 'admin' || seesWholeInbox ? 'Đang xử lý' : 'Cần làm'} ({todoList.length})
               </button>
               <button className={`apv-chip apv-chip--done ${subFilter === 'done' ? 'active' : ''}`} onClick={() => setSubFilterNav('done')}>
-                <i className="fas fa-check-circle"></i> {tab === 'admin' ? 'Đã xong' : 'Hoàn thành'} ({doneList.length})
+                <i className="fas fa-check-circle"></i> {tab === 'admin' || seesWholeInbox ? 'Đã xong' : 'Hoàn thành'} ({doneList.length})
               </button>
             </div>
+
+            {subFilter === 'done' && activeList.length > 0 && (
+              <div className="apv-done-toolbar">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={activeList.every((request) => selectedDoneIds.has(request.id))}
+                    onChange={(event) => toggleAllDone(event.target.checked, activeList.map((request) => request.id))}
+                  />
+                  Chọn tất cả
+                </label>
+                <button
+                  type="button"
+                  className="apv-btn apv-btn--reject apv-btn--sm"
+                  disabled={deletingDone || !activeList.some((request) => selectedDoneIds.has(request.id))}
+                  onClick={() => deleteSelectedDone(activeList.filter((request) => selectedDoneIds.has(request.id)).map((request) => request.id))}
+                >
+                  {deletingDone ? 'Đang xóa...' : `Xóa đã chọn (${activeList.filter((request) => selectedDoneIds.has(request.id)).length})`}
+                </button>
+              </div>
+            )}
 
             <div className="apv-list">
               {!me && tab !== 'admin' ? (
@@ -2746,83 +3065,71 @@ function Approvals() {
               ) : (
                 activeList.map((r) => {
                   const badge = statusBadge(r.status)
+                  const attachmentCount = (r.attachments || []).length
+                  const leaveDates = listRequestLeaveDates(r)
+                  const decidedSteps = (r.approvalSteps || []).filter((step) => step.decidedAt)
+                  const lastDecision = decidedSteps[decidedSteps.length - 1]
+                  const waitingName = (r.approvalSteps || [])[r.currentStepIndex || 0]?.approverName
                   return (
-                    <div
+                    <article
                       key={r.id}
                       className="apv-card"
                       onClick={() => openDetail(r.id)}
                     >
-                      <div className="apv-card__head">
-                        <div className="apv-card__title">
-                          <i className="fas fa-file-signature"></i>
-                          <div>
-                            {r.templateType || 'ĐỀ XUẤT'}
-                            <div className="apv-card__code">Số: {r.code}</div>
-                          </div>
+                      <div className="apv-card__top">
+                        {subFilter === 'done' && (
+                          <input
+                            type="checkbox"
+                            className="apv-card__check"
+                            checked={selectedDoneIds.has(r.id)}
+                            aria-label={`Chọn đề xuất ${r.code || r.subject || ''}`}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={() => toggleDoneSelection(r.id)}
+                          />
+                        )}
+                        <div className="apv-card__identity">
+                          <span className="apv-card__type">{r.templateType || 'ĐỀ XUẤT'}</span>
+                          <span className="apv-card__code">#{r.code}</span>
                         </div>
                         <span className={`apv-badge ${badge.cls}`}>{badge.label}</span>
                       </div>
-                      <div className="apv-card__row">
-                        <b>Về việc:</b>
-                        <span>{r.subject}</span>
-                      </div>
-                      <div className="apv-card__row">
-                        <b>Nội dung:</b>
-                        <span>{r.content}</span>
-                      </div>
-                      <div className="apv-card__row">
-                        <b>Đính kèm:</b>
-                        <span>{(r.attachments || []).length ? `${r.attachments.length} tập tin` : 'Không có'}</span>
-                      </div>
-                      {listRequestLeaveDates(r).length > 0 && (
-                        <div className="apv-card__row">
-                          <b>Ngày nghỉ:</b>
-                          <span>
+                      <h3 className="apv-card__subject">{r.subject || 'Chưa có tiêu đề'}</h3>
+                      {r.content && <p className="apv-card__preview">{r.content}</p>}
+                      <div className="apv-card__meta">
+                        {attachmentCount > 0 && (
+                          <span className="apv-card__chip"><i className="fas fa-paperclip"></i> {attachmentCount} tệp</span>
+                        )}
+                        {leaveDates.length > 0 && (
+                          <span className="apv-card__chip">
+                            <i className="fas fa-calendar-day"></i>
                             {formatDateShort(r.leaveStartDate)}
-                            {r.leaveEndDate !== r.leaveStartDate
-                              ? ` – ${formatDateShort(r.leaveEndDate)}`
-                              : ''}
+                            {r.leaveEndDate !== r.leaveStartDate ? ` – ${formatDateShort(r.leaveEndDate)}` : ''}
                             {' · '}
-                            {r.leaveDuration === 'half' ? '0,5 công/ngày' : '1 công/ngày'}
+                            {r.leaveDuration === 'half' ? '0,5 công' : '1 công'}
                           </span>
-                        </div>
-                      )}
-                      {r.quotaLimit > 0 && (
-                        <div className="apv-card__row">
-                          <b>Hạn mức:</b>
-                          <span>
-                            Còn {r.quotaRemainingAfter ?? '—'}/{r.quotaLimit} lần trong{' '}
-                            {APPROVAL_PERIOD_LABELS[r.quotaPeriod] || 'kỳ'}
+                        )}
+                        {r.quotaLimit > 0 && (
+                          <span className="apv-card__chip">
+                            Còn {r.quotaRemainingAfter ?? '—'}/{r.quotaLimit} lần/{APPROVAL_PERIOD_LABELS[r.quotaPeriod] || 'kỳ'}
                           </span>
-                        </div>
+                        )}
+                        {(tab === 'admin' || seesWholeInbox) && r.status === 'pending' && (
+                          <span className="apv-card__chip">Chờ {waitingName || 'người duyệt'}</span>
+                        )}
+                      </div>
+                      {lastDecision && (
+                        <p className={`apv-card__decision ${lastDecision.decision === 'rejected' ? 'is-rejected' : 'is-approved'}`}>
+                          {lastDecision.decision === 'rejected' ? 'Từ chối' : 'Đã duyệt'} bởi {lastDecision.decidedByName || lastDecision.approverName}
+                          {' · '}
+                          {formatDateTime(lastDecision.decidedAt)}
+                        </p>
                       )}
-                      {tab === 'admin' && r.status === 'pending' && (
-                        <div className="apv-card__row">
-                          <b>Đang chờ:</b>
-                          <span>{(r.approvalSteps || [])[r.currentStepIndex || 0]?.approverName || '—'}</span>
-                        </div>
-                      )}
-                      {(() => {
-                        const decidedSteps = (r.approvalSteps || []).filter((s) => s.decidedAt)
-                        const lastDecision = decidedSteps[decidedSteps.length - 1]
-                        if (!lastDecision) return null
-                        return (
-                          <div className="apv-card__row apv-card__row--decision">
-                            <b>{lastDecision.decision === 'rejected' ? 'Từ chối:' : 'Duyệt:'}</b>
-                            <span>
-                              {lastDecision.decidedByName || lastDecision.approverName}
-                              {' • '}
-                              {formatDateTime(lastDecision.decidedAt)}
-                            </span>
-                          </div>
-                        )
-                      })()}
                       <div className="apv-card__footer">
                         <Avatar name={r.requesterName} avatar={r.requesterAvatar} />
-                        <span className="apv-card__footer-name">Người tạo: {r.requesterName}</span>
+                        <span className="apv-card__footer-name">{r.requesterName}</span>
                         <span className="apv-card__footer-date">{formatDateShort(r.createdAt)}</span>
                       </div>
-                      {tab === 'inbox' && isMyTurn(r) && (
+                      {(tab === 'inbox' || tab === 'admin') && canDecideRequest(r) && (
                         <div className="apv-card__actions" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
@@ -2834,7 +3141,7 @@ function Approvals() {
                           </button>
                         </div>
                       )}
-                    </div>
+                    </article>
                   )
                 })
               )}

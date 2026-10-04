@@ -14,8 +14,9 @@ test('hiển thị ngày nghỉ và lấy ngày hiện tại theo giờ địa p
   assert.equal(todayLocalDate(new Date(2026, 8, 24)), '2026-09-24')
 })
 
-test('lý do được làm sạch và phải có nội dung hợp lệ', () => {
-  assert.equal(normalizeLeaveReason('  Việc gia đình  '), 'Việc gia đình')
-  assert.throws(() => normalizeLeaveReason('   '), /Vui lòng nhập lý do/)
-  assert.throws(() => normalizeLeaveReason('a'.repeat(501)), /500 ký tự/)
+test('lý do chỉ nhận Nghỉ cố định hoặc Nghỉ có phép', () => {
+  assert.equal(normalizeLeaveReason('  Nghỉ cố định  '), 'Nghỉ cố định')
+  assert.equal(normalizeLeaveReason('Nghỉ có phép'), 'Nghỉ có phép')
+  assert.throws(() => normalizeLeaveReason('Việc gia đình'), /Vui lòng chọn lý do/)
+  assert.throws(() => normalizeLeaveReason('   '), /Vui lòng chọn lý do/)
 })

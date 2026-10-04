@@ -134,6 +134,7 @@ function EmployeeModal({
   onSave,
   readOnly = false,
   departmentOptions = [],
+  teamOptions = [],
   positionOptions = []
 }) {
   const [activeTab, setActiveTab] = useState('info')
@@ -145,7 +146,9 @@ function EmployeeModal({
     sđt: '',
     chi_nhanh: 'HCM',
     bo_phan: '',
+    team: '',
     vi_tri: '',
+    is_leader: false,
     trang_thai: 'Thử việc',
     ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
     ngay_vao_lam: '',
@@ -202,7 +205,9 @@ function EmployeeModal({
         sđt: employee.sđt || employee.sdt || '',
         chi_nhanh: employee.chi_nhanh || 'HCM',
         bo_phan: employee.bo_phan || '',
+        team: employee.team || '',
         vi_tri: employee.vi_tri || '',
+        is_leader: employee.is_leader === true,
         // Hồ sơ đã tồn tại nhưng chưa được HR đánh dấu phải hiển thị trống;
         // chỉ hồ sơ tạo mới mới dùng trạng thái khởi tạo Thử việc.
         trang_thai: employee.trang_thai ?? employee.employmentStatus ?? employee.employment_status ?? employee.status ?? '',
@@ -266,7 +271,9 @@ function EmployeeModal({
       sđt: '',
       chi_nhanh: 'HCM',
       bo_phan: '',
+      team: '',
       vi_tri: '',
+      is_leader: false,
       trang_thai: 'Thử việc',
       ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
       ngay_vao_lam: '',
@@ -713,20 +720,8 @@ function EmployeeModal({
                     <div className="employee-profile-meta">
                       <h4>{formData.ho_va_ten || '—'}</h4>
                       <p><strong>Mã NV:</strong> {formData.employeeId || '—'}</p>
-                      <p><strong>Vị trí:</strong> {formData.vi_tri || '—'} {formData.bo_phan ? `· ${formData.bo_phan}` : ''}</p>
+                      <p><strong>Vị trí:</strong> {formData.vi_tri || '—'} {formData.bo_phan ? `· ${formData.bo_phan}` : ''}{formData.team ? ` · Team ${formData.team}` : ''}{formData.is_leader ? ' · Leader' : ''}</p>
                       <p><strong>Trạng thái:</strong> {formData.trang_thai || '—'}</p>
-                      <p>
-                        <strong>Vai trò:</strong>{' '}
-                        {formData.role === 'admin'
-                          ? 'Quản trị viên'
-                          : formData.role === 'hr'
-                            ? 'Nhân sự (HR)'
-                            : formData.role === 'manager'
-                              ? 'Quản lý'
-                              : formData.role === 'accountant'
-                                ? 'Kế toán'
-                              : 'Nhân viên'}
-                      </p>
                     </div>
                   </div>
                 ) : (
@@ -798,24 +793,6 @@ function EmployeeModal({
                       disabled={!editable}
                       placeholder="email liên hệ"
                     />
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Vai trò *</label>
-                    <select
-                      name="role"
-                      value={formData.role || 'user'}
-                      onChange={handleChange}
-                      disabled={!editable}
-                    >
-                      <option value="user">Nhân viên</option>
-                      <option value="hr">Nhân sự (HR)</option>
-                      <option value="manager">Quản lý</option>
-                      <option value="accountant">Kế toán</option>
-                      <option value="admin">Quản trị viên</option>
-                    </select>
                   </div>
                 </div>
 
@@ -940,6 +917,15 @@ function EmployeeModal({
                     placeholder="Nhập bộ phận mới..."
                   />
                   <SelectOrCreateField
+                    label="Team"
+                    name="team"
+                    value={formData.team}
+                    options={teamOptions}
+                    onChange={handleChange}
+                    disabled={!editable}
+                    placeholder="Nhập team mới..."
+                  />
+                  <SelectOrCreateField
                     label="Vị trí"
                     name="vi_tri"
                     value={formData.vi_tri}
@@ -948,6 +934,18 @@ function EmployeeModal({
                     disabled={!editable}
                     placeholder="Nhập vị trí mới..."
                   />
+                  <div className="form-group">
+                    <label>Leader</label>
+                    <select
+                      name="is_leader"
+                      value={formData.is_leader ? 'yes' : 'no'}
+                      onChange={(event) => setFormData({ ...formData, is_leader: event.target.value === 'yes' })}
+                      disabled={!editable}
+                    >
+                      <option value="no">Không</option>
+                      <option value="yes">Có</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="form-row">
