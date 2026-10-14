@@ -317,69 +317,42 @@ const listAttendanceNameCandidates = async (field, prefix) => {
 export const fbGetAttendanceByEmployee = async (employee = {}) => {
   const profile = typeof employee === 'object' && employee !== null
     ? employee
-    : { id: employee }
-  const ownerId = String(profile.id || '').trim()
-  const employeeCode = String(profile.employeeId || profile.employee_id || profile.username || '').trim()
+    : { ho_va_ten: employee }
   const employeeName = String(profile.ho_va_ten || profile.name || profile.fullName || '').trim()
-  const identities = [...new Set([ownerId, employeeCode].filter(Boolean))]
-  if (!identities.length) return null
+  if (!employeeName) return null
 
-  // Older attendance imports stored the business employee code in employeeId,
-  // while current records use the users table UUID and keep the code in employeeCode.
-  const identityQueries = [
-    ...identities.map(identity =>
-      supabase
-        .from('hr_records')
-        .select('id, data')
-        .eq('collection', 'attendanceLogs')
-        .contains('data', { employeeId: identity })
-    ),
-    ...(employeeCode ? [
-      supabase
-        .from('hr_records')
-        .select('id, data')
-        .eq('collection', 'attendanceLogs')
-        .contains('data', { employeeCode })
-    ] : []),
-  ]
   const rows = new Map()
   const addQueryResults = results => results.forEach(({ data, error }) => {
     if (error) throw error
     ;(data || []).forEach(row => rows.set(row.id, row))
   })
-  addQueryResults(await Promise.all(identityQueries))
+  const nameFields = ['employeeName', 'sourceEmployeeName', 'machineName', 'tenTheoMayChamCong']
+  const nameQueries = nameFields.map(field =>
+    supabase
+      .from('hr_records')
+      .select('id, data')
+      .eq('collection', 'attendanceLogs')
+      .contains('data', { [field]: employeeName })
+  )
+  addQueryResults(await Promise.all(nameQueries))
 
-  // A few legacy/manual entries only kept the employee's name. Use that as a
-  // final fallback when there are no rows under this profile's ID or code.
-  if (!rows.size && employeeName) {
-    const nameQueries = ['employeeName', 'sourceEmployeeName', 'machineName', 'tenTheoMayChamCong'].map(field =>
-      supabase
-        .from('hr_records')
-        .select('id, data')
-        .eq('collection', 'attendanceLogs')
-        .contains('data', { [field]: employeeName })
-    )
-    addQueryResults(await Promise.all(nameQueries))
-
-    // Exact name matching can miss spelling/diacritic differences such as
-    // "Vinh" vs "Vĩnh". Search by the stable start of the given name, then
-    // compare normalized full names before accepting any legacy row.
-    if (!rows.size) {
-      const givenName = employeeName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().match(/[a-z0-9]+/g)?.at(-1) || ''
-      const givenNamePrefix = normalizedAttendanceName(givenName).slice(0, 2)
-      if (givenNamePrefix.length === 2) {
-        const candidateRows = await Promise.all(
-          ['employeeName', 'sourceEmployeeName', 'machineName', 'tenTheoMayChamCong']
-            .map(field => listAttendanceNameCandidates(field, givenNamePrefix))
-        )
-        candidateRows.flat().forEach(row => {
-          const data = row.data || {}
-          const candidateNames = [data.employeeName, data.sourceEmployeeName, data.machineName, data.tenTheoMayChamCong]
-          if (candidateNames.some(name => matchesAttendanceName(name, employeeName))) {
-            rows.set(row.id, row)
-          }
-        })
-      }
+  // Exact name matching can miss spelling/diacritic differences such as
+  // "Vinh" vs "Vĩnh". Search by the stable start of the given name, then
+  // compare normalized full names before accepting any legacy row.
+  if (!rows.size) {
+    const givenName = employeeName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().match(/[a-z0-9]+/g)?.at(-1) || ''
+    const givenNamePrefix = normalizedAttendanceName(givenName).slice(0, 2)
+    if (givenNamePrefix.length === 2) {
+      const candidateRows = await Promise.all(
+        nameFields.map(field => listAttendanceNameCandidates(field, givenNamePrefix))
+      )
+      candidateRows.flat().forEach(row => {
+        const data = row.data || {}
+        const candidateNames = nameFields.map(field => data[field])
+        if (candidateNames.some(name => matchesAttendanceName(name, employeeName))) {
+          rows.set(row.id, row)
+        }
+      })
     }
   }
   const prefix = 'attendanceLogs::'
