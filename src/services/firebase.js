@@ -263,6 +263,57 @@ export const fbGet = async (path) => {
   return null
 }
 
+const normalizedAttendanceName = value =>
+  String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+const attendanceNameSimilarity = (left, right) => {
+  if (!left || !right) return 0
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i]
+    for (let j = 1; j <= right.length; j += 1) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)
+      )
+    }
+    previous = current
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length)
+}
+
+const matchesAttendanceName = (candidate, profileName) => {
+  const target = normalizedAttendanceName(profileName)
+  const value = normalizedAttendanceName(candidate)
+  if (!target || !value) return false
+  if (target === value) return true
+
+  const targetWords = String(profileName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().match(/[a-z0-9]+/g) || []
+  const valueWords = String(candidate || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().match(/[a-z0-9]+/g) || []
+  const sameNameEnds = targetWords.length > 1 && valueWords.length > 1 &&
+    targetWords[0] === valueWords[0] && targetWords.at(-1) === valueWords.at(-1)
+  return sameNameEnds && attendanceNameSimilarity(target, value) >= 0.75
+}
+
+const listAttendanceNameCandidates = async (field, prefix) => {
+  const pageSize = 1000
+  const rows = []
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('hr_records')
+      .select('id, data')
+      .eq('collection', 'attendanceLogs')
+      .ilike(`data->>${field}`, `%${prefix}%`)
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    rows.push(...(data || []))
+    if (!data || data.length < pageSize) break
+  }
+  return rows
+}
+
 export const fbGetAttendanceByEmployee = async (employee = {}) => {
   const profile = typeof employee === 'object' && employee !== null
     ? employee
@@ -309,6 +360,27 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
         .contains('data', { [field]: employeeName })
     )
     addQueryResults(await Promise.all(nameQueries))
+
+    // Exact name matching can miss spelling/diacritic differences such as
+    // "Vinh" vs "Vĩnh". Search by the stable start of the given name, then
+    // compare normalized full names before accepting any legacy row.
+    if (!rows.size) {
+      const givenName = employeeName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().match(/[a-z0-9]+/g)?.at(-1) || ''
+      const givenNamePrefix = normalizedAttendanceName(givenName).slice(0, 2)
+      if (givenNamePrefix.length === 2) {
+        const candidateRows = await Promise.all(
+          ['employeeName', 'sourceEmployeeName', 'machineName', 'tenTheoMayChamCong']
+            .map(field => listAttendanceNameCandidates(field, givenNamePrefix))
+        )
+        candidateRows.flat().forEach(row => {
+          const data = row.data || {}
+          const candidateNames = [data.employeeName, data.sourceEmployeeName, data.machineName, data.tenTheoMayChamCong]
+          if (candidateNames.some(name => matchesAttendanceName(name, employeeName))) {
+            rows.set(row.id, row)
+          }
+        })
+      }
+    }
   }
   const prefix = 'attendanceLogs::'
   return Object.fromEntries([...rows.values()].map(row => [row.id.startsWith(prefix) ? row.id.slice(prefix.length) : row.id, row.data || {}]))
