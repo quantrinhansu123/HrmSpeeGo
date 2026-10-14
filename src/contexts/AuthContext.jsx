@@ -46,6 +46,18 @@ const profileFromAccount = row => {
   }
 }
 
+const refreshAccountProfile = async storedProfile => {
+  if (!storedProfile?.id) return storedProfile
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', storedProfile.id)
+    .maybeSingle()
+  if (error) throw error
+  const profile = profileFromAccount(data)
+  return profile || storedProfile
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -61,7 +73,20 @@ export function AuthProvider({ children }) {
           setUser(profile)
           return
         }
-        if (active) setUser(readLocalSession())
+        const storedProfile = readLocalSession()
+        if (storedProfile && active) {
+          try {
+            const currentProfile = await refreshAccountProfile(storedProfile)
+            if (!active) return
+            writeLocalSession(currentProfile)
+            setUser(currentProfile)
+          } catch (error) {
+            console.warn('KhÃ´ng lÃ m má»›i Ä‘Æ°á»£c há»“ sÆ¡ tÃ i khoáº£n, dÃ¹ng dá»¯ liá»‡u Ä‘Ã£ lÆ°u:', error)
+            if (active) setUser(storedProfile)
+          }
+        } else if (active) {
+          setUser(storedProfile)
+        }
       } catch (error) {
         console.error('Không tải được hồ sơ đăng nhập:', error)
         if (active) setUser(readLocalSession())
