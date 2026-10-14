@@ -269,12 +269,13 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
     : { id: employee }
   const ownerId = String(profile.id || '').trim()
   const employeeCode = String(profile.employeeId || profile.employee_id || profile.username || '').trim()
+  const employeeName = String(profile.ho_va_ten || profile.name || profile.fullName || '').trim()
   const identities = [...new Set([ownerId, employeeCode].filter(Boolean))]
   if (!identities.length) return null
 
   // Older attendance imports stored the business employee code in employeeId,
   // while current records use the users table UUID and keep the code in employeeCode.
-  const queries = [
+  const identityQueries = [
     ...identities.map(identity =>
       supabase
         .from('hr_records')
@@ -288,14 +289,27 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
         .select('id, data')
         .eq('collection', 'attendanceLogs')
         .contains('data', { employeeCode })
-    ] : [])
+    ] : []),
   ]
-  const results = await Promise.all(queries)
   const rows = new Map()
-  results.forEach(({ data, error }) => {
+  const addQueryResults = results => results.forEach(({ data, error }) => {
     if (error) throw error
     ;(data || []).forEach(row => rows.set(row.id, row))
   })
+  addQueryResults(await Promise.all(identityQueries))
+
+  // A few legacy/manual entries only kept the employee's name. Use that as a
+  // final fallback when there are no rows under this profile's ID or code.
+  if (!rows.size && employeeName) {
+    const nameQueries = ['employeeName', 'sourceEmployeeName', 'machineName', 'tenTheoMayChamCong'].map(field =>
+      supabase
+        .from('hr_records')
+        .select('id, data')
+        .eq('collection', 'attendanceLogs')
+        .contains('data', { [field]: employeeName })
+    )
+    addQueryResults(await Promise.all(nameQueries))
+  }
   const prefix = 'attendanceLogs::'
   return Object.fromEntries([...rows.values()].map(row => [row.id.startsWith(prefix) ? row.id.slice(prefix.length) : row.id, row.data || {}]))
 }
