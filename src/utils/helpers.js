@@ -158,6 +158,7 @@ export const mapUserToApp = (user) => {
     company_name: user.company_name || user.companyName || '',
     companyName: user.companyName || user.company_name || '',
     employeeId: user.employee_id || '',
+    username: user.username || '',
     ho_va_ten: user.name || '',
     email: user.email || '',
     sđt: user.phone || '',
