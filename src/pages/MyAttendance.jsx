@@ -29,7 +29,7 @@ function MyAttendance() {
     let active = true
     setLoading(true)
     Promise.all([
-      fbGetAttendanceByEmployee(employeeId),
+      fbGetAttendanceByEmployee(user),
       fbGet('hr/attendanceSettings/default')
     ]).then(([data, storedSettings]) => {
       if (!active) return
