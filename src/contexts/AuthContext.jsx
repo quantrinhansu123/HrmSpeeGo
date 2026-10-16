@@ -89,6 +89,9 @@ export function AuthProvider({ children }) {
         }
       } catch (error) {
         console.error('Không tải được hồ sơ đăng nhập:', error)
+        if (error?.code === 'PGRST116') {
+          await supabase.auth.signOut().catch(() => {})
+        }
         if (active) setUser(readLocalSession())
       } finally {
         if (active) setLoading(false)
@@ -136,7 +139,8 @@ export function AuthProvider({ children }) {
 
     if (data?.password_matched) {
       const email = String(data.email || '').trim()
-      if (email) {
+      const hasLinkedAuthAccount = Boolean(data.auth_user_id)
+      if (email && hasLinkedAuthAccount) {
         const { error: authError } = await supabase.auth.signInWithPassword({
           email,
           password: cleanPassword
@@ -153,6 +157,7 @@ export function AuthProvider({ children }) {
           }
         }
       }
+      await supabase.auth.signOut().catch(() => {})
       const profile = profileFromAccount(data)
       if (!profile) throw new Error(INVALID_LOGIN)
       writeLocalSession(profile)
