@@ -25,7 +25,6 @@ import {
   getAttendanceHoliday,
   STANDARD_WORK_MINUTES
 } from '../utils/attendanceCalculations'
-import { canManageAttendance, isCoreStaffUser } from '../utils/staffAccess'
 import { openAttendancePrintWindow } from '../utils/attendancePdf'
 import { resolveAttendanceDepartment } from '../utils/attendanceDepartment'
 import './AttendancePreview.css'
@@ -266,8 +265,8 @@ function AttendancePreview() {
     employees: {},
     kpis: []
   })
-  const canEditWorkdays = canManageAttendance(user)
-  const canEditNotes = isCoreStaffUser(user)
+  const canEditWorkdays = true
+  const canEditNotes = true
   const savedDetailNotes = normalizeDailyNotes(attendanceNotes[String(detailRow?.employeeId)])
   const hasUnsavedNotes = Boolean(detailRow) &&
     JSON.stringify(normalizeDailyNotes(noteDrafts)) !== JSON.stringify(savedDetailNotes)
