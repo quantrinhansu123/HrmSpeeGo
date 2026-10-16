@@ -396,6 +396,7 @@ function AttendancePreview() {
   useEffect(() => {
     if (!hasSnapshot || !month || !companyId) return undefined
     let cancelled = false
+    if (!canEditWorkdays) return undefined
     const loadPayroll = async () => {
       const [penalties, leave, employees, kpis] = await Promise.all([
         getPenaltiesByMonth(month).catch(() => []),
@@ -415,7 +416,7 @@ function AttendancePreview() {
     return () => {
       cancelled = true
     }
-  }, [companyId, hasSnapshot, month])
+  }, [canEditWorkdays, companyId, hasSnapshot, month])
 
   const payrollEmployees = useMemo(
     () => new Map(Object.entries(payrollBundle.employees || {})),
@@ -712,6 +713,7 @@ function AttendancePreview() {
   }, [excelPage, excelTotalPages])
 
   const handleOpenImport = async () => {
+    if (!canEditWorkdays) return
     setImportEmployees([])
     setImportLogs([])
     setImportEmployeeMappings({})
@@ -812,6 +814,7 @@ function AttendancePreview() {
   }, [applySnapshot, companyId, companyName])
 
   const handleSaveManualWorkday = async (employeeId, day, rawValue) => {
+    if (!canEditWorkdays) return
     const parsed = parseManualWorkdayInput(rawValue)
     if (!parsed.valid) {
       alert(parsed.error)
@@ -871,6 +874,7 @@ function AttendancePreview() {
   }
 
   const handleSaveAttendanceNotes = async () => {
+    if (!canEditNotes) return
     if (!detailRow || !hasUnsavedNotes || noteSaving) return
     const employeeKey = String(detailRow.employeeId)
     const nextEmployeeNotes = normalizeDailyNotes(noteDrafts)
@@ -928,6 +932,7 @@ function AttendancePreview() {
   }
 
   const handleSummarize = async () => {
+    if (!canEditWorkdays) return
     const targetMonth = month || currentMonthValue()
     if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
       alert('Tháng không hợp lệ. Dùng định dạng YYYY-MM.')
@@ -950,6 +955,7 @@ function AttendancePreview() {
   }
 
   const handleToggleConfirm = async (employeeId, checked) => {
+    if (!canEditWorkdays) return
     const targetMonth = month || currentMonthValue()
     const key = String(employeeId)
     const previous = confirmations
@@ -972,6 +978,7 @@ function AttendancePreview() {
   const allConfirmed = rows.length > 0 && rows.every(row => confirmations[String(row.employeeId)])
 
   const handleToggleConfirmAll = async (checked) => {
+    if (!canEditWorkdays) return
     const targetMonth = month || currentMonthValue()
     const previous = confirmations
     const next = checked
@@ -996,6 +1003,7 @@ function AttendancePreview() {
     clearConfirmations = true,
     clearManuals = true
   }) => {
+    if (!canEditWorkdays) return
     if (scope === 'month') {
       if (!targetMonth) throw new Error('Vui lòng chọn tháng cần xóa.')
 
@@ -1279,14 +1287,16 @@ function AttendancePreview() {
             </select>
           </label>
         )}
-        <button
-          type="button"
-          className="attendance-preview-import-btn"
-          onClick={handleOpenImport}
-          disabled={summarizing}
-        >
-          Tải Excel & Lưu bảng công
-        </button>
+        {canEditWorkdays && (
+          <button
+            type="button"
+            className="attendance-preview-import-btn"
+            onClick={handleOpenImport}
+            disabled={summarizing}
+          >
+            Tải Excel & Lưu bảng công
+          </button>
+        )}
         <MobileActions>
         <button
           type="button"
@@ -1297,7 +1307,7 @@ function AttendancePreview() {
         >
           {excelLogsLoading ? 'Đang tải...' : 'Xem bảng chi tiết'}
         </button>
-        {hasSnapshot && (
+        {hasSnapshot && canEditWorkdays && (
           <button type="button" className="attendance-preview-summarize" onClick={handleSummarize} disabled={summarizing}>
             {summarizing ? 'Đang lưu...' : 'Tổng hợp lại'}
           </button>
@@ -1331,13 +1341,13 @@ function AttendancePreview() {
     {!hasSnapshot ? (
       <div className="attendance-preview-empty">
         <p>Tháng {month} chưa có bảng công đã lưu.</p>
-        <p>Bấm <strong>Tải Excel & Lưu bảng công</strong> để đẩy file Excel lên — hệ thống sẽ đồng bộ và lưu bảng công ngay.</p>
+        {canEditWorkdays && <p>Bấm <strong>Tải Excel & Lưu bảng công</strong> để đẩy file Excel lên — hệ thống sẽ đồng bộ và lưu bảng công ngay.</p>}
       </div>
     ) : (
       <>
         <div className="attendance-preview-views" role="tablist" aria-label="Loại bảng">
           <button type="button" className={sheet === 'attendance' ? 'is-active' : ''} onClick={() => setSheet('attendance')}>Bảng công</button>
-          <button type="button" className={sheet === 'payroll' ? 'is-active' : ''} onClick={() => setSheet('payroll')}>Bảng lương</button>
+          {canEditWorkdays && <button type="button" className={sheet === 'payroll' ? 'is-active' : ''} onClick={() => setSheet('payroll')}>Bảng lương</button>}
         </div>
         {sheet === 'payroll' ? (
           <PayrollTable
@@ -1354,7 +1364,7 @@ function AttendancePreview() {
           <thead>
             <tr className="groups">
               <th>STT</th>
-              <th>
+              {canEditWorkdays && <th>
                 <label className="attendance-confirm-cell">
                   <input
                     type="checkbox"
@@ -1365,7 +1375,7 @@ function AttendancePreview() {
                   />
                   <span>Xác nhận</span>
                 </label>
-              </th>
+              </th>}
               <th>Họ tên</th>
               <th>Công ty</th>
               <th>Bộ phận</th>
@@ -1383,7 +1393,7 @@ function AttendancePreview() {
             {rows.map((row, index) => (
               <tr key={row.employeeId} className={confirmations[String(row.employeeId)] ? 'is-confirmed' : ''}>
                 <td>{index + 1}</td>
-                <td>
+                {canEditWorkdays && <td>
                   <input
                     type="checkbox"
                     className="attendance-confirm-check"
@@ -1392,7 +1402,7 @@ function AttendancePreview() {
                     onChange={event => handleToggleConfirm(row.employeeId, event.target.checked)}
                     aria-label={`Xác nhận ${row.employeeName || ''}`}
                   />
-                </td>
+                </td>}
                 <td
                   className="name is-clickable"
                   onClick={() => openDetailRow(row)}
@@ -1444,7 +1454,7 @@ function AttendancePreview() {
                 <button type="button" onClick={() => openDetailRow(row)}>
                   {row.employeeName || row.employeeCode || 'Nhân viên'}
                 </button>
-                <label>
+                {canEditWorkdays && <label>
                   <input
                     type="checkbox"
                     checked={Boolean(confirmations[String(row.employeeId)])}
@@ -1453,7 +1463,7 @@ function AttendancePreview() {
                     aria-label={`Xác nhận ${row.employeeName || ''}`}
                   />
                   Xác nhận
-                </label>
+                </label>}
               </div>
               <p>{row.displayDepartment || row.department || 'Chưa có bộ phận'} · {row.shift || 'Chưa có ca'}</p>
               <div className="attendance-preview-mobile-card__stats">

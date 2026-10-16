@@ -32,7 +32,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
 
   const employeeItems = [
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
-    { path: '/bang-cong', icon: 'fas fa-calendar-check', label: 'Bảng công' },
+    { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng công' },
     { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
   ]

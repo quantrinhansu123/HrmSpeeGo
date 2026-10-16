@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { getDefaultLandingPath } from '../utils/staffAccess'
 import './EmployeeLogin.css'
@@ -10,6 +10,7 @@ function EmployeeLogin() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { login, logout } = useAuth()
+  const location = useLocation()
   const navigate = useNavigate()
 
   const handleSubmit = async (event) => {
@@ -24,7 +25,8 @@ function EmployeeLogin() {
         setError('Tài khoản chưa được cấp quyền sử dụng hệ thống.')
         return
       }
-      navigate(destination, { replace: true })
+      const requestedPath = location.state?.from?.pathname
+      navigate(requestedPath === '/bang-cong-preview' ? requestedPath : destination, { replace: true })
     } catch (loginError) {
       console.error('Employee login error:', loginError)
       setError('Tên tài khoản hoặc mật khẩu không chính xác')

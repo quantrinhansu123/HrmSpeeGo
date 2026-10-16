@@ -29,7 +29,7 @@ function Login() {
         return
       }
       if (profile?.role === 'user') {
-        navigate('/bang-cong', { replace: true })
+        navigate(from === '/bang-cong-preview' ? from : '/bang-cong', { replace: true })
         return
       }
       if (isCoreStaffUser(profile)) {

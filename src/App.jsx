@@ -15,7 +15,6 @@ const HolidaySettings = lazy(() => import('./pages/HolidaySettings'))
 const LeaveBoard = lazy(() => import('./pages/LeaveBoard'))
 const LeaveDays = lazy(() => import('./pages/LeaveDays'))
 const Login = lazy(() => import('./pages/Login'))
-const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
 
 import ErrorBoundary from './components/ErrorBoundary'
@@ -38,14 +37,14 @@ function App() {
               <Route path="/approvals" element={<Approvals />} />
             </Route>
           </Route>
-          <Route element={<ProtectedRoute allowedRoles={['user']} />}>
+          <Route element={<ProtectedRoute>}>
             <Route element={<AppLayout />}>
-              <Route path="/bang-cong" element={<MyAttendance />} />
+              <Route path="/bang-cong-preview" element={<AttendancePreview />} />
+              <Route path="/bang-cong" element={<Navigate to="/bang-cong-preview" replace />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={STAFF_ROLES} allowAccounting />}>
             <Route element={<AppLayout />}>
-              <Route path="/bang-cong-preview" element={<AttendancePreview />} />
               <Route path="/holiday-settings" element={<HolidaySettings />} />
             </Route>
           </Route>

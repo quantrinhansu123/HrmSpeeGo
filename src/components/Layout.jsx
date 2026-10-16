@@ -16,7 +16,7 @@ function Layout({ children }) {
   const isStaff = isCoreStaffUser(user)
   const mobileLinks = [
     { to: '/cham-cong-online', icon: 'fa-camera', label: 'Chấm công' },
-    { to: user?.role === 'user' ? '/bang-cong' : '/bang-cong-preview', icon: 'fa-calendar-check', label: 'Bảng công' },
+    { to: '/bang-cong-preview', icon: 'fa-calendar-check', label: 'Bảng công' },
     ...(isStaff ? [{ to: '/bang-phat', icon: 'fa-file-invoice-dollar', label: 'Bảng phạt' }] : []),
     { to: '/approvals', icon: 'fa-stamp', label: 'Đề xuất' }
   ]
