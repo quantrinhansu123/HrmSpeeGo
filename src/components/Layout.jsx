@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { isCoreStaffUser } from '../utils/staffAccess'
+import { isAccountingUser, isCoreStaffUser } from '../utils/staffAccess'
 import Header from './Header'
 import Sidebar from './Sidebar'
 
@@ -14,9 +14,10 @@ function Layout({ children }) {
   const isEmployee = ['/bang-cong', '/cham-cong-online', '/ngay-nghi-phep'].includes(location.pathname)
   const [menuOpen, setMenuOpen] = useState(false)
   const isStaff = isCoreStaffUser(user)
+  const isPersonalAttendance = String(user?.role || '').toLowerCase() === 'user' && !isAccountingUser(user)
   const mobileLinks = [
     { to: '/cham-cong-online', icon: 'fa-camera', label: 'Chấm công' },
-    { to: '/bang-cong-preview', icon: 'fa-calendar-check', label: 'Bảng công' },
+    { to: isPersonalAttendance ? '/bang-cong' : '/bang-cong-preview', icon: 'fa-calendar-check', label: 'Bảng công' },
     ...(isStaff ? [{ to: '/bang-phat', icon: 'fa-file-invoice-dollar', label: 'Bảng phạt' }] : []),
     { to: '/approvals', icon: 'fa-stamp', label: 'Đề xuất' }
   ]

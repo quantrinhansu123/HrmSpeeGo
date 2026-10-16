@@ -319,13 +319,30 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
     ? employee
     : { ho_va_ten: employee }
   const employeeName = String(profile.ho_va_ten || profile.name || profile.fullName || '').trim()
-  if (!employeeName) return null
+  const employeeId = String(profile.id || profile.employeeId || profile.employee_id || '').trim()
+  if (!employeeId && !employeeName) return null
 
   const rows = new Map()
   const addQueryResults = results => results.forEach(({ data, error }) => {
     if (error) throw error
     ;(data || []).forEach(row => rows.set(row.id, row))
   })
+  if (employeeId) {
+    const { data, error } = await supabase
+      .from('hr_records')
+      .select('id, data')
+      .eq('collection', 'attendanceLogs')
+      .eq('data->>employeeId', employeeId)
+      .order('id', { ascending: true })
+    if (error) throw error
+    ;(data || []).forEach(row => rows.set(row.id, row))
+  }
+  if (rows.size) {
+    const prefix = 'attendanceLogs::'
+    return Object.fromEntries([...rows.values()].map(row => [row.id.startsWith(prefix) ? row.id.slice(prefix.length) : row.id, row.data || {}]))
+  }
+  if (!employeeName) return null
+
   const nameFields = ['employeeName', 'sourceEmployeeName', 'machineName', 'tenTheoMayChamCong']
   const nameQueries = nameFields.map(field =>
     supabase
