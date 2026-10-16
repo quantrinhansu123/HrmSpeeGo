@@ -37,7 +37,7 @@ function App() {
               <Route path="/approvals" element={<Approvals />} />
             </Route>
           </Route>
-          <Route element={<ProtectedRoute>}>
+          <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/bang-cong-preview" element={<AttendancePreview />} />
               <Route path="/bang-cong" element={<Navigate to="/bang-cong-preview" replace />} />
