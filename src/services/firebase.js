@@ -328,14 +328,19 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
     ;(data || []).forEach(row => rows.set(row.id, row))
   })
   if (employeeId) {
-    const { data, error } = await supabase
-      .from('hr_records')
-      .select('id, data')
-      .eq('collection', 'attendanceLogs')
-      .eq('data->>employeeId', employeeId)
-      .order('id', { ascending: true })
-    if (error) throw error
-    ;(data || []).forEach(row => rows.set(row.id, row))
+    const pageSize = 1000
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('hr_records')
+        .select('id, data')
+        .eq('collection', 'attendanceLogs')
+        .eq('data->>employeeId', employeeId)
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1)
+      if (error) throw error
+      ;(data || []).forEach(row => rows.set(row.id, row))
+      if (!data || data.length < pageSize) break
+    }
   }
   if (rows.size) {
     const prefix = 'attendanceLogs::'
