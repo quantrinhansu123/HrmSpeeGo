@@ -48,6 +48,11 @@ function MyAttendance() {
   }, [employeeId])
 
   const months = useMemo(() => [...new Set(logs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().reverse(), [logs])
+  const monthSummaries = useMemo(() => months.map(value => ({
+    month: value,
+    summary: buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month: value, attendanceSettings })
+      .find(row => String(row.employeeId) === employeeId)
+  })), [attendanceSettings, employeeId, logs, months, user])
   const monthLogs = useMemo(() => logs
     .filter(log => dateValue(log).startsWith(month))
     .map(log => applyCalculatedAttendanceTiming(log, user, attendanceSettings))
@@ -66,6 +71,27 @@ function MyAttendance() {
       {loading ? <div className="card my-attendance__state">Đang tải dữ liệu...</div> : error ? <div className="card my-attendance__state is-error">{error}</div> : <>
         <section className="my-attendance__stats">
           <div className="card"><span>Ngày có dữ liệu</span><strong>{summary?.attendanceDays || 0}</strong></div><div className="card"><span>Tổng công</span><strong>{summary?.workdays || 0}</strong></div><div className="card"><span>Tổng giờ</span><strong>{summary?.totalHours || 0}</strong></div><div className="card"><span>Đi muộn</span><strong>{summary?.lateCount || 0} lần</strong><small>{summary?.lateMinutes || 0} phút</small></div><div className="card"><span>Về sớm</span><strong>{summary?.earlyCount || 0} lần</strong><small>{summary?.earlyMinutes || 0} phút</small></div><div className="card"><span>Quên chấm</span><strong>{summary?.missingPunchCount || 0}</strong></div>
+        </section>
+        <section className="card my-attendance__summary-card">
+          <h3>Tổng hợp công theo tháng</h3>
+          <div className="my-attendance__summary-table-wrap">
+            <table>
+              <thead><tr><th>Tháng</th><th>Ngày có dữ liệu</th><th>Tổng công</th><th>Tổng giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Quên chấm</th></tr></thead>
+              <tbody>
+                {monthSummaries.length ? monthSummaries.map(({ month: summaryMonth, summary: monthlySummary }) => (
+                  <tr key={summaryMonth} className={month === summaryMonth ? 'is-selected' : ''}>
+                    <td><button type="button" className="my-attendance__month-link" onClick={() => setMonth(summaryMonth)} aria-pressed={month === summaryMonth}>{summaryMonth}</button></td>
+                    <td>{monthlySummary?.attendanceDays || 0}</td>
+                    <td>{monthlySummary?.workdays || 0}</td>
+                    <td>{monthlySummary?.totalHours || 0}</td>
+                    <td>{monthlySummary?.lateCount || 0} ({monthlySummary?.lateMinutes || 0} phút)</td>
+                    <td>{monthlySummary?.earlyCount || 0} ({monthlySummary?.earlyMinutes || 0} phút)</td>
+                    <td>{monthlySummary?.missingPunchCount || 0}</td>
+                  </tr>
+                )) : <tr><td colSpan="7" className="my-attendance__empty">Chưa có dữ liệu tổng hợp.</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </section>
         <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Time (Check-in)</th><th>TimeCheckout</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th></tr></thead><tbody>
           {monthLogs.length ? monthLogs.map(log => {

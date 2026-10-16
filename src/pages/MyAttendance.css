@@ -17,6 +17,14 @@
 .my-attendance__state.is-error { color: #b42318; background: #fef2f2; }
 .my-attendance__table-card { padding: 0; overflow: hidden; }
 .my-attendance__table-card h3 { margin: 0; padding: 16px 18px; border-bottom: 1px solid #e2e8f0; }
+.my-attendance__summary-card { padding: 0; overflow: hidden; margin-bottom: 16px; }
+.my-attendance__summary-card h3 { margin: 0; padding: 16px 18px; border-bottom: 1px solid #e2e8f0; }
+.my-attendance__summary-table-wrap { width: 100%; overflow-x: auto; }
+.my-attendance__summary-table-wrap table { width: 100%; min-width: 760px; border-collapse: collapse; }
+.my-attendance__summary-table-wrap th, .my-attendance__summary-table-wrap td { padding: 11px 13px; border-bottom: 1px solid #e2e8f0; text-align: center; white-space: nowrap; }
+.my-attendance__summary-table-wrap th { color: #fff; background: #0b3d73; }
+.my-attendance__summary-table-wrap tr.is-selected td { background: #eff6ff; }
+.my-attendance__month-link { padding: 0; border: 0; color: #0b3d73; background: transparent; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .my-attendance__table-wrap { width: 100%; overflow-x: auto; }
 .my-attendance__table-wrap table { width: 100%; min-width: 820px; border-collapse: collapse; }
 .my-attendance__table-wrap th, .my-attendance__table-wrap td { padding: 11px 13px; border-bottom: 1px solid #e2e8f0; text-align: center; white-space: nowrap; }
