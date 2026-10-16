@@ -12,6 +12,7 @@ import './MyAttendance.css'
 
 const dateValue = log => String(log?.date || log?.timestamp || '').slice(0, 10)
 const numberValue = value => Number.isFinite(Number(value)) ? Number(value) : 0
+const decimalValue = value => value === null || value === undefined || value === '' || !Number.isFinite(Number(value)) ? '—' : Number(value).toFixed(2)
 const timeValue = value => {
   return formatAttendanceTime(value) || '—'
 }
@@ -70,7 +71,7 @@ function MyAttendance() {
       </section>
       {loading ? <div className="card my-attendance__state">Đang tải dữ liệu...</div> : error ? <div className="card my-attendance__state is-error">{error}</div> : <>
         <section className="my-attendance__stats">
-          <div className="card"><span>Ngày có dữ liệu</span><strong>{summary?.attendanceDays || 0}</strong></div><div className="card"><span>Tổng công</span><strong>{summary?.workdays || 0}</strong></div><div className="card"><span>Tổng giờ</span><strong>{summary?.totalHours || 0}</strong></div><div className="card"><span>Đi muộn</span><strong>{summary?.lateCount || 0} lần</strong><small>{summary?.lateMinutes || 0} phút</small></div><div className="card"><span>Về sớm</span><strong>{summary?.earlyCount || 0} lần</strong><small>{summary?.earlyMinutes || 0} phút</small></div><div className="card"><span>Quên chấm</span><strong>{summary?.missingPunchCount || 0}</strong></div>
+          <div className="card"><span>Ngày có dữ liệu</span><strong>{summary?.attendanceDays || 0}</strong></div><div className="card"><span>Tổng công</span><strong>{decimalValue(summary?.workdays ?? 0)}</strong></div><div className="card"><span>Tổng giờ</span><strong>{decimalValue(summary?.totalHours ?? 0)}</strong></div><div className="card"><span>Đi muộn</span><strong>{summary?.lateCount || 0} lần</strong><small>{summary?.lateMinutes || 0} phút</small></div><div className="card"><span>Về sớm</span><strong>{summary?.earlyCount || 0} lần</strong><small>{summary?.earlyMinutes || 0} phút</small></div><div className="card"><span>Quên chấm</span><strong>{summary?.missingPunchCount || 0}</strong></div>
         </section>
         <section className="card my-attendance__summary-card">
           <h3>Tổng hợp công theo tháng</h3>
@@ -82,8 +83,8 @@ function MyAttendance() {
                   <tr key={summaryMonth} className={month === summaryMonth ? 'is-selected' : ''}>
                     <td><button type="button" className="my-attendance__month-link" onClick={() => setMonth(summaryMonth)} aria-pressed={month === summaryMonth}>{summaryMonth}</button></td>
                     <td>{monthlySummary?.attendanceDays || 0}</td>
-                    <td>{monthlySummary?.workdays || 0}</td>
-                    <td>{monthlySummary?.totalHours || 0}</td>
+                    <td>{decimalValue(monthlySummary?.workdays ?? 0)}</td>
+                    <td>{decimalValue(monthlySummary?.totalHours ?? 0)}</td>
                     <td>{monthlySummary?.lateCount || 0} ({monthlySummary?.lateMinutes || 0} phút)</td>
                     <td>{monthlySummary?.earlyCount || 0} ({monthlySummary?.earlyMinutes || 0} phút)</td>
                     <td>{monthlySummary?.missingPunchCount || 0}</td>
@@ -96,7 +97,7 @@ function MyAttendance() {
         <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Time (Check-in)</th><th>TimeCheckout</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th></tr></thead><tbody>
           {monthLogs.length ? monthLogs.map(log => {
             const date = dateValue(log), hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
-            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{log.cong ?? '—'}</td><td>{hours || '—'}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td></tr>
+            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{decimalValue(log.cong)}</td><td>{decimalValue(hours)}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td></tr>
           }) : <tr><td colSpan="9" className="my-attendance__empty">Không có dữ liệu trong tháng này.</td></tr>}
         </tbody></table></div>
         <div className="my-attendance__mobile-list">
@@ -108,8 +109,8 @@ function MyAttendance() {
               <div className="my-attendance__mobile-day-grid">
                 <div><span>Giờ vào</span><strong>{timeValue(log.vao || log.checkIn)}</strong></div>
                 <div><span>Giờ ra</span><strong>{timeValue(log.ra || log.checkOut)}</strong></div>
-                <div><span>Công</span><strong>{log.cong ?? '—'}</strong></div>
-                <div><span>Giờ</span><strong>{hours || '—'}</strong></div>
+                <div><span>Công</span><strong>{decimalValue(log.cong)}</strong></div>
+                <div><span>Giờ</span><strong>{decimalValue(hours)}</strong></div>
               </div>
               {(numberValue(log.lateMinutes ?? log.vaoTre) > 0 || numberValue(log.earlyMinutes ?? log.raSom) > 0) && (
                 <p className="my-attendance__mobile-day-warning">
