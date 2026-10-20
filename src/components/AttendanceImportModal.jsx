@@ -1911,7 +1911,11 @@ function AttendanceImportModal({
           { date1904: Boolean(workbook.Workbook?.WBProps?.date1904) }
         )
         if (detailAnalysis.candidates.length === 0) {
-          throw new Error('File Excel chưa đúng định dạng bảng công đang được hỗ trợ.')
+          throw new Error(
+            'File Excel chưa đúng định dạng bảng công đang được hỗ trợ.\n' +
+            'Với bảng công theo tuần, hãy ghi khoảng ngày trong sheet (ví dụ: 8/10/2026 - 14/10/2026) ' +
+            'và đủ cột ngày tương ứng; hệ thống sẽ cập nhật đúng các ngày đó vào bảng công tháng.'
+          )
         }
         if (detailAnalysis.requiresSelection) {
           setMonthlySheetSelection({

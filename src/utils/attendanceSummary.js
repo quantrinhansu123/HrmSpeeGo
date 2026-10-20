@@ -218,16 +218,28 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   const hoursExact = Math.max(0, hours)
   const regularWorkdaysExact = Math.max(0, workdays)
   const extraWorkdaysExact = Math.max(0, extraWorkdays)
+  const dayWorkdaysExact = regularWorkdaysExact + extraWorkdaysExact
+  const isOnlineDay = logs.some(log => {
+    const mode = String(
+      log.workMode || log.workLocation || log.hinhThucLamViec || ''
+    ).toLowerCase()
+    return mode.includes('online') || mode.includes('remote') || String(log.source || '') === 'employee-online'
+  })
+  // Online days should count against the recalculated workdays, not only the
+  // stored cong field (which stays 0 until check-out completes).
+  const resolvedOnlineWorkdays = isOnlineDay
+    ? Math.max(onlineWorkdays, dayWorkdaysExact)
+    : onlineWorkdays
 
   return {
     hoursExact,
-    workdaysExact: regularWorkdaysExact + extraWorkdaysExact,
+    workdaysExact: dayWorkdaysExact,
     regularWorkdaysExact,
     extraWorkdaysExact,
     workedMinutes: Math.max(0, hoursExact * 60),
     regularMinutes: Math.min(Math.max(0, hoursExact * 60), standardMinutes),
     hours: roundDecimal(hoursExact),
-    workdays: roundDecimal(regularWorkdaysExact + extraWorkdaysExact),
+    workdays: roundDecimal(dayWorkdaysExact),
     regularWorkdays: roundDecimal(regularWorkdaysExact),
     extraWorkdays: roundDecimal(extraWorkdaysExact),
     overtimeHours: roundDecimal(Math.max(0, overtimeHours)),
@@ -238,7 +250,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     early: earlyMinutes > 0,
     missingPunch,
     unapprovedAbsence,
-    onlineWorkdays: Math.round(onlineWorkdays * 100) / 100,
+    onlineWorkdays: Math.round(resolvedOnlineWorkdays * 100) / 100,
     offlineWorkdays: Math.round(offlineWorkdays * 100) / 100,
     hasPunch,
     checkIn,

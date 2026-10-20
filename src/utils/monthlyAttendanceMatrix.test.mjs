@@ -191,6 +191,46 @@ test('stops before weekly statistics and violation-list sections', () => {
   assert.equal(extracted.employees.some(employee => employee.employeeName === 'Danh sách VP'), false)
 })
 
+test('accepts a weekly/partial date range without requiring the full month columns', () => {
+  const weekDays = [8, 9, 10, 11, 12, 13, 14]
+  const rows = createMatrix({
+    month: 10,
+    year: 2026,
+    title: 'BẢNG CÔNG TUẦN 2 T10/2026',
+    range: '8/10/2026 - 14/10/2026',
+    headerDays: weekDays,
+    employees: [{
+      stt: 1,
+      name: 'Nguyễn Văn A',
+      department: 'MKT',
+      shift: 'Ca ngày',
+      employmentType: 'Chính thức',
+      status: 'Đang làm',
+      totalWork: 5,
+      values: [1, 1, 1, 0.5, 1, 'X', 'X']
+    }]
+  })
+  const result = detectMonthlyAttendanceMatrix(rows)
+  const extracted = extractMonthlyAttendanceMatrix(rows, result)
+
+  assert.equal(result.matched, true)
+  assert.equal(result.isPartialRange, true)
+  assert.equal(result.yearMonth, '2026-10')
+  assert.equal(result.rangeStartDay, 8)
+  assert.equal(result.rangeEndDay, 14)
+  assert.deepEqual(result.dayColumns.map(column => column.day), weekDays)
+  assert.equal(result.errors.length, 0)
+  assert.deepEqual(extracted.attendanceRows.map(record => record.date), [
+    '2026-10-08',
+    '2026-10-09',
+    '2026-10-10',
+    '2026-10-11',
+    '2026-10-12',
+    '2026-10-13',
+    '2026-10-14'
+  ])
+})
+
 test('warns for missing department and shift without dropping the employee', () => {
   const rows = createMatrix({
     employees: [{ stt: 1, name: 'Nguyễn Văn B', department: '', shift: '', totalWork: 0 }]

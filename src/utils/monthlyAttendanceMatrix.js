@@ -89,7 +89,14 @@ const findDateRangeMonth = (rows, headerRowIndex) => {
       start.month === end.month &&
       start.day <= end.day
     ) {
-      return { year: start.year, month: start.month, source: 'date-range', rowIndex }
+      return {
+        year: start.year,
+        month: start.month,
+        startDay: start.day,
+        endDay: end.day,
+        source: 'date-range',
+        rowIndex
+      }
     }
     return { error: 'Khoảng ngày trong sheet không hợp lệ hoặc không thuộc cùng một tháng.' }
   }
@@ -117,31 +124,66 @@ const findTitleMonth = (rows, headerRowIndex) => {
 export const detectMonthlyAttendanceMonth = (rows = [], headerRowIndex = rows.length - 1) =>
   findDateRangeMonth(rows, headerRowIndex) || findTitleMonth(rows, headerRowIndex)
 
-const findDaySequence = (row, totalWorkColumn, expectedMonth = null) => {
-  const columns = []
-  let expectedDay = 1
-  let started = false
+const collectDayCandidates = (row, totalWorkColumn, expectedMonth = null) => {
+  const candidates = []
   let inferredMonth = null
 
   for (let columnIndex = totalWorkColumn + 1; columnIndex < (row || []).length; columnIndex += 1) {
     const fullDate = calendarDateHeader(row[columnIndex])
     const integer = exactPositiveInteger(row[columnIndex])
     const day = fullDate ? fullDate.day : (integer && integer <= 32 ? integer : null)
+    if (day === null) {
+      if (candidates.length) break
+      continue
+    }
     if (fullDate) {
       const headerMonth = { year: fullDate.year, month: fullDate.month }
-      if (expectedMonth && (headerMonth.year !== expectedMonth.year || headerMonth.month !== expectedMonth.month)) break
-      if (inferredMonth && (headerMonth.year !== inferredMonth.year || headerMonth.month !== inferredMonth.month)) break
+      if (expectedMonth && (headerMonth.year !== expectedMonth.year || headerMonth.month !== expectedMonth.month)) {
+        if (candidates.length) break
+        continue
+      }
+      if (inferredMonth && (headerMonth.year !== inferredMonth.year || headerMonth.month !== inferredMonth.month)) {
+        if (candidates.length) break
+        continue
+      }
       inferredMonth ||= headerMonth
     }
-    if (!started) {
-      if (day !== 1) continue
-      started = true
-    }
-    if (day !== expectedDay) break
-    columns.push({ day, idx: columnIndex })
-    expectedDay += 1
+    candidates.push({ day, idx: columnIndex })
   }
 
+  return { candidates, inferredMonth }
+}
+
+const longestConsecutiveDayRun = (candidates = [], preferredStart = null) => {
+  if (!candidates.length) return []
+
+  const runs = []
+  let current = [candidates[0]]
+  for (let index = 1; index < candidates.length; index += 1) {
+    const item = candidates[index]
+    if (item.day === current[current.length - 1].day + 1) {
+      current.push(item)
+      continue
+    }
+    runs.push(current)
+    current = [item]
+  }
+  runs.push(current)
+
+  const scored = runs
+    .map(run => ({
+      run,
+      score: run.length * 100 + (preferredStart && run[0]?.day === preferredStart ? 10 : 0) + (run[0]?.day === 1 ? 1 : 0)
+    }))
+    .sort((left, right) => right.score - left.score)
+
+  return scored[0]?.run || []
+}
+
+const findDaySequence = (row, totalWorkColumn, expectedMonth = null, options = {}) => {
+  const preferredStart = Number(options.startDay) > 0 ? Number(options.startDay) : null
+  const { candidates, inferredMonth } = collectDayCandidates(row, totalWorkColumn, expectedMonth)
+  const columns = longestConsecutiveDayRun(candidates, preferredStart)
   return { columns, inferredMonth }
 }
 
@@ -250,20 +292,47 @@ export const detectMonthlyAttendanceMatrix = (rows = []) => {
 
     const detectedMonth = detectMonthlyAttendanceMonth(rows, headerRowIndex)
     const explicitMonth = detectedMonth?.error ? null : detectedMonth
-    const daySequence = findDaySequence(row, columns.totalWork, explicitMonth)
+    const preferredStartDay = Number(explicitMonth?.startDay) > 0 ? Number(explicitMonth.startDay) : null
+    const daySequence = findDaySequence(row, columns.totalWork, explicitMonth, {
+      startDay: preferredStartDay
+    })
     const rawDayColumns = daySequence.columns
-    // Every supported monthly sheet has at least the 28 possible February days.
-    if (rawDayColumns.length < 28) continue
-
     // A malformed in-sheet date range is authoritative and must not be hidden
     // by otherwise valid-looking date headers.
     const monthInfo = detectedMonth?.error ? null : (explicitMonth || daySequence.inferredMonth)
+    const maxDay = monthInfo ? daysInMonth(monthInfo.year, monthInfo.month) : 31
+    const rangeStart = preferredStartDay || 1
+    const rangeEnd = Number(explicitMonth?.endDay) > 0
+      ? Number(explicitMonth.endDay)
+      : maxDay
+    const isPartialRange = Boolean(
+      explicitMonth?.source === 'date-range' &&
+      (rangeStart > 1 || rangeEnd < maxDay)
+    )
+    // Full-month sheets need nearly all days; weekly/partial sheets only need
+    // the consecutive days inside the declared range.
+    const minimumDays = isPartialRange
+      ? Math.max(1, rangeEnd - rangeStart + 1)
+      : 28
+    if (rawDayColumns.length < minimumDays) continue
+
     const errors = []
     if (!monthInfo) errors.push(detectedMonth?.error || 'Không xác định được tháng/năm từ khoảng ngày hoặc tiêu đề trong sheet.')
-    const maxDay = monthInfo ? daysInMonth(monthInfo.year, monthInfo.month) : 31
     const dayColumns = rawDayColumns.filter(column => column.day <= maxDay)
     const ignoredDayColumns = rawDayColumns.filter(column => column.day > maxDay)
-    if (monthInfo && dayColumns.length !== maxDay) {
+    if (monthInfo && isPartialRange) {
+      const firstDay = dayColumns[0]?.day
+      const lastDay = dayColumns[dayColumns.length - 1]?.day
+      if (
+        firstDay !== rangeStart ||
+        lastDay !== rangeEnd ||
+        dayColumns.length !== (rangeEnd - rangeStart + 1)
+      ) {
+        errors.push(
+          `Dãy ngày trong sheet chưa đủ ${rangeStart}–${rangeEnd} cho tuần/khoảng ngày tháng ${monthInfo.month}/${monthInfo.year}.`
+        )
+      }
+    } else if (monthInfo && dayColumns.length !== maxDay) {
       errors.push(`Dãy ngày trong sheet chưa đủ 1–${maxDay} cho tháng ${monthInfo.month}/${monthInfo.year}.`)
     }
 
@@ -290,6 +359,9 @@ export const detectMonthlyAttendanceMatrix = (rows = []) => {
         ? `${monthInfo.year}-${String(monthInfo.month).padStart(2, '0')}`
         : '',
       monthSource: monthInfo?.source || '',
+      rangeStartDay: monthInfo ? (isPartialRange ? rangeStart : 1) : null,
+      rangeEndDay: monthInfo ? (isPartialRange ? rangeEnd : maxDay) : null,
+      isPartialRange,
       errors,
       warnings: []
     }

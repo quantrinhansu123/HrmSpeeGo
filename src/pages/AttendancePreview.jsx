@@ -2,10 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceLogsByMonth, fbGetEmployeesDirectory, fbListCollectionIds, fbSet } from '../services/firebase'
 import {
-  buildAttendanceSummary,
-  hydrateAttendanceSummaryRows,
-  serializeAttendanceSummaryRows
+  hydrateAttendanceSummaryRows
 } from '../utils/attendanceSummary'
+import { rebuildAttendanceMonthSummary } from '../services/attendanceMonthSummary'
 import AttendanceImportModal from '../components/AttendanceImportModal'
 import PayrollTable from '../components/PayrollTable'
 import ResetAttendanceModal from '../components/ResetAttendanceModal'
@@ -758,56 +757,24 @@ function AttendancePreview() {
     targetMonth,
     { silent = false, apply = true } = {}
   ) => {
-    if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
-      throw new Error('Tháng không hợp lệ. Dùng định dạng YYYY-MM.')
-    }
-
-    const [employeeData, logData, nextAdjustments, nextManuals, storedSettings] = await Promise.all([
-      fbGetEmployeesDirectory(companyId),
-      fbGetAttendanceLogsByMonth(targetMonth, companyId),
-      fbGet(`hr/attendanceAdjustments/${targetMonth}`, companyId),
-      fbGet(`hr/manualWorkdays/${targetMonth}`, companyId),
-      fbGet('hr/attendanceSettings/default', companyId)
-    ])
-    const nextAttendanceSettings = normalizeAttendanceShiftSettings(storedSettings)
-    if (apply) {
-      setAttendanceSettings(nextAttendanceSettings)
-      setManualWorkdays(nextManuals || {})
-    }
-    const employeeList = employeeData
-      ? Object.entries(employeeData).map(([id, value]) => ({ ...value, id }))
-      : []
-    const monthLogs = logData
-      ? Object.entries(logData).map(([id, value]) => ({ ...value, id }))
-      : []
-    const summaryRows = buildAttendanceSummary({
-      attendanceLogs: monthLogs,
-      employees: employeeList,
-      month: targetMonth,
-      attendanceAdjustments: nextAdjustments || {},
-      manualWorkdays: nextManuals || {},
-      attendanceSettings: nextAttendanceSettings
-    })
-    const validEmpIds = new Set(employeeList.map(e => String(e.id)))
-    const filteredSummaryRows = summaryRows.filter(row => validEmpIds.has(String(row.employeeId)))
-    const snapshot = {
-      month: targetMonth,
+    const snapshot = await rebuildAttendanceMonthSummary(targetMonth, {
       companyId,
-      companyName,
-      generatedAt: new Date().toISOString(),
-      sourceLogCount: monthLogs.length,
-      employeeCount: filteredSummaryRows.length,
-      rows: serializeAttendanceSummaryRows(filteredSummaryRows)
+      companyName
+    })
+    if (apply) {
+      const storedSettings = await fbGet('hr/attendanceSettings/default', companyId)
+      const storedManuals = await fbGet(`hr/manualWorkdays/${targetMonth}`, companyId)
+      setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
+      setManualWorkdays(storedManuals || {})
+      applySnapshot(snapshot, targetMonth)
     }
-    await fbSet(`hr/attendanceMonthSummaries/${targetMonth}`, snapshot, companyId)
-    if (apply) applySnapshot(snapshot, targetMonth)
     setSummaryMonths(prev => {
       const next = new Set(prev)
       next.add(targetMonth)
       return Array.from(next).sort().reverse()
     })
     if (!silent) {
-      alert(`Đã lưu bảng công tháng ${targetMonth} (${summaryRows.length} nhân viên).`)
+      alert(`Đã lưu bảng công tháng ${targetMonth} (${snapshot.employeeCount || 0} nhân viên).`)
     }
     return snapshot
   }, [applySnapshot, companyId, companyName])
@@ -1155,20 +1122,22 @@ function AttendancePreview() {
       end: Math.min(start + 6, calendar.length)
     }))
     const checks = [
-      // Yêu cầu 8: Tạm thời vô hiệu hóa các kết luận tự suy đoán (Đi muộn, Không chấm công)
-      // ['Đi muộn', day => day?.late],
-      // ['Không chấm công', day => day?.missingPunch],
+      ['Đi muộn', day => day?.late],
+      ['Không chấm công', day => day?.missingPunch],
       ['Nghỉ không phép', day => day?.unapprovedAbsence]
     ]
 
     return rows
       .map(row => {
+        const days = row.days instanceof Map
+          ? row.days
+          : new Map(Object.entries(row.days || {}))
         const weeks = weekRanges.map(week => {
           const flags = checks
             .filter(([, predicate]) =>
               Array.from(
                 { length: Math.max(0, week.end - week.start + 1) },
-                (_, offset) => row.days.get(`${month}-${String(week.start + offset).padStart(2, '0')}`)
+                (_, offset) => days.get(`${month}-${String(week.start + offset).padStart(2, '0')}`)
               ).some(predicate)
             )
             .map(([label]) => label)

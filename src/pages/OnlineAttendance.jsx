@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../services/supabase'
 import { fbGet, fbUpdate, fbGetAttendanceByEmployee } from '../services/firebase'
+import { rebuildAttendanceMonthSummaryForDate } from '../services/attendanceMonthSummary'
+import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
 import { uploadToCloudinary } from '../utils/cloudinary'
 import {
   applyCalculatedAttendanceTiming,
@@ -77,16 +79,17 @@ function OnlineAttendance() {
   })
 
   const loadHistory = useCallback(async () => {
-    const empId = user?.id || user?.auth_user_id
-    if (!empId) return
+    if (!user?.id && !user?.auth_user_id) return
     try {
-      const data = await fbGetAttendanceByEmployee(empId)
+      const data = await fbGetAttendanceByEmployee(user)
       if (data) {
         const list = Object.entries(data).map(([id, val]) =>
           applyCalculatedAttendanceTiming({ ...val, id }, user, attendanceSettings)
         )
         list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
         setHistoryLogs(list)
+      } else {
+        setHistoryLogs([])
       }
     } catch (e) {
       console.warn('Lỗi tải lịch sử chấm công:', e)
@@ -298,6 +301,20 @@ function OnlineAttendance() {
       stopCamera()
       setNotice(action === 'in' ? '✓ Check-in thành công!' : '✓ Check-out thành công!')
       loadHistory()
+
+      // Đồng bộ vào bảng công tháng (attendanceMonthSummaries) để /bang-cong-preview thấy ngay.
+      const recordDate = data?.date || data?.record?.date || new Date().toISOString().slice(0, 10)
+      try {
+        await rebuildAttendanceMonthSummaryForDate(recordDate, {
+          companyId: getCompanyIdForUser(user),
+          companyName: getCompanyNameForContext({ name: 'SpeeGo Logistics' }, user)
+        })
+      } catch (syncError) {
+        console.warn('Đã chấm công nhưng chưa đồng bộ bảng công tháng:', syncError)
+        setNotice(previous =>
+          `${previous || ''} Chưa cập nhật được bảng công tổng hợp — bấm “Tổng hợp lại” trên Bảng công.`
+        )
+      }
     } catch (err) {
       setError(err.message || 'Lỗi khi chấm công')
     } finally {
