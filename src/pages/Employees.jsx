@@ -6,7 +6,7 @@ import { prepareEmployeeImportSheet, planEmployeeSheetImport } from '../utils/em
 import { supabase } from '../services/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCompanyIdForUser } from '../utils/companyContext'
-import { formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import { asIdentityText, formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
 import { fetchUsersDirectory } from '../services/employeeDirectory'
 import { fbGet, fbListCollectionIds } from '../services/firebase'
 import { aggregateEmployeeActivity, matchesEmployeeStat } from '../utils/employeeDirectoryStats'
@@ -17,25 +17,55 @@ const loadXlsx = () => import('xlsx')
 const EMPLOYEE_EXCEL_HEADERS = [
     'STT',
     'Mã NV',
-    'Chi nhánh',
-    'Trạng thái',
-    'HỌ TÊN',
-    'Giới tính',
-    'Ngày/ tháng/ năm sinh',
+    'HỌ VÀ TÊN',
+    'GIỚI TÍNH',
+    'NGÀY SINH',
     'VỊ TRÍ',
     'CA LÀM',
     'TEAM',
-    'Tình trạng',
-    'Ngày vào làm',
-    'Ngày lên chính thức',
-    'Noted',
-    'Cơ chế lương',
-    'Tổng lương',
+    'TÌNH TRẠNG',
+    'NGÀY VÀO LÀM',
+    'NGÀY LÊN CHÍNH THỨC',
     'SĐT',
-    'Số CCCD',
-    'Ngày cấp',
-    'Email cá nhân',
+    'CCCD',
+    'NGÀY CẤP',
+    'NƠI CẤP',
+    'ĐỊA CHỈ',
+    'NGÂN HÀNG',
+    'SỐ TK',
+    'TÊN TÀI KHOẢN',
+    'GHI CHÚ',
 ]
+
+/** Cột giữ dạng Text trên Excel (không bỏ số 0 đầu). */
+const EMPLOYEE_EXCEL_TEXT_HEADERS = new Set(['SĐT', 'CCCD', 'SỐ TK'])
+
+const PHONE_IMPORT_HEADERS = new Set(['sdt', 'so_dien_thoai', 'dien_thoai', 'phone'])
+const CCCD_IMPORT_HEADERS = new Set(['so_cccd', 'cccd', 'cmnd'])
+const BANK_ACCOUNT_IMPORT_HEADERS = new Set(['so_tk', 'so_tai_khoan', 'stk', 'bank_account_number'])
+
+/** Ép ô SĐT/CCCD thành text (@) để Excel không tự bỏ số 0 đầu. */
+const applyIdentityTextColumns = (XLSX, ws, headers) => {
+    if (!ws?.['!ref']) return
+    const textCols = headers
+        .map((header, index) => (EMPLOYEE_EXCEL_TEXT_HEADERS.has(header) ? index : -1))
+        .filter((index) => index >= 0)
+    if (!textCols.length) return
+    const range = XLSX.utils.decode_range(ws['!ref'])
+    for (const c of textCols) {
+        for (let r = range.s.r; r <= range.e.r; r++) {
+            const addr = XLSX.utils.encode_cell({ r, c })
+            const cell = ws[addr]
+            if (!cell) {
+                if (r === range.s.r) continue
+                ws[addr] = { t: 's', v: '', z: '@' }
+                continue
+            }
+            const text = cell.v == null || cell.v === '' ? '' : String(cell.v)
+            ws[addr] = { t: 's', v: text, z: '@' }
+        }
+    }
+}
 
 function Employees() {
     const { user } = useAuth()
@@ -304,7 +334,15 @@ function Employees() {
 
     const downloadTemplate = async () => {
         const XLSX = await loadXlsx()
-        const ws = XLSX.utils.aoa_to_sheet([EMPLOYEE_EXCEL_HEADERS])
+        // Dòng mẫu dùng chuỗi SĐT/CCCD có số 0 đầu để cột được lưu dạng Text.
+        const sampleRow = EMPLOYEE_EXCEL_HEADERS.map((header) => {
+            if (header === 'SĐT') return '0912345678'
+            if (header === 'CCCD') return '001234567890'
+            if (header === 'SỐ TK') return '0123456789'
+            return ''
+        })
+        const ws = XLSX.utils.aoa_to_sheet([EMPLOYEE_EXCEL_HEADERS, sampleRow])
+        applyIdentityTextColumns(XLSX, ws, EMPLOYEE_EXCEL_HEADERS)
         ws['!cols'] = EMPLOYEE_EXCEL_HEADERS.map((h) => ({ wch: Math.max(16, h.length + 4) }))
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Nhan_su')
@@ -314,24 +352,24 @@ function Employees() {
     const employeeToExcelRow = (emp, idx) => ([
         idx + 1,
         emp.employeeId || '',
-        emp.chi_nhanh || '',
-        getEmployeeEmploymentStatus(emp),
         emp.ho_va_ten || emp.name || emp.Tên || '',
         emp.gioi_tinh || '',
         formatDateDisplay(emp.ngay_sinh || emp.dob) === '-' ? '' : formatDateDisplay(emp.ngay_sinh || emp.dob),
         emp.vi_tri || '',
         emp.ca_lam_viec || '',
-        emp.bo_phan || emp.team || '',
-        emp.tinh_trang || emp.tinh_trang_hon_nhan || '',
+        emp.team || emp.bo_phan || '',
+        emp.tinh_trang || getEmployeeEmploymentStatus(emp) || '',
         formatDateDisplay(emp.ngay_vao_lam) === '-' ? '' : formatDateDisplay(emp.ngay_vao_lam),
         formatDateDisplay(emp.ngay_lam_chinh_thuc) === '-' ? '' : formatDateDisplay(emp.ngay_lam_chinh_thuc),
-        emp.ghi_chu || emp.notes || '',
-        emp.co_che_luong || '',
-        emp.tong_luong || '',
-        emp.sđt || emp.sdt || '',
-        emp.cccd || '',
+        asIdentityText(emp.sđt ?? emp.sdt, 'phone'),
+        asIdentityText(emp.cccd, 'cccd'),
         formatDateDisplay(emp.ngay_cap) === '-' ? '' : formatDateDisplay(emp.ngay_cap),
-        emp.email || '',
+        emp.noi_cap || '',
+        emp.dia_chi_thuong_tru || emp.address || '',
+        emp.ngan_hang || emp.bank_name || '',
+        asIdentityText(emp.so_tk ?? emp.bank_account_number, 'generic'),
+        emp.ten_tai_khoan || emp.bank_account_name || '',
+        emp.ghi_chu || emp.notes || '',
     ])
 
     const exportToExcel = async () => {
@@ -346,6 +384,7 @@ function Employees() {
             ...filteredEmployees.map((emp, idx) => employeeToExcelRow(emp, idx)),
         ]
         const ws = XLSX.utils.aoa_to_sheet(rows)
+        applyIdentityTextColumns(XLSX, ws, EMPLOYEE_EXCEL_HEADERS)
         ws['!cols'] = EMPLOYEE_EXCEL_HEADERS.map((h) => ({ wch: Math.max(16, h.length + 4) }))
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Nhan_su')
@@ -500,6 +539,15 @@ function Employees() {
                 if (DATE_HEADERS.has(header) || header.startsWith('ngay_')) {
                     return formatDateValue(cell)
                 }
+                if (PHONE_IMPORT_HEADERS.has(header)) {
+                    return asIdentityText(cell, 'phone')
+                }
+                if (CCCD_IMPORT_HEADERS.has(header)) {
+                    return asIdentityText(cell, 'cccd')
+                }
+                if (BANK_ACCOUNT_IMPORT_HEADERS.has(header)) {
+                    return asIdentityText(cell, 'generic')
+                }
                 if (typeof cell === 'number') {
                     return Number.isInteger(cell) || Math.abs(cell - Math.round(cell)) < 1e-9
                         ? String(Math.round(cell))
@@ -561,7 +609,8 @@ function Employees() {
                     role: pick(rowObj, 'vai_tro', 'role') || 'user',
                     password: pick(rowObj, 'mat_khau', 'password'),
                     chi_nhanh: pick(rowObj, 'chi_nhanh', 'branch'),
-                    bo_phan: pick(rowObj, 'team', 'bo_phan', 'phong_ban', 'department'),
+                    bo_phan: pick(rowObj, 'bo_phan', 'phong_ban', 'department', 'team'),
+                    team: pick(rowObj, 'team'),
                     vi_tri: pick(rowObj, 'vi_tri', 'chuc_vu', 'position'),
                     trang_thai: pick(rowObj, 'trang_thai', 'status'),
                     tinh_trang: pick(rowObj, 'tinh_trang'),
@@ -576,6 +625,9 @@ function Employees() {
                     dia_chi_thuong_tru: pick(rowObj, 'dia_chi_thuong_tru', 'thuong_tru', 'dia_chi', 'address'),
                     que_quan: pick(rowObj, 'que_quan'),
                     gioi_tinh: pick(rowObj, 'gioi_tinh', 'gender'),
+                    ngan_hang: pick(rowObj, 'ngan_hang', 'bank_name', 'bank'),
+                    so_tk: pick(rowObj, 'so_tk', 'so_tai_khoan', 'stk', 'bank_account_number'),
+                    ten_tai_khoan: pick(rowObj, 'ten_tai_khoan', 'bank_account_name', 'chu_tai_khoan'),
                     ghi_chu: pick(rowObj, 'noted', 'note', 'ghi_chu', 'notes'),
                     co_che_luong: pick(rowObj, 'co_che_luong'),
                     tong_luong: pick(rowObj, 'tong_luong'),
@@ -1253,27 +1305,14 @@ function Employees() {
                             <div className="form-group">
                                 <label>Lưu ý định dạng cột (theo thứ tự):</label>
                                 <ul style={{ paddingLeft: '20px', marginTop: '8px' }}>
-                                    <li>Họ và tên</li>
-                                    <li>Email</li>
-                                    <li>SĐT</li>
-                                    <li>Tên đăng nhập (tùy chọn)</li>
-                                    <li>Vai trò (tùy chọn, mặc định user)</li>
-                                    <li>Mật khẩu (tùy chọn, mặc định 123456)</li>
-                                    <li>Chi nhánh</li>
-                                    <li>Bộ phận</li>
-                                    <li>Vị trí</li>
-                                    <li>Trạng thái</li>
-                                    <li>Ngày vào làm</li>
-                                    <li>Ngày chính thức</li>
-                                    <li>CCCD</li>
-                                    <li>Ngày cấp</li>
-                                    <li>Nơi cấp</li>
-                                    <li>Quê quán</li>
-                                    <li>Giới tính</li>
-                                    <li>Tình trạng hôn nhân</li>
-                                    <li>Link ảnh (tùy chọn)</li>
+                                    <li>STT, Mã NV, Họ và tên</li>
+                                    <li>Giới tính, Ngày sinh, Vị trí, Ca làm, TEAM</li>
+                                    <li>Tình trạng, Ngày vào làm, Ngày lên chính thức</li>
+                                    <li>SĐT, CCCD (giữ số 0 đầu), Ngày cấp, Nơi cấp</li>
+                                    <li>Địa chỉ, Ngân hàng, Số TK (giữ số 0 đầu), Tên tài khoản</li>
+                                    <li>Ghi chú</li>
                                 </ul>
-                                <small>Hàng đầu tiên là header. Các cột dữ liệu có thể để trống, hệ thống sẽ bỏ qua dòng trống hoàn toàn.</small>
+                                <small>Hàng đầu tiên là header. Tải mẫu Excel để đúng cột. CCCD/SĐT/Số TK nên để định dạng Text trên Excel.</small>
                             </div>
                         </div>
                         <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

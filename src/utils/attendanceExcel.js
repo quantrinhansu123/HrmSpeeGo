@@ -144,20 +144,44 @@ const populateEmployee = (worksheet, rowNumber, row, index, month, daysInMonth) 
   worksheet.getCell(rowNumber, 9).value = normalizeDateText(row.officialDate)
   worksheet.getCell(rowNumber, 10).value = normalizeDateText(row.lastWorkingDate)
   worksheet.getCell(rowNumber, 11).value = note
-  worksheet.getCell(rowNumber, 12).value = Number(row.lateUnder30Count || 0) + earlyUnder30Count
-  setFormula(worksheet.getCell(rowNumber, 13), `50000*IF(L${rowNumber}>=1,L${rowNumber})`)
-  worksheet.getCell(rowNumber, 14).value = Number(row.lateOver30Count || 0) + earlyOver30Count
-  setFormula(worksheet.getCell(rowNumber, 15), `100000*IF(N${rowNumber}>=1,N${rowNumber})`)
-  worksheet.getCell(rowNumber, 16).value = Number(row.missingPunchCount || 0)
-  setFormula(worksheet.getCell(rowNumber, 17), `50000*IF(P${rowNumber}>=1,P${rowNumber})`)
+  const under30Count = Number(row.lateUnder30Count || 0) + earlyUnder30Count
+  const over30Count = Number(row.lateOver30Count || 0) + earlyOver30Count
+  const missingPunchCount = Number(row.missingPunchCount || 0)
+  const unapprovedAbsenceCount = Number(row.unapprovedAbsenceCount || 0)
+  const under30Fine = Number(row.lateUnder30Fine != null
+    ? row.lateUnder30Fine
+    : under30Count * 50000)
+  const over30Fine = Number(row.lateOver30Fine != null
+    ? row.lateOver30Fine
+    : over30Count * 100000)
+  const missingPunchFine = Number(row.missingPunchFine != null
+    ? row.missingPunchFine
+    : missingPunchCount * 50000)
+  const unapprovedAbsenceFine = Number(row.unapprovedAbsenceFine != null
+    ? row.unapprovedAbsenceFine
+    : unapprovedAbsenceCount * 200000)
+
+  worksheet.getCell(rowNumber, 12).value = under30Count
+  setFormula(worksheet.getCell(rowNumber, 13), `50000*IF(L${rowNumber}>=1,L${rowNumber})`, under30Fine)
+  worksheet.getCell(rowNumber, 14).value = over30Count
+  setFormula(worksheet.getCell(rowNumber, 15), `100000*IF(N${rowNumber}>=1,N${rowNumber})`, over30Fine)
+  worksheet.getCell(rowNumber, 16).value = missingPunchCount
+  setFormula(worksheet.getCell(rowNumber, 17), `50000*IF(P${rowNumber}>=1,P${rowNumber})`, missingPunchFine)
   worksheet.getCell(rowNumber, 18).value = null // FIELD_NOT_AVAILABLE: không trực nhật
-  setFormula(worksheet.getCell(rowNumber, 19), `50000*IF(R${rowNumber}>=1,R${rowNumber})`)
+  setFormula(worksheet.getCell(rowNumber, 19), `50000*IF(R${rowNumber}>=1,R${rowNumber})`, 0)
   worksheet.getCell(rowNumber, 20).value = null // FIELD_NOT_AVAILABLE: nghỉ đột xuất
-  setFormula(worksheet.getCell(rowNumber, 21), `200000*IF(T${rowNumber}>=3,T${rowNumber}-2)`)
-  worksheet.getCell(rowNumber, 22).value = Number(row.unapprovedAbsenceCount || 0)
-  setFormula(worksheet.getCell(rowNumber, 23), `200000*IF(V${rowNumber}>=1,V${rowNumber})`)
+  setFormula(worksheet.getCell(rowNumber, 21), `200000*IF(T${rowNumber}>=3,T${rowNumber}-2)`, 0)
+  worksheet.getCell(rowNumber, 22).value = unapprovedAbsenceCount
+  setFormula(worksheet.getCell(rowNumber, 23), `200000*IF(V${rowNumber}>=1,V${rowNumber})`, unapprovedAbsenceFine)
   worksheet.getCell(rowNumber, 24).value = null // FIELD_NOT_AVAILABLE: say xỉn
-  setFormula(worksheet.getCell(rowNumber, 25), `M${rowNumber}+O${rowNumber}+Q${rowNumber}+S${rowNumber}+U${rowNumber}+W${rowNumber}+X${rowNumber}`)
+  const totalFine = Number(row.totalFine != null
+    ? row.totalFine
+    : under30Fine + over30Fine + missingPunchFine + unapprovedAbsenceFine)
+  setFormula(
+    worksheet.getCell(rowNumber, 25),
+    `M${rowNumber}+O${rowNumber}+Q${rowNumber}+S${rowNumber}+U${rowNumber}+W${rowNumber}+X${rowNumber}`,
+    totalFine
+  )
   worksheet.getCell(rowNumber, 26).value = null // FIELD_NOT_AVAILABLE: vé xe
   worksheet.getCell(rowNumber, 27).value = null // FIELD_NOT_AVAILABLE: phép năm còn lại
   worksheet.getCell(rowNumber, 28).value = Number(row.overtimeHours || 0)

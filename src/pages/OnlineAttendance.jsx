@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../services/supabase'
-import { fbGet, fbUpdate, fbGetAttendanceByEmployee } from '../services/firebase'
+import { fbGet, fbUpdate, fbGetAttendanceByEmployee, fbGetAttendanceLogsByMonth } from '../services/firebase'
 import { rebuildAttendanceMonthSummaryForDate } from '../services/attendanceMonthSummary'
 import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
 import { uploadToCloudinary } from '../utils/cloudinary'
@@ -50,6 +50,75 @@ const displayDate = value => {
   return `${day}/${month}/${year}`
 }
 
+const isOnlineAttendanceLog = log =>
+  String(log?.source || '') === 'employee-online' ||
+  String(log?.workMode || '').toLowerCase() === 'online'
+
+const buildMapsUrl = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`
+
+const captureGeolocation = () =>
+  new Promise(resolve => {
+    if (!navigator.geolocation) {
+      resolve({ error: 'unsupported' })
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const lat = Number(position.coords.latitude)
+        const lng = Number(position.coords.longitude)
+        resolve({
+          lat,
+          lng,
+          accuracy: Number(position.coords.accuracy) || null,
+          at: new Date().toISOString(),
+          mapsUrl: buildMapsUrl(lat, lng)
+        })
+      },
+      err => {
+        const code = err?.code
+        resolve({
+          error: code === 1 ? 'denied' : code === 2 ? 'unavailable' : code === 3 ? 'timeout' : 'failed',
+          message: err?.message || ''
+        })
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    )
+  })
+
+const formatLocationLabel = location => {
+  if (!location) return '—'
+  if (location.error) {
+    if (location.error === 'denied') return 'Không có vị trí (bị từ chối)'
+    if (location.error === 'unsupported') return 'Thiết bị không hỗ trợ GPS'
+    if (location.error === 'timeout') return 'Hết thời gian lấy vị trí'
+    return 'Không lấy được vị trí'
+  }
+  if (location.lat == null || location.lng == null) return '—'
+  const lat = Number(location.lat).toFixed(5)
+  const lng = Number(location.lng).toFixed(5)
+  return `${lat}, ${lng}`
+}
+
+const LocationCell = ({ location, label }) => {
+  if (!location) return <span className="oa-loc-empty">—</span>
+  if (location.error || location.lat == null || location.lng == null) {
+    return <span className="oa-loc-empty">{formatLocationLabel(location)}</span>
+  }
+  const text = formatLocationLabel(location)
+  const href = location.mapsUrl || buildMapsUrl(location.lat, location.lng)
+  return (
+    <div className="oa-loc-cell">
+      {label ? <small className="oa-loc-cell-label">{label}</small> : null}
+      <a className="oa-loc-link" href={href} target="_blank" rel="noreferrer" title="Mở Google Maps">
+        {text}
+      </a>
+      {location.accuracy != null && Number.isFinite(Number(location.accuracy)) ? (
+        <small className="oa-loc-cell-acc">±{Math.round(Number(location.accuracy))}m</small>
+      ) : null}
+    </div>
+  )
+}
+
 function OnlineAttendance() {
   const { user } = useAuth()
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'manager'
@@ -71,30 +140,64 @@ function OnlineAttendance() {
   // 3. Cài đặt ca làm việc
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
 
+  // 4. Định vị GPS
+  const [liveLocation, setLiveLocation] = useState(null)
+  const [locationStatus, setLocationStatus] = useState('idle') // idle | loading | ready | error
+
   // 5. Lịch sử chấm công (List) & Bộ lọc tháng
   const [historyLogs, setHistoryLogs] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
 
+  const refreshLiveLocation = useCallback(async () => {
+    setLocationStatus('loading')
+    const result = await captureGeolocation()
+    setLiveLocation(result)
+    setLocationStatus(result.error ? 'error' : 'ready')
+    return result
+  }, [])
+
+  useEffect(() => {
+    refreshLiveLocation()
+  }, [refreshLiveLocation])
+
   const loadHistory = useCallback(async () => {
     if (!user?.id && !user?.auth_user_id) return
+    setHistoryLoading(true)
     try {
-      const data = await fbGetAttendanceByEmployee(user)
-      if (data) {
-        const list = Object.entries(data).map(([id, val]) =>
-          applyCalculatedAttendanceTiming({ ...val, id }, user, attendanceSettings)
-        )
-        list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      if (isAdminOrManager) {
+        const month = selectedMonth || new Date().toISOString().slice(0, 7)
+        const data = await fbGetAttendanceLogsByMonth(month)
+        const list = Object.entries(data || {})
+          .map(([id, val]) => applyCalculatedAttendanceTiming({ ...val, id }, null, attendanceSettings))
+          .filter(isOnlineAttendanceLog)
+        list.sort((a, b) => {
+          const byDate = String(b.date || '').localeCompare(String(a.date || ''))
+          if (byDate) return byDate
+          return String(a.employeeName || '').localeCompare(String(b.employeeName || ''), 'vi')
+        })
         setHistoryLogs(list)
       } else {
-        setHistoryLogs([])
+        const data = await fbGetAttendanceByEmployee(user)
+        if (data) {
+          const list = Object.entries(data).map(([id, val]) =>
+            applyCalculatedAttendanceTiming({ ...val, id }, user, attendanceSettings)
+          )
+          list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+          setHistoryLogs(list)
+        } else {
+          setHistoryLogs([])
+        }
       }
     } catch (e) {
       console.warn('Lỗi tải lịch sử chấm công:', e)
+    } finally {
+      setHistoryLoading(false)
     }
-  }, [attendanceSettings, user])
+  }, [attendanceSettings, isAdminOrManager, selectedMonth, user])
 
   useEffect(() => {
     loadHistory()
@@ -103,19 +206,28 @@ function OnlineAttendance() {
   // Danh sách các tháng có dữ liệu
   const availableMonths = useMemo(() => {
     const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-    const set = new Set([currentMonth])
+    const set = new Set([currentMonth, selectedMonth].filter(Boolean))
     historyLogs.forEach(log => {
       const ym = String(log.date || '').slice(0, 7)
       if (/^\d{4}-\d{2}$/.test(ym)) set.add(ym)
     })
+    // Admin: thêm vài tháng gần đây để chọn khi chưa có log
+    if (isAdminOrManager) {
+      const now = new Date()
+      for (let i = 0; i < 6; i += 1) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+      }
+    }
     return Array.from(set).sort().reverse()
-  }, [historyLogs])
+  }, [historyLogs, isAdminOrManager, selectedMonth])
 
-  // Lọc log theo tháng đã chọn
+  // Lọc log theo tháng đã chọn (admin đã lọc theo tháng khi load)
   const filteredLogs = useMemo(() => {
+    if (isAdminOrManager) return historyLogs
     if (!selectedMonth) return historyLogs
     return historyLogs.filter(log => String(log.date || '').startsWith(selectedMonth))
-  }, [historyLogs, selectedMonth])
+  }, [historyLogs, isAdminOrManager, selectedMonth])
 
   // Cập nhật đồng hồ mỗi giây
   useEffect(() => {

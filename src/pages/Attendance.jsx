@@ -29,6 +29,7 @@ import { TAX_CONFIG } from '../utils/constants'
 import { calculateProgressiveTax, formatMoney, normalizeString } from '../utils/helpers'
 import { downloadAttendanceFromGoldenTemplate } from '../utils/attendanceExcel'
 import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
+import { applyPenaltyAmountsToSummaryRows } from '../utils/attendancePenalties'
 
 let XLSX = null
 const ensureXlsx = async () => {
@@ -428,14 +429,14 @@ export const appendAttendanceSummarySheet = (
       employmentStatusForReport(row),
       row.lateUnder30Count,
       row.lateOver30Count,
-      0,
+      Number(row.lateFine || 0),
       row.earlyCount,
-      0,
+      Number(row.earlyFine || 0),
       row.missingPunchCount,
-      0,
+      Number(row.missingPunchFine || 0),
       row.unapprovedAbsenceCount,
-      0,
-      0,
+      Number(row.unapprovedAbsenceFine || 0),
+      Number(row.totalFine || 0),
       0,
       STANDARD_WORKDAYS,
       row.overtimeHours,
@@ -1575,7 +1576,8 @@ function Attendance() {
     }
 
     try {
-      const rows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
+      const baseRows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
+      const rows = applyPenaltyAmountsToSummaryRows(baseRows, attendanceSettings?.penaltyCategories)
       await downloadAttendanceFromGoldenTemplate({
         rows,
         month: filterAttendanceMonth,
@@ -1592,7 +1594,8 @@ function Attendance() {
       alert('Vui lòng chọn tháng cần xuất báo cáo.')
       return
     }
-    const rows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
+    const baseRows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
+    const rows = applyPenaltyAmountsToSummaryRows(baseRows, attendanceSettings?.penaltyCategories)
     if (!rows.length) {
       alert('Không có dữ liệu tổng hợp trong tháng đã chọn.')
       return

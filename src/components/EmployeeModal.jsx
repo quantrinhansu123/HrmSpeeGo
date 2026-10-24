@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../services/supabase'
 import { fbSet } from '../services/firebase'
-import { mapAppToUser, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import { asIdentityText, mapAppToUser, runUsersMutationWithSchemaFallback } from '../utils/helpers'
 import { employeeContractKey } from '../utils/employeeContracts'
 import {
   DEFAULT_ATTENDANCE_SHIFT,
@@ -160,6 +160,9 @@ function EmployeeModal({
     noi_cap: '',
     dia_chi_thuong_tru: '',
     que_quan: '',
+    ngan_hang: '',
+    so_tk: '',
+    ten_tai_khoan: '',
     ngay_sinh: '',
     gioi_tinh: '',
     tinh_trang_hon_nhan: '',
@@ -202,7 +205,7 @@ function EmployeeModal({
         ho_va_ten: employee.ho_va_ten || '',
         employeeId: employee.employeeId || '',
         email: employee.email || '',
-        sđt: employee.sđt || employee.sdt || '',
+        sđt: asIdentityText(employee.sđt ?? employee.sdt, 'phone'),
         chi_nhanh: employee.chi_nhanh || 'HCM',
         bo_phan: employee.bo_phan || '',
         team: employee.team || '',
@@ -216,11 +219,14 @@ function EmployeeModal({
         ngay_lam_chinh_thuc: employee.ngay_lam_chinh_thuc || '',
         loai_hop_dong: employee.loai_hop_dong || '',
         ngay_het_han: employee.ngay_het_han || '',
-        cccd: employee.cccd || '',
+        cccd: asIdentityText(employee.cccd, 'cccd'),
         ngay_cap: employee.ngay_cap || '',
         noi_cap: employee.noi_cap || '',
         dia_chi_thuong_tru: employee.dia_chi_thuong_tru || '',
         que_quan: employee.que_quan || '',
+        ngan_hang: employee.ngan_hang || employee.bank_name || '',
+        so_tk: asIdentityText(employee.so_tk ?? employee.bank_account_number, 'generic'),
+        ten_tai_khoan: employee.ten_tai_khoan || employee.bank_account_name || '',
         ngay_sinh: employee.ngay_sinh || employee.dob || '',
         gioi_tinh: employee.gioi_tinh || '',
         tinh_trang_hon_nhan: employee.tinh_trang_hon_nhan || '',
@@ -285,6 +291,9 @@ function EmployeeModal({
       noi_cap: '',
       dia_chi_thuong_tru: '',
       que_quan: '',
+      ngan_hang: '',
+      so_tk: '',
+      ten_tai_khoan: '',
       ngay_sinh: '',
       gioi_tinh: '',
       tinh_trang_hon_nhan: '',
@@ -327,9 +336,13 @@ function EmployeeModal({
 
   const handleChange = (e) => {
     const { name, value } = e.target
+    // SĐT/CCCD/Số TK luôn là chuỗi (input text) — không Number()/parseInt để mất số 0 đầu.
+    const nextValue = (name === 'sđt' || name === 'sdt' || name === 'cccd' || name === 'so_tk')
+      ? String(value ?? '')
+      : value
     setFormData({
       ...formData,
-      [name]: value
+      [name]: nextValue
     })
     if (name === 'password' || name === 'passwordConfirm') {
       setPasswordError('')
@@ -889,6 +902,9 @@ function EmployeeModal({
                       name="sđt"
                       value={formData.sđt}
                       onChange={handleChange}
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      placeholder="VD: 0912345678"
                       disabled={!editable}
                     />
                   </div>
@@ -1038,7 +1054,9 @@ function EmployeeModal({
                       name="cccd"
                       value={formData.cccd}
                       onChange={handleChange}
-                      placeholder="Số CCCD/CMND"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="VD: 001234567890"
                       disabled={!editable}
                     />
                   </div>
@@ -1088,6 +1106,44 @@ function EmployeeModal({
                       value={formData.dia_chi_thuong_tru}
                       onChange={handleChange}
                       placeholder="Địa chỉ thường trú"
+                      disabled={!editable}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Ngân hàng</label>
+                    <input
+                      type="text"
+                      name="ngan_hang"
+                      value={formData.ngan_hang}
+                      onChange={handleChange}
+                      placeholder="Tên ngân hàng"
+                      disabled={!editable}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Số TK</label>
+                    <input
+                      type="text"
+                      name="so_tk"
+                      value={formData.so_tk}
+                      onChange={handleChange}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="VD: 0123456789"
+                      disabled={!editable}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Tên tài khoản</label>
+                    <input
+                      type="text"
+                      name="ten_tai_khoan"
+                      value={formData.ten_tai_khoan}
+                      onChange={handleChange}
+                      placeholder="Chủ tài khoản"
                       disabled={!editable}
                     />
                   </div>

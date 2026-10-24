@@ -98,6 +98,9 @@ export const USERS_DIRECTORY_COLUMNS = [
   'gender',
   'marital_status',
   'notes',
+  'bank_name',
+  'bank_account_number',
+  'bank_account_name',
   'salary_mechanism',
   'total_salary',
   'avatar_url'
@@ -147,6 +150,38 @@ export const getEmployeeEmploymentStatus = employee => {
   return firstValue ? String(firstValue).trim() : ''
 }
 
+/**
+ * Keep SĐT / CCCD as text (như định dạng Text trên Excel): không bỏ số 0 đầu.
+ * Chuỗi giữ nguyên; số từ Excel (đã mất 0) được khôi phục theo độ dài VN phổ biến.
+ * @param {unknown} value
+ * @param {'phone' | 'cccd' | 'generic'} [kind='generic']
+ */
+export const asIdentityText = (value, kind = 'generic') => {
+  if (value == null || value === '') return ''
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    // CSV/Excel đôi khi xuất CCCD dạng scientific notation
+    if (/^[+-]?\d+(\.\d+)?e[+-]?\d+$/i.test(trimmed)) {
+      const n = Number(trimmed)
+      if (Number.isFinite(n)) return asIdentityText(n, kind)
+    }
+    return trimmed
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const rounded = Math.round(value)
+    if (Math.abs(value - rounded) > 1e-9) return String(value)
+    let digits = String(rounded)
+    if (kind === 'phone' && /^\d{9}$/.test(digits)) digits = `0${digits}`
+    if (kind === 'cccd' && /^\d{8}$|^\d{11}$/.test(digits)) digits = `0${digits}`
+    return digits
+  }
+
+  return String(value).trim()
+}
+
 // Map Supabase DB columns (English) -> App State (Vietnamese)
 export const mapUserToApp = (user) => {
   if (!user) return null
@@ -161,7 +196,7 @@ export const mapUserToApp = (user) => {
     username: user.username || '',
     ho_va_ten: user.name || '',
     email: user.email || '',
-    sđt: user.phone || '',
+    sđt: asIdentityText(user.phone, 'phone'),
     chi_nhanh: user.branch || '',
     bo_phan: user.department || '',
     team: user.team || '',
@@ -175,7 +210,7 @@ export const mapUserToApp = (user) => {
     ca_lam_viec: user.shift || '',
     ngay_vao_lam: user.join_date || '',
     ngay_lam_chinh_thuc: user.official_date || '',
-    cccd: user.cccd || '',
+    cccd: asIdentityText(user.cccd, 'cccd'),
     ngay_cap: user.identity_issue_date || '',
     noi_cap: user.identity_issue_place || '',
     dia_chi_thuong_tru: user.address || '',
@@ -184,6 +219,9 @@ export const mapUserToApp = (user) => {
     gioi_tinh: user.gender || '',
     tinh_trang_hon_nhan: user.marital_status || '',
     ghi_chu: user.notes || '',
+    ngan_hang: user.bank_name || '',
+    so_tk: asIdentityText(user.bank_account_number, 'generic'),
+    ten_tai_khoan: user.bank_account_name || '',
     co_che_luong: user.salary_mechanism || '',
     tong_luong: user.total_salary || '',
     avatarDataUrl: user.avatar_url || '',
@@ -261,7 +299,7 @@ export const mapAppToUser = (data) => {
     employee_id: (data.employeeId || data.employee_id || '').trim() || null,
     name: data.ho_va_ten || '',
     email: (data.email || '').trim() || null,
-    phone: data.sđt || data.sdt || '',
+    phone: asIdentityText(data.sđt ?? data.sdt, 'phone'),
     branch: data.chi_nhanh || '',
     department: data.bo_phan || '',
     team: data.team || '',
@@ -274,7 +312,7 @@ export const mapAppToUser = (data) => {
     shift: data.ca_lam_viec || '',
     join_date: formatDateForDB(data.ngay_vao_lam),
     official_date: formatDateForDB(data.ngay_lam_chinh_thuc),
-    cccd: data.cccd || '',
+    cccd: asIdentityText(data.cccd, 'cccd'),
     identity_issue_date: formatDateForDB(data.ngay_cap),
     identity_issue_place: data.noi_cap || '',
     address: data.dia_chi_thuong_tru || data.address || '',
@@ -283,6 +321,9 @@ export const mapAppToUser = (data) => {
     gender: data.gioi_tinh || '',
     marital_status: data.tinh_trang_hon_nhan || '',
     notes: data.ghi_chu || data.notes || '',
+    bank_name: data.ngan_hang || data.bank_name || '',
+    bank_account_number: asIdentityText(data.so_tk ?? data.bank_account_number, 'generic'),
+    bank_account_name: data.ten_tai_khoan || data.bank_account_name || '',
     salary_mechanism: data.co_che_luong || '',
     total_salary: data.tong_luong || '',
     avatar_url: data.avatarDataUrl || data.avatarUrl || data.avatar || '',

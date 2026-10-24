@@ -1,4 +1,9 @@
 import { supabase } from './supabase'
+import {
+  buildPenaltyDetailRows,
+  mergeAutoPenaltiesWithManual,
+  normalizePenaltyCategories
+} from '../utils/attendancePenalties'
 
 const isUuid = value =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -84,6 +89,30 @@ export const getPenaltiesByMonth = async month => {
 
   if (error) throw error
   return (data || []).map(mapRowFromDb)
+}
+
+/**
+ * Đồng bộ Bảng phạt từ snapshot bảng công:
+ * - Tạo lại toàn bộ dòng source=auto từ muộn/sớm/quên chấm/nghỉ không phép
+ * - Giữ nguyên các dòng nhập tay (source !== 'auto')
+ */
+export const syncPenaltiesFromAttendanceSummary = async (
+  month,
+  summaryRows = [],
+  categories = null
+) => {
+  const period = String(month || '').trim()
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    throw new Error('Tháng không hợp lệ')
+  }
+
+  const existing = await getPenaltiesByMonth(period)
+  const autoRows = buildPenaltyDetailRows(
+    summaryRows,
+    normalizePenaltyCategories(categories)
+  )
+  const merged = mergeAutoPenaltiesWithManual(existing, autoRows)
+  return savePenaltiesByMonth(period, merged)
 }
 
 export const savePenaltiesByMonth = async (month, rows = []) => {

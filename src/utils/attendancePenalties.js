@@ -182,3 +182,49 @@ export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PE
     return String(left.employeeName).localeCompare(String(right.employeeName), 'vi')
   })
 }
+
+/** Giữ dòng phạt nhập tay; thay toàn bộ dòng auto bằng dữ liệu từ bảng công. */
+export const mergeAutoPenaltiesWithManual = (existingRows = [], autoRows = []) => {
+  const manual = normalizePenaltyRows(existingRows).filter(row => row.source !== 'auto')
+  return [...manual, ...normalizePenaltyRows(autoRows)]
+}
+
+/**
+ * Gắn số tiền phạt (theo hạng mục cấu hình) vào từng dòng bảng công
+ * để xuất Excel / hiển thị tổng hợp.
+ */
+export const applyPenaltyAmountsToSummaryRows = (summaryRows = [], categories = DEFAULT_PENALTY_CATEGORIES) => {
+  const list = normalizePenaltyCategories(categories)
+  const underAmount = Number(findCategory(list, 'late_under_30')?.amount || 0)
+  const overAmount = Number(findCategory(list, 'late_over_30')?.amount || 0)
+  const missingAmount = Number(findCategory(list, 'missing_punch')?.amount || 0)
+  const absenceAmount = Number(findCategory(list, 'unapproved_absence')?.amount || 0)
+
+  return (summaryRows || []).map(row => {
+    const lateUnder30Count = Number(row.lateUnder30Count || 0)
+    const lateOver30Count = Number(row.lateOver30Count || 0)
+    const earlyUnder30Count = Number(row.earlyUnder30Count || 0)
+    const earlyOver30Count = Number(row.earlyOver30Count || 0)
+    const missingPunchCount = Number(row.missingPunchCount || 0)
+    const unapprovedAbsenceCount = Number(row.unapprovedAbsenceCount || 0)
+
+    const lateFine = lateUnder30Count * underAmount + lateOver30Count * overAmount
+    const earlyFine = earlyUnder30Count * underAmount + earlyOver30Count * overAmount
+    const lateUnder30Fine = (lateUnder30Count + earlyUnder30Count) * underAmount
+    const lateOver30Fine = (lateOver30Count + earlyOver30Count) * overAmount
+    const missingPunchFine = missingPunchCount * missingAmount
+    const unapprovedAbsenceFine = unapprovedAbsenceCount * absenceAmount
+    const totalFine = lateFine + earlyFine + missingPunchFine + unapprovedAbsenceFine
+
+    return {
+      ...row,
+      lateUnder30Fine,
+      lateOver30Fine,
+      lateFine,
+      earlyFine,
+      missingPunchFine,
+      unapprovedAbsenceFine,
+      totalFine
+    }
+  })
+}

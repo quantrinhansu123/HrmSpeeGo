@@ -774,7 +774,10 @@ function AttendancePreview() {
       return Array.from(next).sort().reverse()
     })
     if (!silent) {
-      alert(`Đã lưu bảng công tháng ${targetMonth} (${snapshot.employeeCount || 0} nhân viên).`)
+      alert(
+        `Đã lưu bảng công tháng ${targetMonth} (${snapshot.employeeCount || 0} nhân viên). ` +
+        'Bảng phạt đã đồng bộ các lỗi muộn/sớm/quên chấm từ bảng công (giữ dòng nhập tay).'
+      )
     }
     return snapshot
   }, [applySnapshot, companyId, companyName])

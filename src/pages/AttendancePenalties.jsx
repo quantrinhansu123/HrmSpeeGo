@@ -12,6 +12,7 @@ import {
   buildPenaltyDetailRows,
   createEmptyPenaltyRow,
   getPenaltyTotals,
+  mergeAutoPenaltiesWithManual,
   normalizePenaltyCategories,
   normalizePenaltyRows
 } from '../utils/attendancePenalties'
@@ -314,11 +315,17 @@ function AttendancePenalties() {
         alert('Chưa có bảng công tổng hợp cho tháng này. Hãy Tổng hợp ở trang Bảng Công trước.')
         return
       }
-      if (rows.length > 0 && !confirm('Nạp từ chấm công sẽ thay toàn bộ bảng phạt hiện tại. Tiếp tục?')) {
+      const hasManual = rows.some(row => row.source !== 'auto')
+      if (rows.length > 0 && !confirm(
+        hasManual
+          ? 'Nạp từ bảng công sẽ cập nhật các dòng phạt tự động (muộn/sớm/quên chấm...). Các dòng nhập tay sẽ được giữ. Tiếp tục?'
+          : 'Nạp từ bảng công sẽ thay các dòng phạt tự động theo dữ liệu chấm công. Tiếp tục?'
+      )) {
         return
       }
       const summaryRows = hydrateAttendanceSummaryRows(snapshot.rows)
-      setRows(normalizePenaltyRows(buildPenaltyDetailRows(summaryRows, penaltyCategories)))
+      const autoRows = buildPenaltyDetailRows(summaryRows, penaltyCategories)
+      setRows(normalizePenaltyRows(mergeAutoPenaltiesWithManual(rows, autoRows)))
       setDirty(true)
     } catch (requestError) {
       console.error(requestError)
@@ -338,6 +345,7 @@ function AttendancePenalties() {
             {rows.length} dòng
             {generatedAt ? ` · Đã lưu ${formatGeneratedAt(generatedAt)}` : ' · Chưa lưu'}
             {dirty ? ' · Chưa lưu thay đổi' : ''}
+            {' · Tự đồng bộ khi Tổng hợp bảng công'}
           </p>
         </div>
         <div className="attendance-penalties-actions">

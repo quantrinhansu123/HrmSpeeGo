@@ -10,6 +10,7 @@ import {
 } from '../utils/attendanceSummary'
 import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
 import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
+import { syncPenaltiesFromAttendanceSummary } from './attendancePenaltiesDb'
 
 /**
  * Rebuild and persist the monthly attendance snapshot used by /bang-cong-preview.
@@ -64,6 +65,18 @@ export const rebuildAttendanceMonthSummary = async (
   }
 
   await fbSet(`hr/attendanceMonthSummaries/${period}`, snapshot, companyId)
+
+  // Liên kết Bảng phạt với bảng công: cập nhật dòng phạt auto, giữ dòng nhập tay.
+  try {
+    await syncPenaltiesFromAttendanceSummary(
+      period,
+      filteredSummaryRows,
+      attendanceSettings?.penaltyCategories
+    )
+  } catch (penaltyError) {
+    console.warn('Đã lưu bảng công nhưng chưa đồng bộ được Bảng phạt:', penaltyError)
+  }
+
   return snapshot
 }
 
