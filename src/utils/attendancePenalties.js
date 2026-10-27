@@ -1,6 +1,6 @@
 export const DEFAULT_PENALTY_CATEGORIES = [
-  { key: 'late_under_30', label: 'Muộn/sớm <30p', amount: 50000 },
-  { key: 'late_over_30', label: 'Muộn/sớm ≥30p', amount: 100000 },
+  { key: 'late_under_30', label: 'Muộn/sớm tổng <30p', amount: 50000 },
+  { key: 'late_over_30', label: 'Muộn/sớm tổng ≥30p', amount: 100000 },
   { key: 'missing_punch', label: 'Quên chấm', amount: 50000 },
   { key: 'no_duty', label: 'Không trực nhật', amount: 50000 },
   { key: 'emergency_leave', label: 'Nghỉ đột xuất', amount: 100000 },
@@ -10,6 +10,11 @@ export const DEFAULT_PENALTY_CATEGORIES = [
 ]
 
 export const PENALTY_CATEGORIES = DEFAULT_PENALTY_CATEGORIES
+
+/** 2 lần đầu <15p miễn phạt; từ lần 3 hoặc có lần ≥15p thì phạt theo tổng phút. */
+export const LATE_EARLY_GRACE_COUNT = 2
+export const LATE_EARLY_GRACE_MAX_MINUTES = 15
+export const LATE_EARLY_FINE_THRESHOLD_MINUTES = 30
 
 const cloneCategory = item => ({
   key: item.key,
@@ -107,9 +112,76 @@ const autoRow = ({ employeeId, employeeCode, employeeName, date, suffix, categor
   source: 'auto'
 })
 
+/**
+ * Thu thập các lần đi muộn / về sớm trong tháng (mỗi ngày tối đa 1 muộn + 1 sớm).
+ */
+export const collectLateEarlyOccurrences = (summaryRow = {}) => {
+  const days = summaryRow.days instanceof Map
+    ? summaryRow.days
+    : new Map(Object.entries(summaryRow.days || {}))
+  const events = []
+  days.forEach((day, date) => {
+    if (!day) return
+    const lateMinutes = Number(day.lateMinutes || 0)
+    const earlyMinutes = Number(day.earlyMinutes || 0)
+    if (day.late && lateMinutes > 0) {
+      events.push({ date, type: 'late', minutes: lateMinutes })
+    }
+    if (day.early && earlyMinutes > 0) {
+      events.push({ date, type: 'early', minutes: earlyMinutes })
+    }
+  })
+  return events.sort((a, b) => String(a.date).localeCompare(String(b.date)))
+}
+
+/**
+ * Cơ chế phạt muộn/sớm theo tháng:
+ * - 2 lần đầu, mỗi lần <15 phút: không phạt, chỉ ghi nhận
+ * - Từ lần 3 hoặc có lần ≥15 phút: phạt theo tổng phút cả tháng
+ *   (<30p → 50k, ≥30p → 100k)
+ */
+export const evaluateMonthlyLateEarlyPenalty = (events = [], categories = DEFAULT_PENALTY_CATEGORIES) => {
+  const list = normalizePenaltyCategories(categories)
+  const under = findCategory(list, 'late_under_30')
+  const over = findCategory(list, 'late_over_30')
+  const sorted = [...events].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+  const totalMinutes = sorted.reduce((sum, item) => sum + Number(item.minutes || 0), 0)
+  const count = sorted.length
+  if (!count) {
+    return { applies: false, totalMinutes: 0, count: 0, amount: 0, category: null, content: '' }
+  }
+
+  const hasSerious = sorted.some(item => Number(item.minutes || 0) >= LATE_EARLY_GRACE_MAX_MINUTES)
+  const graceEligible = sorted.filter(item => Number(item.minutes || 0) < LATE_EARLY_GRACE_MAX_MINUTES)
+  const onlyGraceFirstTwo = count <= LATE_EARLY_GRACE_COUNT &&
+    graceEligible.length === count &&
+    !hasSerious
+
+  if (onlyGraceFirstTwo) {
+    return {
+      applies: false,
+      totalMinutes,
+      count,
+      amount: 0,
+      category: null,
+      content: `Ghi nhận ${count} lần muộn/sớm (tổng ${totalMinutes}p) — miễn phạt (2 lần đầu <15p)`
+    }
+  }
+
+  const category = totalMinutes < LATE_EARLY_FINE_THRESHOLD_MINUTES ? under : over
+  const content = `Muộn/sớm ${count} lần, tổng ${totalMinutes} phút → phạt ${Number(category?.amount || 0).toLocaleString('vi-VN')}đ`
+
+  return {
+    applies: true,
+    totalMinutes,
+    count,
+    amount: Number(category?.amount || 0),
+    category,
+    content
+  }
+}
+
 export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PENALTY_CATEGORIES) => {
-  const lateUnder = findCategory(categories, 'late_under_30')
-  const lateOver = findCategory(categories, 'late_over_30')
   const missingPunch = findCategory(categories, 'missing_punch')
   const unapprovedAbsence = findCategory(categories, 'unapproved_absence')
   const details = []
@@ -118,37 +190,29 @@ export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PE
     const employeeName = row.employeeName || row.employeeCode || row.employeeId || ''
     const employeeId = row.employeeId || ''
     const employeeCode = row.employeeCode || ''
+    const month = String(row.month || '').slice(0, 7) ||
+      (() => {
+        const days = row.days instanceof Map ? [...row.days.keys()] : Object.keys(row.days || {})
+        return String(days[0] || '').slice(0, 7)
+      })()
+
+    const lateEarlyEvents = collectLateEarlyOccurrences(row)
+    const lateEarlyPenalty = evaluateMonthlyLateEarlyPenalty(lateEarlyEvents, categories)
+    if (lateEarlyPenalty.applies && lateEarlyPenalty.category) {
+      details.push(autoRow({
+        employeeId,
+        employeeCode,
+        employeeName,
+        date: month ? `${month}-01` : (lateEarlyEvents[0]?.date || ''),
+        suffix: 'late-early-month',
+        category: lateEarlyPenalty.category,
+        content: lateEarlyPenalty.content
+      }))
+    }
+
     const days = row.days instanceof Map ? row.days : new Map(Object.entries(row.days || {}))
     days.forEach((day, date) => {
       if (!day) return
-      const lateMinutes = Number(day.lateMinutes || 0)
-      const earlyMinutes = Number(day.earlyMinutes || 0)
-
-      if (day.late && lateMinutes > 0) {
-        const over30 = lateMinutes >= 30
-        details.push(autoRow({
-          employeeId,
-          employeeCode,
-          employeeName,
-          date,
-          suffix: 'late',
-          category: over30 ? lateOver : lateUnder,
-          content: `Đi muộn ${lateMinutes} phút`
-        }))
-      }
-
-      if (day.early && earlyMinutes > 0) {
-        const over30 = earlyMinutes >= 30
-        details.push(autoRow({
-          employeeId,
-          employeeCode,
-          employeeName,
-          date,
-          suffix: 'early',
-          category: over30 ? lateOver : lateUnder,
-          content: `Về sớm ${earlyMinutes} phút`
-        }))
-      }
 
       if (day.missingPunch) {
         details.push(autoRow({
@@ -190,31 +254,29 @@ export const mergeAutoPenaltiesWithManual = (existingRows = [], autoRows = []) =
 }
 
 /**
- * Gắn số tiền phạt (theo hạng mục cấu hình) vào từng dòng bảng công
- * để xuất Excel / hiển thị tổng hợp.
+ * Gắn số tiền phạt (theo cơ chế mới) vào từng dòng bảng công để xuất Excel.
  */
 export const applyPenaltyAmountsToSummaryRows = (summaryRows = [], categories = DEFAULT_PENALTY_CATEGORIES) => {
   const list = normalizePenaltyCategories(categories)
-  const underAmount = Number(findCategory(list, 'late_under_30')?.amount || 0)
-  const overAmount = Number(findCategory(list, 'late_over_30')?.amount || 0)
   const missingAmount = Number(findCategory(list, 'missing_punch')?.amount || 0)
   const absenceAmount = Number(findCategory(list, 'unapproved_absence')?.amount || 0)
 
   return (summaryRows || []).map(row => {
-    const lateUnder30Count = Number(row.lateUnder30Count || 0)
-    const lateOver30Count = Number(row.lateOver30Count || 0)
-    const earlyUnder30Count = Number(row.earlyUnder30Count || 0)
-    const earlyOver30Count = Number(row.earlyOver30Count || 0)
+    const events = collectLateEarlyOccurrences(row)
+    const lateEarly = evaluateMonthlyLateEarlyPenalty(events, list)
     const missingPunchCount = Number(row.missingPunchCount || 0)
     const unapprovedAbsenceCount = Number(row.unapprovedAbsenceCount || 0)
-
-    const lateFine = lateUnder30Count * underAmount + lateOver30Count * overAmount
-    const earlyFine = earlyUnder30Count * underAmount + earlyOver30Count * overAmount
-    const lateUnder30Fine = (lateUnder30Count + earlyUnder30Count) * underAmount
-    const lateOver30Fine = (lateOver30Count + earlyOver30Count) * overAmount
     const missingPunchFine = missingPunchCount * missingAmount
     const unapprovedAbsenceFine = unapprovedAbsenceCount * absenceAmount
-    const totalFine = lateFine + earlyFine + missingPunchFine + unapprovedAbsenceFine
+    const lateFine = lateEarly.applies ? lateEarly.amount : 0
+    const earlyFine = 0
+    const lateUnder30Fine = lateEarly.applies && lateEarly.totalMinutes < LATE_EARLY_FINE_THRESHOLD_MINUTES
+      ? lateEarly.amount
+      : 0
+    const lateOver30Fine = lateEarly.applies && lateEarly.totalMinutes >= LATE_EARLY_FINE_THRESHOLD_MINUTES
+      ? lateEarly.amount
+      : 0
+    const totalFine = lateFine + missingPunchFine + unapprovedAbsenceFine
 
     return {
       ...row,
@@ -224,7 +286,8 @@ export const applyPenaltyAmountsToSummaryRows = (summaryRows = [], categories = 
       earlyFine,
       missingPunchFine,
       unapprovedAbsenceFine,
-      totalFine
+      totalFine,
+      lateEarlyPenaltyNote: lateEarly.content || ''
     }
   })
 }

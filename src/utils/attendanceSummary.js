@@ -216,7 +216,24 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
 
   const holiday = getAttendanceHoliday(date, attendanceSettings)
   const hoursExact = Math.max(0, hours)
-  const regularWorkdaysExact = Math.max(0, workdays)
+  // Muộn/sớm < 60 phút: chỉ ghi phút để phạt, không trừ công.
+  // ≥ 60 phút: giữ công theo giờ thực tế (đã bị giảm do đi muộn/về sớm).
+  const lateEarlyTotal = Math.max(0, lateMinutes) + Math.max(0, earlyMinutes)
+  const LATE_EARLY_WORKDAY_THRESHOLD = 60
+  let regularWorkdaysExact = Math.max(0, workdays)
+  if (
+    hasPunch &&
+    lateEarlyTotal > 0 &&
+    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD &&
+    !['source-value', 'matrix-value'].includes(calculationMode)
+  ) {
+    const standardMinutes = Number(attendanceSettings.standardWorkMinutes) > 0
+      ? Number(attendanceSettings.standardWorkMinutes)
+      : STANDARD_WORK_MINUTES
+    const workedMinutes = Math.max(0, hoursExact * 60)
+    const forgivenMinutes = Math.min(workedMinutes + lateEarlyTotal, standardMinutes)
+    regularWorkdaysExact = Math.max(regularWorkdaysExact, forgivenMinutes / Math.max(1, standardMinutes))
+  }
   const extraWorkdaysExact = Math.max(0, extraWorkdays)
   const dayWorkdaysExact = regularWorkdaysExact + extraWorkdaysExact
   const isOnlineDay = logs.some(log => {

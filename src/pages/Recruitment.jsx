@@ -666,11 +666,13 @@ function Recruitment() {
               <tr>
                 <th style={{ minWidth: '80px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>STT</th>
                 <th style={{ minWidth: '150px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Bộ phận</th>
-                <th style={{ minWidth: '200px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Vị trí</th>
-                <th style={{ minWidth: '150px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Nhân sự hiện có</th>
-                <th style={{ minWidth: '120px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Định biên</th>
-                <th style={{ minWidth: '120px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Cần tuyển</th>
-                <th style={{ minWidth: '250px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Ghi chú</th>
+                <th style={{ minWidth: '180px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Vị trí cần tuyển</th>
+                <th style={{ minWidth: '140px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Bậc năng lực</th>
+                <th style={{ minWidth: '120px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Kinh nghiệm</th>
+                <th style={{ minWidth: '100px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Số lượng</th>
+                <th style={{ minWidth: '100px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Hiện có</th>
+                <th style={{ minWidth: '100px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Định biên</th>
+                <th style={{ minWidth: '220px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Mô tả / mục đích</th>
                 <th style={{ minWidth: '120px', position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 10 }}>Thao tác</th>
               </tr>
             </thead>
@@ -679,16 +681,18 @@ function Recruitment() {
                 plans.map((plan, idx) => {
                   const current = Number(plan.nhan_su_hien_co || 0)
                   const target = Number(plan.dinh_bien || 0)
-                  const need = Math.max(target - current, 0)
+                  const need = Number(plan.so_luong || 0) || Math.max(target - current, 0)
                   return (
                     <tr key={plan.id || idx}>
                       <td>{idx + 1}</td>
                       <td>{plan.bo_phan || ''}</td>
                       <td>{plan.vi_tri || ''}</td>
+                      <td>{plan.bac_nang_luc || ''}</td>
+                      <td>{plan.so_nam_kinh_nghiem || ''}</td>
+                      <td>{need}</td>
                       <td>{current}</td>
                       <td>{target}</td>
-                      <td>{need}</td>
-                      <td>{plan.ghi_chu || ''}</td>
+                      <td>{plan.mo_ta || plan.ghi_chu || ''}</td>
                       <td>
                         <div className="actions">
                           <button

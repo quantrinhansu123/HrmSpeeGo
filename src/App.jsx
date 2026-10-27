@@ -17,6 +17,8 @@ const LeaveDays = lazy(() => import('./pages/LeaveDays'))
 const Login = lazy(() => import('./pages/Login'))
 const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
+const Recruitment = lazy(() => import('./pages/Recruitment'))
+const CompanyDocuments = lazy(() => import('./pages/CompanyDocuments'))
 
 import ErrorBoundary from './components/ErrorBoundary'
 
@@ -55,12 +57,13 @@ function App() {
               <Route path="/employees" element={<Employees />} />
               <Route path="/bang-phep" element={<ProtectedRoute allowedRoles={['admin', 'hr']}><LeaveBoard /></ProtectedRoute>} />
               <Route path="/bang-phat" element={<AttendancePenalties />} />
+              <Route path="/recruitment" element={<Recruitment />} />
+              <Route path="/giay-to-cong-ty" element={<CompanyDocuments />} />
               <Route path="/attendance" element={<Navigate to="/bang-cong-preview" replace />} />
               <Route path="/honor" element={<Navigate to="/bang-cong-preview" replace />} />
 
               {/* Các tab còn lại: không tải DB, chỉ hiện thông báo demo */}
               <Route path="/dashboard" element={<FeatureComingSoon />} />
-              <Route path="/recruitment" element={<FeatureComingSoon />} />
               <Route path="/salary" element={<FeatureComingSoon />} />
               <Route path="/competency" element={<FeatureComingSoon />} />
               <Route path="/kpi" element={<FeatureComingSoon />} />

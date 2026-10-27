@@ -25,6 +25,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
   const secondaryStaffItems = [
     { path: '/dashboard', icon: 'fas fa-home', label: 'Tổng quan' },
     { path: '/recruitment', icon: 'fas fa-user-plus', label: 'Tuyển dụng' },
+    { path: '/giay-to-cong-ty', icon: 'fas fa-folder-open', label: 'Giấy tờ công ty' },
     { path: '/salary', icon: 'fas fa-money-bill-wave', label: 'Lương & Phúc lợi' },
     { path: '/competency', icon: 'fas fa-chart-line', label: 'Khung năng lực' },
     { path: '/kpi', icon: 'fas fa-bullseye', label: 'KPI' },

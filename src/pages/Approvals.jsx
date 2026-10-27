@@ -317,6 +317,12 @@ function Approvals() {
   const [leaveEndDate, setLeaveEndDate] = useState(new Date().toISOString().slice(0, 10))
   const [leaveDuration, setLeaveDuration] = useState('full')
   const [leaveType, setLeaveType] = useState('paid')
+  const [recruitPosition, setRecruitPosition] = useState('')
+  const [recruitLevel, setRecruitLevel] = useState('')
+  const [recruitExperience, setRecruitExperience] = useState('')
+  const [recruitQuantity, setRecruitQuantity] = useState('1')
+  const [recruitDepartment, setRecruitDepartment] = useState('')
+  const [recruitDescription, setRecruitDescription] = useState('')
   const [approverSteps, setApproverSteps] = useState([emptyStep()])
   const [followers, setFollowers] = useState([])
   const [errors, setErrors] = useState({})
@@ -721,6 +727,9 @@ function Approvals() {
     selectedTemplateUsage.attendanceSync === 'paid-leave' ||
     selectedTemplate?.id === 'leave' ||
     selectedTemplate?.baseId === 'leave'
+
+  const selectedTemplateIsRecruit =
+    selectedTemplate?.id === 'recruit' || selectedTemplate?.baseId === 'recruit'
 
   const effectiveApproverSteps = isEmployee
     ? teamLeader ? [{
@@ -1294,6 +1303,9 @@ function Approvals() {
     if (selectedTemplateUsage.limitReached) {
       errs.quota = `Đã hết hạn mức ${selectedTemplateUsage.maxRequests} lần/${APPROVAL_PERIOD_LABELS[selectedTemplateUsage.quotaPeriod]}.`
     }
+    if (selectedTemplateIsRecruit && !recruitPosition.trim()) {
+      errs.recruitPosition = 'Vui lòng nhập vị trí cần tuyển'
+    }
     if (selectedTemplateUsesLeaveDates) {
       const dates = listRequestLeaveDates({ leaveStartDate, leaveEndDate })
       if (!leaveStartDate || !leaveEndDate || dates.length === 0) {
@@ -1388,6 +1400,16 @@ function Approvals() {
               leaveDuration,
               leaveType,
               attendanceSyncStatus: 'pending'
+            }
+          : {}),
+        ...(selectedTemplateIsRecruit
+          ? {
+              recruitPosition: recruitPosition.trim(),
+              recruitLevel: recruitLevel.trim(),
+              recruitExperience: recruitExperience.trim(),
+              recruitQuantity: Number(recruitQuantity) || 1,
+              recruitDepartment: recruitDepartment.trim(),
+              recruitDescription: recruitDescription.trim()
             }
           : {}),
         status: 'pending',
@@ -2001,6 +2023,82 @@ function Approvals() {
                   {errors.subject && <div className="apv-field-error">{errors.subject}</div>}
                 </div>
 
+                {selectedTemplateIsRecruit && (
+                  <div className="apv-leave-fields">
+                    <div className="apv-card-block__title">Thông tin đề xuất tuyển dụng</div>
+                    <div className="apv-field-row apv-field-row--equal">
+                      <div className="apv-field">
+                        <label>Vị trí cần tuyển <span className="req">*</span></label>
+                        <input
+                          type="text"
+                          value={recruitPosition}
+                          onChange={(e) => {
+                            setRecruitPosition(e.target.value)
+                            if (errors.recruitPosition) setErrors((prev) => ({ ...prev, recruitPosition: undefined }))
+                          }}
+                          placeholder="VD: Nhân viên Sale"
+                        />
+                        {errors.recruitPosition && <div className="apv-field-error">{errors.recruitPosition}</div>}
+                      </div>
+                      <div className="apv-field">
+                        <label>Bộ phận / phòng ban</label>
+                        <input
+                          type="text"
+                          value={recruitDepartment}
+                          onChange={(e) => setRecruitDepartment(e.target.value)}
+                          placeholder="VD: Kinh doanh"
+                        />
+                      </div>
+                    </div>
+                    <div className="apv-field-row apv-field-row--equal">
+                      <div className="apv-field">
+                        <label>Khung / bậc năng lực</label>
+                        <input
+                          type="text"
+                          list="recruit-level-options"
+                          value={recruitLevel}
+                          onChange={(e) => setRecruitLevel(e.target.value)}
+                          placeholder="Intern, Fresher, Junior, Senior..."
+                        />
+                        <datalist id="recruit-level-options">
+                          <option value="Intern/Học việc" />
+                          <option value="Fresher" />
+                          <option value="Junior" />
+                          <option value="Senior" />
+                          <option value="Leader/Manager" />
+                        </datalist>
+                      </div>
+                      <div className="apv-field">
+                        <label>Số năm kinh nghiệm</label>
+                        <input
+                          type="text"
+                          value={recruitExperience}
+                          onChange={(e) => setRecruitExperience(e.target.value)}
+                          placeholder="VD: 1-2 năm"
+                        />
+                      </div>
+                      <div className="apv-field">
+                        <label>Số lượng cần tuyển</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={recruitQuantity}
+                          onChange={(e) => setRecruitQuantity(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="apv-field">
+                      <label>Mô tả ngắn yêu cầu / mục đích tuyển dụng</label>
+                      <textarea
+                        rows={3}
+                        value={recruitDescription}
+                        onChange={(e) => setRecruitDescription(e.target.value)}
+                        placeholder="Yêu cầu kỹ năng, mục đích tuyển dụng..."
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {selectedTemplateUsesLeaveDates && (
                   <div className="apv-leave-fields">
                     <div className="apv-card-block__title">Thông tin đề xuất xin nghỉ</div>
@@ -2364,6 +2462,36 @@ function Approvals() {
                   <label>Nội dung</label>
                   <div className="apv-detail-text">{selectedRequest.content}</div>
                 </div>
+                {(selectedRequest.recruitPosition || selectedRequest.recruitDepartment) && (
+                  <div className="apv-detail-leave">
+                    <div>
+                      <span>Vị trí</span>
+                      <strong>{selectedRequest.recruitPosition || '—'}</strong>
+                    </div>
+                    <div>
+                      <span>Bộ phận</span>
+                      <strong>{selectedRequest.recruitDepartment || '—'}</strong>
+                    </div>
+                    <div>
+                      <span>Bậc năng lực</span>
+                      <strong>{selectedRequest.recruitLevel || '—'}</strong>
+                    </div>
+                    <div>
+                      <span>Kinh nghiệm</span>
+                      <strong>{selectedRequest.recruitExperience || '—'}</strong>
+                    </div>
+                    <div>
+                      <span>Số lượng</span>
+                      <strong>{selectedRequest.recruitQuantity || '—'}</strong>
+                    </div>
+                    {selectedRequest.recruitDescription && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <span>Mô tả / mục đích</span>
+                        <strong style={{ whiteSpace: 'pre-wrap' }}>{selectedRequest.recruitDescription}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {listRequestLeaveDates(selectedRequest).length > 0 && (
                   <div className="apv-detail-leave">
                     <div>

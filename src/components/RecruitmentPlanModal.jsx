@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
 import { fbPush, fbUpdate } from '../services/firebase'
 
+export const DEFAULT_COMPETENCY_LEVELS = [
+  'Intern/Học việc',
+  'Fresher',
+  'Junior',
+  'Senior',
+  'Leader/Manager'
+]
+
 // Internal component for searchable input
 const SearchableInput = ({ label, name, value, onChange, options = [], disabled, placeholder, required }) => {
   const [showSuggestions, setShowSuggestions] = useState(false)
 
-  // Filter options based on input
-  // Display all options if input is empty, or filter by includes
   const filteredOptions = options.filter(opt =>
     !value || opt.toLowerCase().includes(value.toLowerCase())
   )
@@ -23,11 +29,10 @@ const SearchableInput = ({ label, name, value, onChange, options = [], disabled,
         disabled={disabled}
         placeholder={placeholder}
         onFocus={() => setShowSuggestions(true)}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)} // Delay to allow click
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
         autoComplete="off"
       />
 
-      {/* Custom Dropdown */}
       {showSuggestions && !disabled && (
         <div style={{
           position: 'absolute',
@@ -48,7 +53,6 @@ const SearchableInput = ({ label, name, value, onChange, options = [], disabled,
               <div
                 key={idx}
                 onClick={() => {
-                  // Simulate change event
                   onChange({ target: { name, value: opt } })
                   setShowSuggestions(false)
                 }}
@@ -66,31 +70,48 @@ const SearchableInput = ({ label, name, value, onChange, options = [], disabled,
                 {opt}
               </div>
             ))
-          ) : (
-            null
-          )}
+          ) : null}
         </div>
       )}
     </div>
   )
 }
 
-function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false, departments = [], positions = [] }) {
-  const [formData, setFormData] = useState({
-    bo_phan: '',
-    vi_tri: '',
-    nhan_su_hien_co: '',
-    dinh_bien: '',
-    ghi_chu: ''
-  })
+const emptyForm = () => ({
+  bo_phan: '',
+  vi_tri: '',
+  bac_nang_luc: '',
+  so_nam_kinh_nghiem: '',
+  so_luong: '',
+  nhan_su_hien_co: '',
+  dinh_bien: '',
+  mo_ta: '',
+  ghi_chu: ''
+})
+
+function RecruitmentPlanModal({
+  plan,
+  isOpen,
+  onClose,
+  onSave,
+  readOnly = false,
+  departments = [],
+  positions = [],
+  competencyLevels = DEFAULT_COMPETENCY_LEVELS
+}) {
+  const [formData, setFormData] = useState(emptyForm)
 
   useEffect(() => {
     if (plan) {
       setFormData({
         bo_phan: plan.bo_phan || '',
         vi_tri: plan.vi_tri || '',
+        bac_nang_luc: plan.bac_nang_luc || plan.competencyLevel || '',
+        so_nam_kinh_nghiem: plan.so_nam_kinh_nghiem ?? plan.yearsExperience ?? '',
+        so_luong: plan.so_luong ?? plan.quantity ?? '',
         nhan_su_hien_co: plan.nhan_su_hien_co || '',
         dinh_bien: plan.dinh_bien || '',
+        mo_ta: plan.mo_ta || plan.description || '',
         ghi_chu: plan.ghi_chu || ''
       })
     } else {
@@ -99,13 +120,7 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
   }, [plan, isOpen])
 
   const resetForm = () => {
-    setFormData({
-      bo_phan: '',
-      vi_tri: '',
-      nhan_su_hien_co: '',
-      dinh_bien: '',
-      ghi_chu: ''
-    })
+    setFormData(emptyForm())
   }
 
   const handleChange = (e) => {
@@ -120,16 +135,23 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
     if (readOnly) return
 
     try {
+      const quantity = Number(formData.so_luong || 0)
+      const current = Number(formData.nhan_su_hien_co || 0)
+      const target = Number(formData.dinh_bien || 0)
       const payload = {
         bo_phan: formData.bo_phan.trim(),
         vi_tri: formData.vi_tri.trim(),
-        nhan_su_hien_co: Number(formData.nhan_su_hien_co || 0),
-        dinh_bien: Number(formData.dinh_bien || 0),
+        bac_nang_luc: formData.bac_nang_luc.trim(),
+        so_nam_kinh_nghiem: String(formData.so_nam_kinh_nghiem || '').trim(),
+        so_luong: quantity > 0 ? quantity : Math.max(target - current, 0),
+        nhan_su_hien_co: current,
+        dinh_bien: target,
+        mo_ta: formData.mo_ta.trim(),
         ghi_chu: formData.ghi_chu.trim()
       }
 
       if (!payload.bo_phan || !payload.vi_tri) {
-        alert('Vui lòng nhập Bộ phận và Vị trí')
+        alert('Vui lòng nhập Bộ phận và Vị trí cần tuyển')
         return
       }
 
@@ -150,16 +172,22 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
   if (!isOpen) return null
 
   const getTitle = () => {
-    if (readOnly) return 'Chi tiết định biên nhân sự'
-    return plan ? 'Sửa định biên nhân sự' : 'Tạo mới định biên nhân sự'
+    if (readOnly) return 'Chi tiết đề xuất tuyển dụng'
+    return plan ? 'Sửa đề xuất tuyển dụng' : 'Tạo đề xuất tuyển dụng'
   }
+
+  const levelOptions = [...new Set([
+    ...DEFAULT_COMPETENCY_LEVELS,
+    ...(competencyLevels || []),
+    formData.bac_nang_luc
+  ].filter(Boolean))]
 
   return (
     <div className="modal show" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>
-            <i className={readOnly ? "fas fa-eye" : "fas fa-users-cog"}></i>
+            <i className={readOnly ? 'fas fa-eye' : 'fas fa-user-plus'}></i>
             {getTitle()}
           </h3>
           <button className="modal-close" onClick={onClose}>&times;</button>
@@ -168,7 +196,7 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
           <form onSubmit={handleSubmit}>
             <div className="form-row">
               <SearchableInput
-                label="Bộ phận *"
+                label="Bộ phận / phòng ban tuyển dụng *"
                 name="bo_phan"
                 value={formData.bo_phan}
                 onChange={handleChange}
@@ -178,7 +206,7 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
                 placeholder="Nhập hoặc chọn bộ phận"
               />
               <SearchableInput
-                label="Vị trí *"
+                label="Vị trí cần tuyển *"
                 name="vi_tri"
                 value={formData.vi_tri}
                 onChange={handleChange}
@@ -190,6 +218,41 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
             </div>
 
             <div className="form-row">
+              <SearchableInput
+                label="Khung / bậc năng lực"
+                name="bac_nang_luc"
+                value={formData.bac_nang_luc}
+                onChange={handleChange}
+                options={levelOptions}
+                disabled={readOnly}
+                placeholder="Intern, Fresher, Junior, Senior..."
+              />
+              <div className="form-group">
+                <label>Số năm kinh nghiệm yêu cầu</label>
+                <input
+                  type="text"
+                  name="so_nam_kinh_nghiem"
+                  value={formData.so_nam_kinh_nghiem}
+                  onChange={handleChange}
+                  placeholder="VD: 1-2 năm, từ 3 năm..."
+                  disabled={readOnly}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Số lượng cần tuyển</label>
+                <input
+                  type="number"
+                  name="so_luong"
+                  value={formData.so_luong}
+                  onChange={handleChange}
+                  min="0"
+                  disabled={readOnly}
+                  placeholder="Số người cần tuyển"
+                />
+              </div>
               <div className="form-group">
                 <label>Nhân sự hiện có</label>
                 <input
@@ -215,13 +278,25 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
             </div>
 
             <div className="form-group">
-              <label>Ghi chú</label>
+              <label>Mô tả ngắn về yêu cầu và mục đích tuyển dụng</label>
+              <textarea
+                name="mo_ta"
+                value={formData.mo_ta}
+                onChange={handleChange}
+                rows="4"
+                placeholder="Yêu cầu kỹ năng, mục đích tuyển dụng, thời điểm cần có mặt..."
+                disabled={readOnly}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Ghi chú thêm</label>
               <textarea
                 name="ghi_chu"
                 value={formData.ghi_chu}
                 onChange={handleChange}
-                rows="3"
-                placeholder="VD: Mở rộng thị trường, bổ sung nhân sự Ads cứng..."
+                rows="2"
+                placeholder="Ghi chú nội bộ (nếu có)"
                 disabled={readOnly}
               />
             </div>
@@ -245,5 +320,3 @@ function RecruitmentPlanModal({ plan, isOpen, onClose, onSave, readOnly = false,
 }
 
 export default RecruitmentPlanModal
-
-

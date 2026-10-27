@@ -305,7 +305,8 @@ test('bảng công tính từng buổi theo phút và tự bỏ giờ nghỉ tr�
   assert.equal(days.get('2026-08-03').workdaysExact, 0.5)
   assert.equal(days.get('2026-08-03').hours, 4.5)
   assert.equal(days.get('2026-08-03').lateMinutes, 0)
-  assert.equal(days.get('2026-08-04').workdaysExact, 180 / 210 * 0.5 + 0.5)
+  // Muộn 30 phút (< 60): vẫn ghi phút để phạt nhưng không trừ công.
+  assert.equal(days.get('2026-08-04').workdaysExact, 1)
   assert.equal(days.get('2026-08-04').hours, 7.5)
   assert.equal(days.get('2026-08-04').lateMinutes, 30)
 })
@@ -413,4 +414,60 @@ test('giữ Công và Giờ nguồn khi import chọn chế độ theo Excel', (
   assert.equal(summary.lateMinutes, 7)
   assert.equal(summary.earlyMinutes, 3)
   assert.equal(summary.calculationMode, 'source-value')
+})
+
+test('muộn/sớm dưới 60 phút: ghi phút để phạt nhưng không trừ công', () => {
+  const attendanceSettings = {
+    standardWorkMinutes: 480,
+    unpaidBreakMinutes: 60,
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính',
+        standardCheckIn: '08:30',
+        standardCheckOut: '17:30'
+      }
+    }
+  }
+  const forgiven = summarizeAttendanceDay(
+    [{
+      employeeId: 'nv-late',
+      date: '2026-08-10',
+      vao: '08:50',
+      ra: '17:30'
+    }],
+    { shift: 'Ca Hành chính' },
+    attendanceSettings,
+    '2026-08-10'
+  )
+
+  assert.equal(forgiven.lateMinutes, 20)
+  assert.equal(forgiven.workdays, 1)
+})
+
+test('muộn/sớm từ 60 phút: giữ công theo giờ thực tế (có trừ công)', () => {
+  const attendanceSettings = {
+    standardWorkMinutes: 480,
+    unpaidBreakMinutes: 60,
+    shifts: {
+      administrative: {
+        name: 'Ca Hành chính',
+        standardCheckIn: '08:30',
+        standardCheckOut: '17:30'
+      }
+    }
+  }
+  const deducted = summarizeAttendanceDay(
+    [{
+      employeeId: 'nv-late-hour',
+      date: '2026-08-11',
+      vao: '09:40',
+      ra: '17:30'
+    }],
+    { shift: 'Ca Hành chính' },
+    attendanceSettings,
+    '2026-08-11'
+  )
+
+  assert.equal(deducted.lateMinutes, 70)
+  assert.ok(deducted.workdays < 1)
 })
