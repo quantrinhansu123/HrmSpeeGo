@@ -143,9 +143,23 @@ body {
 }
 
 @media (min-width: 960px) {
+  .container--approvals {
+    align-items: stretch;
+  }
+
   .container--approvals .main {
     padding: 0;
     background: #f8fafc;
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .container--approvals .main > .apv-page {
+    flex: 1;
+    min-height: 0;
   }
 }
 

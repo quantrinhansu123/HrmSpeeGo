@@ -728,8 +728,23 @@ function Approvals() {
     selectedTemplate?.id === 'leave' ||
     selectedTemplate?.baseId === 'leave'
 
-  const selectedTemplateIsRecruit =
-    selectedTemplate?.id === 'recruit' || selectedTemplate?.baseId === 'recruit'
+  const selectedTemplateIsRecruit = useMemo(() => {
+    if (!selectedTemplate) return false
+    if (selectedTemplate.id === 'recruit' || selectedTemplate.baseId === 'recruit') return true
+    const text = `${selectedTemplate.title || ''} ${selectedTemplate.defaultSubject || ''} ${selectedTemplate.description || ''}`
+      .toLocaleLowerCase('vi')
+    return text.includes('tuyển dụng')
+  }, [selectedTemplate])
+
+  const recruitDepartments = useMemo(
+    () => [...new Set(employees.map((e) => e.bo_phan).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi')),
+    [employees]
+  )
+
+  const recruitPositions = useMemo(
+    () => [...new Set(employees.map((e) => e.vi_tri).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi')),
+    [employees]
+  )
 
   const effectiveApproverSteps = isEmployee
     ? teamLeader ? [{
@@ -754,6 +769,11 @@ function Approvals() {
     return [...new Set(listRequestLeaveDates({ leaveStartDate, leaveEndDate }).map(day => day.slice(0, 7)))]
   }, [selectedTemplateUsesLeaveDates, leaveStartDate, leaveEndDate])
   const leaveMonthsKey = leaveMonths.join(',')
+
+  useEffect(() => {
+    if (view !== 'create' || !selectedTemplateIsRecruit) return
+    setRecruitDepartment((current) => current || me?.department || '')
+  }, [view, selectedTemplateIsRecruit, me?.department])
 
   useEffect(() => {
     if (view !== 'create' || !selectedTemplateUsesLeaveDates || !leaveYearsKey) return
@@ -1823,20 +1843,24 @@ function Approvals() {
           </>
         ) : view === 'create' ? (
           <>
-            <div className="apv-topbar">
+            <div className="apv-topbar apv-topbar--saas">
               <button className="apv-topbar__back" onClick={goBackToList}>
                 <i className="fas fa-arrow-left"></i>
               </button>
-              <div className="apv-topbar__title">Tạo yêu cầu</div>
+              <div className="apv-topbar__title">
+                Tạo đề xuất
+                <small>Điền thông tin → chọn người duyệt → gửi</small>
+              </div>
             </div>
 
-            <div className="apv-body">
-              <div className="apv-card-block">
+            <div className="apv-body apv-body--saas">
+              <div className="apv-create-hero">
                 <div className="apv-template-info">
-                  <div className="apv-template-info__icon" style={{ background: selectedTemplate?.color || '#16a34a' }}>
+                  <div className="apv-template-info__icon" style={{ background: selectedTemplate?.color || '#0f3f78' }}>
                     <i className={`fas ${selectedTemplate?.icon || 'fa-file-signature'}`}></i>
                   </div>
                   <div>
+                    <div className="apv-template-info__eyebrow">Mẫu đang dùng</div>
                     <div className="apv-template-info__title">{selectedTemplate?.title || 'ĐỀ XUẤT'}</div>
                     <div className="apv-template-info__desc">
                       {selectedTemplate?.description ||
@@ -1845,132 +1869,60 @@ function Approvals() {
                   </div>
                 </div>
 
-                <div className={`apv-quota-status ${selectedTemplateUsage.limitReached ? 'is-limit' : ''}`}>
-                  <div>
-                    <i className="fas fa-ticket"></i>
-                    <strong>Hạn mức phiếu</strong>
+                <div className="apv-create-metrics">
+                  <div className={`apv-metric-pill ${selectedTemplateUsage.limitReached ? 'is-limit' : ''}`}>
+                    <span>Hạn mức</span>
+                    <strong>
+                      {selectedTemplateUsage.remaining === null
+                        ? 'Không giới hạn'
+                        : `${selectedTemplateUsage.used}/${selectedTemplateUsage.maxRequests}`}
+                    </strong>
                   </div>
-                  {selectedTemplateUsage.remaining === null ? (
-                    <span>Không giới hạn số lần tạo</span>
-                  ) : (
-                    <span>
-                      Đã dùng <b>{selectedTemplateUsage.used}/{selectedTemplateUsage.maxRequests}</b>
-                      {' · '}Còn <b>{selectedTemplateUsage.remaining}</b> lần trong{' '}
-                      {APPROVAL_PERIOD_LABELS[selectedTemplateUsage.quotaPeriod]}
-                    </span>
-                  )}
+                  <div className="apv-metric-pill">
+                    <span>Tháng này</span>
+                    <strong>{myCreateStats.month.total}</strong>
+                  </div>
+                  <div className="apv-metric-pill">
+                    <span>Phép năm</span>
+                    <strong>
+                      {ownLeaveSummaryLoading
+                        ? '…'
+                        : formatLeaveRemaining(ownLeaveSummary?.balance)}
+                    </strong>
+                  </div>
+                  <div className="apv-metric-pill">
+                    <span>Phép tháng</span>
+                    <strong>
+                      {ownLeaveSummaryLoading
+                        ? '…'
+                        : formatLeaveCount(ownLeaveSummary?.usage?.remaining ?? 0)}
+                    </strong>
+                  </div>
                 </div>
                 {errors.quota && <div className="apv-field-error">{errors.quota}</div>}
-
-                <div className="apv-my-stats">
-                  <div className="apv-my-stats__head">
-                    <strong>Lịch sử đề xuất của bạn</strong>
-                    <span>
-                      {me?.name || 'Nhân viên hiện tại'}
-                      {me?.employeeCode ? ` · Mã NV: ${me.employeeCode}` : ''}
-                    </span>
-                  </div>
-                  <div className="apv-my-stats__split">
-                  <div className="apv-my-stats__periods">
-                    {[
-                      ['week', 'Tuần này', myCreateStats.week],
-                      ['month', 'Tháng này', myCreateStats.month],
-                      ['year', 'Năm nay', myCreateStats.year]
-                    ].map(([key, label, bucket]) => {
-                      const currentType = selectedTemplate?.title || 'ĐỀ XUẤT'
-                      const currentCount = bucket.byTemplate[currentType] || 0
-                      const otherTypes = Object.entries(bucket.byTemplate)
-                      return (
-                        <div key={key} className="apv-my-stats__period-card">
-                          <div className="apv-my-stats__period-top">
-                            <span>{label}</span>
-                            <strong>{bucket.total}</strong>
-                          </div>
-                          <div className="apv-my-stats__current">
-                            Mẫu đang chọn: <b>{currentCount}</b> lần
-                          </div>
-                          <div className="apv-my-stats__types">
-                            {otherTypes.length === 0 ? (
-                              <span className="apv-my-stats__empty">Chưa có đề xuất</span>
-                            ) : (
-                              otherTypes
-                                .sort((a, b) => b[1] - a[1])
-                                .map(([name, count]) => (
-                                  <span
-                                    key={name}
-                                    className={name === currentType ? 'is-active' : ''}
-                                  >
-                                    {name}: <b>{count}</b>
-                                  </span>
-                                ))
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div>
-                  <div className="apv-my-stats__head apv-my-stats__head--leave">
-                    <strong>Số phép còn lại</strong>
-                    <span>{ownLeaveSummary ? `Năm ${ownLeaveSummary.year} · Tháng ${ownLeaveSummary.month}` : 'Năm nay · Tháng này'}</span>
-                  </div>
-                  {ownLeaveSummaryError ? (
-                    <div className="apv-field-error">{ownLeaveSummaryError}</div>
-                  ) : (
-                    <div className="apv-my-stats__periods apv-my-stats__periods--leave">
-                      <div className="apv-my-stats__period-card">
-                        <div className="apv-my-stats__period-top">
-                          <span>Phép năm</span>
-                          <strong>{ownLeaveSummaryLoading ? '…' : formatLeaveRemaining(ownLeaveSummary?.balance)}</strong>
-                        </div>
-                        <div className="apv-my-stats__current">
-                          {ownLeaveSummary?.balance?.configured
-                            ? <>Còn <b>{formatLeaveCount(ownLeaveSummary.balance.remaining)}</b> / {formatLeaveCount(ownLeaveSummary.balance.total)} ngày</>
-                            : 'Chưa cài đặt phép năm'}
-                        </div>
-                      </div>
-                      <div className="apv-my-stats__period-card">
-                        <div className="apv-my-stats__period-top">
-                          <span>Phép tháng</span>
-                          <strong>{ownLeaveSummaryLoading ? '…' : formatLeaveCount(ownLeaveSummary?.usage?.remaining ?? 0)}</strong>
-                        </div>
-                        <div className="apv-my-stats__current">
-                          Còn <b>{ownLeaveSummaryLoading ? '…' : formatLeaveCount(ownLeaveSummary?.usage?.remaining ?? 0)}</b>
-                          {' / '}
-                          {ownLeaveSummary?.usage?.limit ?? 2} lượt
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  </div>
-                  </div>
-                </div>
+                {ownLeaveSummaryError && <div className="apv-field-error">{ownLeaveSummaryError}</div>}
               </div>
 
-              <div className="apv-card-block">
-                <div className="apv-field-row">
-                  <div className="apv-field">
-                    <label>Họ và tên</label>
-                    <input
-                      type="text"
-                      className="apv-input--readonly"
-                      value={me?.name || ''}
-                      readOnly
-                      disabled
-                      placeholder="Theo tài khoản đăng nhập"
-                    />
+              <div className="apv-card-block apv-card-block--saas apv-create-main">
+                <div className="apv-section-head">
+                  <h2>Thông tin chung</h2>
+                  <p>Người tạo lấy theo tài khoản đăng nhập.</p>
+                </div>
+                <div className="apv-identity-row">
+                  <div className="apv-identity-chip">
+                    <span>Họ và tên</span>
+                    <strong>{me?.name || '—'}</strong>
                   </div>
-                  <div className="apv-field">
-                    <label>Mã nhân sự</label>
-                    <input
-                      type="text"
-                      className="apv-input--readonly"
-                      value={me?.employeeCode || ''}
-                      readOnly
-                      disabled
-                      placeholder="Theo tài khoản đăng nhập"
-                    />
+                  <div className="apv-identity-chip">
+                    <span>Mã nhân sự</span>
+                    <strong>{me?.employeeCode || '—'}</strong>
                   </div>
+                  {me?.department ? (
+                    <div className="apv-identity-chip">
+                      <span>Bộ phận</span>
+                      <strong>{me.department}</strong>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="apv-field">
@@ -1997,10 +1949,25 @@ function Approvals() {
                             }))
                           : [emptyStep()]
                       )
+                      const isRecruit =
+                        tpl.id === 'recruit' ||
+                        tpl.baseId === 'recruit' ||
+                        `${tpl.title || ''} ${tpl.defaultSubject || ''} ${tpl.description || ''}`
+                          .toLocaleLowerCase('vi')
+                          .includes('tuyển dụng')
+                      if (isRecruit) {
+                        setRecruitPosition('')
+                        setRecruitLevel('')
+                        setRecruitExperience('')
+                        setRecruitQuantity('1')
+                        setRecruitDepartment(me?.department || '')
+                        setRecruitDescription('')
+                      }
                       rememberTemplate(tpl.id)
                       navigateApv({ template: tpl.id })
                       if (errors.subject) setErrors((prev) => ({ ...prev, subject: undefined }))
                       if (errors.approvers) setErrors((prev) => ({ ...prev, approvers: undefined }))
+                      if (errors.recruitPosition) setErrors((prev) => ({ ...prev, recruitPosition: undefined }))
                     }}
                   >
                     <option value="" disabled>
@@ -2024,13 +1991,17 @@ function Approvals() {
                 </div>
 
                 {selectedTemplateIsRecruit && (
-                  <div className="apv-leave-fields">
-                    <div className="apv-card-block__title">Thông tin đề xuất tuyển dụng</div>
+                  <div className="apv-leave-fields apv-recruit-fields">
+                    <div className="apv-section-head apv-section-head--inline">
+                      <h2>Nhu cầu tuyển dụng</h2>
+                      <p>Vị trí, bậc năng lực, số lượng và mục đích tuyển.</p>
+                    </div>
                     <div className="apv-field-row apv-field-row--equal">
                       <div className="apv-field">
                         <label>Vị trí cần tuyển <span className="req">*</span></label>
                         <input
                           type="text"
+                          list="recruit-position-options"
                           value={recruitPosition}
                           onChange={(e) => {
                             setRecruitPosition(e.target.value)
@@ -2038,16 +2009,27 @@ function Approvals() {
                           }}
                           placeholder="VD: Nhân viên Sale"
                         />
+                        <datalist id="recruit-position-options">
+                          {recruitPositions.map((item) => (
+                            <option key={item} value={item} />
+                          ))}
+                        </datalist>
                         {errors.recruitPosition && <div className="apv-field-error">{errors.recruitPosition}</div>}
                       </div>
                       <div className="apv-field">
-                        <label>Bộ phận / phòng ban</label>
+                        <label>Bộ phận / phòng ban tuyển dụng</label>
                         <input
                           type="text"
+                          list="recruit-department-options"
                           value={recruitDepartment}
                           onChange={(e) => setRecruitDepartment(e.target.value)}
                           placeholder="VD: Kinh doanh"
                         />
+                        <datalist id="recruit-department-options">
+                          {recruitDepartments.map((item) => (
+                            <option key={item} value={item} />
+                          ))}
+                        </datalist>
                       </div>
                     </div>
                     <div className="apv-field-row apv-field-row--equal">
@@ -2058,7 +2040,7 @@ function Approvals() {
                           list="recruit-level-options"
                           value={recruitLevel}
                           onChange={(e) => setRecruitLevel(e.target.value)}
-                          placeholder="Intern, Fresher, Junior, Senior..."
+                          placeholder="Intern/Học việc, Fresher, Junior..."
                         />
                         <datalist id="recruit-level-options">
                           <option value="Intern/Học việc" />
@@ -2069,12 +2051,12 @@ function Approvals() {
                         </datalist>
                       </div>
                       <div className="apv-field">
-                        <label>Số năm kinh nghiệm</label>
+                        <label>Số năm kinh nghiệm yêu cầu</label>
                         <input
                           type="text"
                           value={recruitExperience}
                           onChange={(e) => setRecruitExperience(e.target.value)}
-                          placeholder="VD: 1-2 năm"
+                          placeholder="VD: 1-2 năm, từ 3 năm..."
                         />
                       </div>
                       <div className="apv-field">
@@ -2088,12 +2070,12 @@ function Approvals() {
                       </div>
                     </div>
                     <div className="apv-field">
-                      <label>Mô tả ngắn yêu cầu / mục đích tuyển dụng</label>
+                      <label>Mô tả ngắn về yêu cầu và mục đích tuyển dụng</label>
                       <textarea
                         rows={3}
                         value={recruitDescription}
                         onChange={(e) => setRecruitDescription(e.target.value)}
-                        placeholder="Yêu cầu kỹ năng, mục đích tuyển dụng..."
+                        placeholder="Yêu cầu kỹ năng, lý do tuyển dụng, mục tiêu vị trí..."
                       />
                     </div>
                   </div>
@@ -2234,8 +2216,11 @@ function Approvals() {
                 </div>
               </div>
 
-              <div className="apv-card-block">
-                <div className="apv-card-block__title">Người theo dõi</div>
+              <div className="apv-card-block apv-card-block--saas apv-create-side">
+                <div className="apv-section-head">
+                  <h2>Người theo dõi</h2>
+                  <p>Nhận thông báo khi đề xuất có cập nhật.</p>
+                </div>
                 {followers.length > 0 && (
                   <div className="apv-attach-list" style={{ marginBottom: 8 }}>
                     {followers.map((f, i) => (
@@ -2273,8 +2258,11 @@ function Approvals() {
                 </div>
               </div>
 
-              <div className="apv-card-block">
-                <div className="apv-card-block__title">Luồng phê duyệt</div>
+              <div className="apv-card-block apv-card-block--saas apv-create-side">
+                <div className="apv-section-head">
+                  <h2>Luồng phê duyệt</h2>
+                  <p>Chọn người duyệt theo từng bước trước khi gửi.</p>
+                </div>
                 <div className="apv-timeline">
                   <div className="apv-tl-step">
                     <div className="apv-tl-step__rail">

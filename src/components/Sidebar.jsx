@@ -13,6 +13,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
   const primaryStaffItems = [
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
     { path: '/employees', icon: 'fas fa-users', label: 'Hồ sơ nhân sự' },
+    { path: '/giay-to-cong-ty', icon: 'fas fa-folder-open', label: 'Giấy tờ công ty' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
     { path: '/bang-phat', icon: 'fas fa-file-invoice-dollar', label: 'Bảng phạt' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
@@ -25,7 +26,6 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
   const secondaryStaffItems = [
     { path: '/dashboard', icon: 'fas fa-home', label: 'Tổng quan' },
     { path: '/recruitment', icon: 'fas fa-user-plus', label: 'Tuyển dụng' },
-    { path: '/giay-to-cong-ty', icon: 'fas fa-folder-open', label: 'Giấy tờ công ty' },
     { path: '/salary', icon: 'fas fa-money-bill-wave', label: 'Lương & Phúc lợi' },
     { path: '/competency', icon: 'fas fa-chart-line', label: 'Khung năng lực' },
     { path: '/kpi', icon: 'fas fa-bullseye', label: 'KPI' },
