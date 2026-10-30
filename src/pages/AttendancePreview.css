@@ -1411,3 +1411,20 @@
     display: block;
   }
 }
+
+.attendance-week-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.attendance-week-filter select {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color, #d0d5dd);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}

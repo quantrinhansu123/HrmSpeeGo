@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../services/supabase'
 import { fbSet } from '../services/firebase'
-import { asIdentityText, mapAppToUser, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import {
+  asIdentityText,
+  composeEmploymentFields,
+  EMPLOYMENT_STAGE_OPTIONS,
+  getEmployeeEmploymentStatus,
+  getEmployeeStage,
+  getEmployeeWorkState,
+  mapAppToUser,
+  runUsersMutationWithSchemaFallback,
+  WORK_STATE_OPTIONS
+} from '../utils/helpers'
 import { employeeContractKey } from '../utils/employeeContracts'
 import {
   DEFAULT_ATTENDANCE_SHIFT,
@@ -149,7 +159,8 @@ function EmployeeModal({
     team: '',
     vi_tri: '',
     is_leader: false,
-    trang_thai: 'Thử việc',
+    work_state: 'Đang làm việc',
+    tinh_trang: 'Thử việc',
     ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
     ngay_vao_lam: '',
     ngay_lam_chinh_thuc: '',
@@ -159,6 +170,7 @@ function EmployeeModal({
     ngay_cap: '',
     noi_cap: '',
     dia_chi_thuong_tru: '',
+    dia_chi_tam_tru: '',
     que_quan: '',
     ngan_hang: '',
     so_tk: '',
@@ -211,9 +223,10 @@ function EmployeeModal({
         team: employee.team || '',
         vi_tri: employee.vi_tri || '',
         is_leader: employee.is_leader === true,
-        // Hồ sơ đã tồn tại nhưng chưa được HR đánh dấu phải hiển thị trống;
-        // chỉ hồ sơ tạo mới mới dùng trạng thái khởi tạo Thử việc.
-        trang_thai: employee.trang_thai ?? employee.employmentStatus ?? employee.employment_status ?? employee.status ?? '',
+        // Trạng thái (đang làm/nghỉ) và Tình trạng (thử việc/chính thức) là hai trường riêng.
+        // Hồ sơ cũ chưa có Tình trạng thì để trống, không tự suy diễn.
+        work_state: getEmployeeWorkState(employee),
+        tinh_trang: getEmployeeStage(employee),
         ca_lam_viec: employee.ca_lam_viec || DEFAULT_ATTENDANCE_SHIFT.name,
         ngay_vao_lam: employee.ngay_vao_lam || '',
         ngay_lam_chinh_thuc: employee.ngay_lam_chinh_thuc || '',
@@ -223,6 +236,7 @@ function EmployeeModal({
         ngay_cap: employee.ngay_cap || '',
         noi_cap: employee.noi_cap || '',
         dia_chi_thuong_tru: employee.dia_chi_thuong_tru || '',
+        dia_chi_tam_tru: employee.dia_chi_tam_tru || '',
         que_quan: employee.que_quan || '',
         ngan_hang: employee.ngan_hang || employee.bank_name || '',
         so_tk: asIdentityText(employee.so_tk ?? employee.bank_account_number, 'generic'),
@@ -280,7 +294,8 @@ function EmployeeModal({
       team: '',
       vi_tri: '',
       is_leader: false,
-      trang_thai: 'Thử việc',
+      work_state: 'Đang làm việc',
+      tinh_trang: 'Thử việc',
       ca_lam_viec: DEFAULT_ATTENDANCE_SHIFT.name,
       ngay_vao_lam: '',
       ngay_lam_chinh_thuc: '',
@@ -290,6 +305,7 @@ function EmployeeModal({
       ngay_cap: '',
       noi_cap: '',
       dia_chi_thuong_tru: '',
+      dia_chi_tam_tru: '',
       que_quan: '',
       ngan_hang: '',
       so_tk: '',
@@ -562,10 +578,15 @@ function EmployeeModal({
     }
 
     try {
-      const oldStatus = employee ? (employee.trang_thai || employee.status || '') : ''
-      const newStatus = formData.trang_thai
+      const oldStatus = employee ? getEmployeeEmploymentStatus(employee) : ''
+      const employmentFields = composeEmploymentFields({
+        workState: formData.work_state,
+        stage: formData.tinh_trang
+      })
+      const newStatus = employmentFields.trang_thai
       const filledDocs = getFilledDocuments()
-      const payloadForm = { ...formData, files: filledDocs }
+      const payloadForm = { ...formData, ...employmentFields, files: filledDocs }
+      delete payloadForm.work_state
       const contract = {
         contractType: String(formData.loai_hop_dong || '').trim(),
         contractEndDate: formData.ngay_het_han || ''
@@ -734,7 +755,7 @@ function EmployeeModal({
                       <h4>{formData.ho_va_ten || '—'}</h4>
                       <p><strong>Mã NV:</strong> {formData.employeeId || '—'}</p>
                       <p><strong>Vị trí:</strong> {formData.vi_tri || '—'} {formData.bo_phan ? `· ${formData.bo_phan}` : ''}{formData.team ? ` · Team ${formData.team}` : ''}{formData.is_leader ? ' · Leader' : ''}</p>
-                      <p><strong>Trạng thái:</strong> {formData.trang_thai || '—'}</p>
+                      <p><strong>Trạng thái:</strong> {formData.work_state || '—'} · <strong>Tình trạng:</strong> {formData.tinh_trang || '—'}</p>
                     </div>
                   </div>
                 ) : (
@@ -968,15 +989,28 @@ function EmployeeModal({
                   <div className="form-group">
                     <label>Trạng thái</label>
                     <select
-                      name="trang_thai"
-                      value={formData.trang_thai}
+                      name="work_state"
+                      value={formData.work_state}
                       onChange={handleChange}
                       disabled={!editable}
                     >
-                      <option value="Thử việc">Thử việc</option>
-                      <option value="Chính thức">Chính thức</option>
-                      <option value="Tạm nghỉ">Tạm nghỉ</option>
-                      <option value="Nghỉ việc">Nghỉ việc</option>
+                      {WORK_STATE_OPTIONS.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Tình trạng</label>
+                    <select
+                      name="tinh_trang"
+                      value={formData.tinh_trang}
+                      onChange={handleChange}
+                      disabled={!editable}
+                    >
+                      <option value="">Chưa xác định</option>
+                      {EMPLOYMENT_STAGE_OPTIONS.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
                     </select>
                   </div>
                   <div className="form-group">
@@ -1106,6 +1140,17 @@ function EmployeeModal({
                       value={formData.dia_chi_thuong_tru}
                       onChange={handleChange}
                       placeholder="Địa chỉ thường trú"
+                      disabled={!editable}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Địa chỉ tạm trú</label>
+                    <input
+                      type="text"
+                      name="dia_chi_tam_tru"
+                      value={formData.dia_chi_tam_tru}
+                      onChange={handleChange}
+                      placeholder="Địa chỉ tạm trú"
                       disabled={!editable}
                     />
                   </div>

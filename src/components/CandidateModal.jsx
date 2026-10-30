@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fbPush, fbUpdate } from '../services/firebase'
+import { asIdentityText } from '../utils/helpers'
 
 function CandidateModal({ candidate, isOpen, onClose, onSave, readOnly = false, employees = [] }) {
   const [formData, setFormData] = useState({
@@ -26,7 +27,7 @@ function CandidateModal({ candidate, isOpen, onClose, onSave, readOnly = false, 
         bo_phan: candidate.bo_phan || '',
         nguon_cv: candidate.nguon_cv || '',
         hr_phu_trach: candidate.hr_phu_trach || '',
-        sdt: candidate.sdt || candidate.sđt || '',
+        sdt: asIdentityText(candidate.sdt || candidate.sđt, 'phone'),
         email: candidate.email || '',
         trang_thai: candidate.trang_thai || 'CV tiếp nhận',
         ngay_tiep_nhan: candidate.ngay_tiep_nhan || '',

@@ -26,7 +26,7 @@ import {
   listRequestLeaveDates
 } from '../utils/approvalPolicy'
 import { TAX_CONFIG } from '../utils/constants'
-import { calculateProgressiveTax, formatMoney, normalizeString } from '../utils/helpers'
+import { asIdentityText, calculateProgressiveTax, formatMoney, normalizeString } from '../utils/helpers'
 import { downloadAttendanceFromGoldenTemplate } from '../utils/attendanceExcel'
 import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
 import { applyPenaltyAmountsToSummaryRows } from '../utils/attendancePenalties'
@@ -2858,7 +2858,7 @@ function Attendance() {
                           <td>{dependent.hoTen || dependent.name || '-'}</td>
                           <td>{dependent.quanHe || dependent.relationship || '-'}</td>
                           <td>{dependent.ngaySinh ? new Date(dependent.ngaySinh).toLocaleDateString('vi-VN') : '-'}</td>
-                          <td>{dependent.cccd || dependent.cmnd || '-'}</td>
+                          <td>{asIdentityText(dependent.cccd || dependent.cmnd, 'cccd') || '-'}</td>
                           <td>{dependent.tuNgay ? new Date(dependent.tuNgay).toLocaleDateString('vi-VN') : '-'}</td>
                           <td>{dependent.denNgay ? new Date(dependent.denNgay).toLocaleDateString('vi-VN') : '-'}</td>
                           <td>

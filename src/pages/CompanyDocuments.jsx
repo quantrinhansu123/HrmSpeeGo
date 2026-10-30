@@ -7,14 +7,28 @@ export const COMPANY_DOCUMENT_CATEGORIES = [
   { id: 'legal', label: 'Hồ sơ pháp lý', fullLabel: 'Hồ sơ pháp lý của công ty', icon: 'fas fa-balance-scale' },
   { id: 'tax', label: 'Hồ sơ thuế', fullLabel: 'Hồ sơ thuế', icon: 'fas fa-file-invoice-dollar' },
   { id: 'social_insurance', label: 'Hồ sơ BHXH', fullLabel: 'Hồ sơ BHXH', icon: 'fas fa-shield-alt' },
+  { id: 'license', label: 'Giấy phép / Chứng nhận', fullLabel: 'Giấy phép, chứng nhận liên quan đến hoạt động kinh doanh', icon: 'fas fa-certificate' },
+  { id: 'important', label: 'Văn bản quan trọng', fullLabel: 'Các văn bản, hồ sơ quan trọng khác của công ty', icon: 'fas fa-file-signature' },
   { id: 'other', label: 'Khác', fullLabel: 'Khác', icon: 'fas fa-folder' }
 ]
+
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024
+const MAX_ATTACHMENTS = 5
+
+const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(reader.result)
+  reader.onerror = () => reject(reader.error || new Error('Không đọc được tệp'))
+  reader.readAsDataURL(file)
+})
 
 const emptyForm = () => ({
   name: '',
   category: 'business_license',
   url: '',
   note: '',
+  owner: '',
+  attachments: [],
   issuedAt: '',
   expiresAt: ''
 })
@@ -81,7 +95,7 @@ function CompanyDocuments() {
     return documents.filter(doc => {
       if (filterCategory && doc.category !== filterCategory) return false
       if (!keyword) return true
-      const haystack = `${doc.name || ''} ${doc.note || ''} ${categoryLabel(doc.category)} ${doc.url || ''}`.toLocaleLowerCase('vi')
+      const haystack = `${doc.name || ''} ${doc.note || ''} ${doc.owner || ''} ${categoryLabel(doc.category)} ${doc.url || ''}`.toLocaleLowerCase('vi')
       return haystack.includes(keyword)
     })
   }, [documents, filterCategory, search])
@@ -125,6 +139,8 @@ function CompanyDocuments() {
       category: doc.category || 'other',
       url: doc.url || '',
       note: doc.note || '',
+      owner: doc.owner || '',
+      attachments: Array.isArray(doc.attachments) ? doc.attachments : [],
       issuedAt: doc.issuedAt || '',
       expiresAt: doc.expiresAt || ''
     })
@@ -145,6 +161,8 @@ function CompanyDocuments() {
         category: form.category || 'other',
         url: form.url.trim(),
         note: form.note.trim(),
+        owner: form.owner.trim(),
+        attachments: form.attachments,
         issuedAt: form.issuedAt || '',
         expiresAt: form.expiresAt || '',
         updatedAt: now
@@ -163,6 +181,40 @@ function CompanyDocuments() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleAttachFiles = async (event) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+    const room = MAX_ATTACHMENTS - form.attachments.length
+    if (files.length > room) {
+      alert(`Mỗi hồ sơ tối đa ${MAX_ATTACHMENTS} tệp đính kèm.`)
+      return
+    }
+    const tooBig = files.find(file => file.size > MAX_ATTACHMENT_BYTES)
+    if (tooBig) {
+      alert(`Tệp “${tooBig.name}” vượt quá 2MB. Hãy dùng link Drive cho tệp lớn.`)
+      return
+    }
+    try {
+      const added = await Promise.all(files.map(async file => ({
+        name: file.name,
+        type: file.type || '',
+        size: file.size,
+        data: await readFileAsDataUrl(file)
+      })))
+      setForm(current => ({ ...current, attachments: [...current.attachments, ...added] }))
+    } catch (readError) {
+      alert('Không đọc được tệp: ' + (readError.message || readError))
+    }
+  }
+
+  const removeAttachment = (index) => {
+    setForm(current => ({
+      ...current,
+      attachments: current.attachments.filter((_, itemIndex) => itemIndex !== index)
+    }))
   }
 
   const handleDelete = async (doc) => {
@@ -291,11 +343,12 @@ function CompanyDocuments() {
                   <table className="company-docs-table">
                     <thead>
                       <tr>
-                        <th>Tên hồ sơ</th>
+                        <th>Tên tài liệu</th>
+                        <th>Người phụ trách</th>
                         <th>Ngày cấp</th>
                         <th>Hết hạn</th>
                         <th>Trạng thái</th>
-                        <th>Link</th>
+                        <th>Link / Tệp đính kèm</th>
                         <th>Ghi chú</th>
                         <th></th>
                       </tr>
@@ -308,6 +361,7 @@ function CompanyDocuments() {
                             <td>
                               <strong className="company-docs-name">{doc.name}</strong>
                             </td>
+                            <td>{doc.owner || <span className="company-docs-muted">—</span>}</td>
                             <td>{formatDate(doc.issuedAt)}</td>
                             <td>{formatDate(doc.expiresAt)}</td>
                             <td>
@@ -318,10 +372,25 @@ function CompanyDocuments() {
                               )}
                             </td>
                             <td>
-                              {doc.url ? (
-                                <a className="company-docs-link" href={doc.url} target="_blank" rel="noreferrer">
-                                  <i className="fas fa-external-link-alt" aria-hidden="true"></i> Mở
-                                </a>
+                              {doc.url || (doc.attachments || []).length ? (
+                                <div className="company-docs-files">
+                                  {doc.url && (
+                                    <a className="company-docs-link" href={doc.url} target="_blank" rel="noreferrer">
+                                      <i className="fas fa-external-link-alt" aria-hidden="true"></i> Mở link
+                                    </a>
+                                  )}
+                                  {(doc.attachments || []).map((file, fileIndex) => (
+                                    <a
+                                      key={`${file.name}-${fileIndex}`}
+                                      className="company-docs-link"
+                                      href={file.data}
+                                      download={file.name}
+                                      title={file.name}
+                                    >
+                                      <i className="fas fa-paperclip" aria-hidden="true"></i> {file.name}
+                                    </a>
+                                  ))}
+                                </div>
                               ) : (
                                 <span className="company-docs-muted">—</span>
                               )}
@@ -363,7 +432,7 @@ function CompanyDocuments() {
             </div>
             <form className="modal-body" onSubmit={handleSave}>
               <div className="form-group">
-                <label>Tên hồ sơ *</label>
+                <label>Tên tài liệu *</label>
                 <input
                   type="text"
                   value={form.name}
@@ -373,7 +442,7 @@ function CompanyDocuments() {
                 />
               </div>
               <div className="form-group">
-                <label>Nhóm phân loại</label>
+                <label>Loại hồ sơ</label>
                 <select
                   value={form.category}
                   onChange={event => setForm(current => ({ ...current, category: event.target.value }))}
@@ -402,7 +471,36 @@ function CompanyDocuments() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Link tài liệu (Drive / file)</label>
+                <label>Người phụ trách</label>
+                <input
+                  type="text"
+                  value={form.owner}
+                  onChange={event => setForm(current => ({ ...current, owner: event.target.value }))}
+                  placeholder="VD: Nguyễn Văn A (HR)"
+                />
+              </div>
+              <div className="form-group">
+                <label>Tệp đính kèm (tối đa {MAX_ATTACHMENTS} tệp, mỗi tệp ≤ 2MB)</label>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                  onChange={handleAttachFiles}
+                  disabled={form.attachments.length >= MAX_ATTACHMENTS}
+                />
+                {form.attachments.length > 0 && (
+                  <ul className="company-docs-attachments">
+                    {form.attachments.map((file, index) => (
+                      <li key={`${file.name}-${index}`}>
+                        <i className="fas fa-paperclip" aria-hidden="true"></i> {file.name}
+                        <button type="button" onClick={() => removeAttachment(index)} aria-label={`Xóa ${file.name}`}>&times;</button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="form-group">
+                <label>Link tài liệu (Drive / file lớn)</label>
                 <input
                   type="url"
                   value={form.url}

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { formatDateDisplay, getEmployeeEmploymentStatus } from '../utils/helpers'
+import StatusFilterOptions from './StatusFilterOptions'
+import { asIdentityText, formatDateDisplay, getEmployeeEmploymentStatus, getEmployeeStage, getEmployeeWorkState } from '../utils/helpers'
 import { getEmployeeStatRows } from '../utils/employeeDirectoryStats'
 import ResetDataModal from './ResetDataModal'
 
@@ -389,11 +390,7 @@ function EmployeeDirectory({
                         {noShiftCount > 0 && <option value="__none__">Chưa gán ca</option>}
                     </select>
                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                        <option value="">Tất cả trạng thái</option>
-                        <option value="Thử việc">Thử việc</option>
-                        <option value="Chính thức">Chính thức</option>
-                        <option value="Tạm nghỉ">Tạm nghỉ</option>
-                        <option value="Nghỉ việc">Đã nghỉ</option>
+                        <StatusFilterOptions />
                     </select>
                     <button className="btn btn-icon" title="Làm mới & đặt lại bộ lọc" aria-label="Làm mới và đặt lại bộ lọc" onClick={onResetFilters || onReload}>
                         <i className="fas fa-rotate"></i>
@@ -473,11 +470,7 @@ function EmployeeDirectory({
                                 <div className="filter-group">
                                     <label>Trạng thái</label>
                                     <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                                        <option value="">Tất cả trạng thái</option>
-                                        <option value="Thử việc">Thử việc</option>
-                                        <option value="Chính thức">Chính thức</option>
-                                        <option value="Tạm nghỉ">Tạm nghỉ</option>
-                                        <option value="Nghỉ việc">Đã nghỉ</option>
+                                        <StatusFilterOptions />
                                     </select>
                                 </div>
                             </div>
@@ -515,14 +508,15 @@ function EmployeeDirectory({
                     {/* Desktop Table View */}
                     <div className="employees-table-wrap">
                         <table className="employees-table">
-                            <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Team</th><th>Leader</th><th>Chức danh</th><th>Ca</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Tình trạng</th><th></th></tr></thead>
+                            <thead><tr><th>Nhân viên</th><th>Phòng ban</th><th>Team</th><th>Leader</th><th>Chức danh</th><th>Ca</th><th>Ngày vào làm</th><th>Loại hợp đồng</th><th>Trạng thái</th><th>Tình trạng</th><th></th></tr></thead>
                             <tbody>{filteredEmployees.map((employee, index) => {
                                 const name = getName(employee)
-                                const status = getTinhTrang(employee)
+                                const workState = getEmployeeWorkState(employee)
+                                const stage = getEmployeeStage(employee)
                                 const avatar = employee.avatarDataUrl || employee.avatarUrl || employee.avatar
                                 const days = daysUntil(employee.ngay_het_han || employee.contractEndDate || employee.ngay_het_han_hop_dong)
                                 return <tr key={employee.id || index} onClick={() => openEmployee(employee)}>
-                                    <td><div className="employee-identity"><span className="employee-avatar">{avatar ? <img src={avatar} alt="" loading="lazy" decoding="async" /> : name.charAt(0)}</span><span><strong>{name}</strong><small>{employee.email || employee.sdt || employee.sđt || 'Chưa có thông tin liên hệ'}</small></span></div></td>
+                                    <td><div className="employee-identity"><span className="employee-avatar">{avatar ? <img src={avatar} alt="" loading="lazy" decoding="async" /> : name.charAt(0)}</span><span><strong>{name}</strong><small>{employee.email || asIdentityText(employee.sdt || employee.sđt, 'phone') || 'Chưa có thông tin liên hệ'}</small></span></div></td>
                                     <td>{employee.bo_phan || 'Chưa phân bổ'}</td>
                                     <td>{employee.team || '—'}</td>
                                     <td>{employee.is_leader ? 'Có' : '—'}</td>
@@ -530,7 +524,8 @@ function EmployeeDirectory({
                                     <td>{getShift(employee) || 'Chưa gán ca'}</td>
                                     <td>{formatDateDisplay(employee.ngay_vao_lam) || '—'}</td>
                                     <td><span className="contract-cell">{employee.loai_hop_dong || employee.contractType || 'Chưa cập nhật'}{days !== null && days >= 0 && days <= 60 && <small>Còn {days} ngày</small>}</span></td>
-                                    <td><span className={`employee-status ${status === 'Chính thức' ? 'success' : status === 'Thử việc' ? 'warning' : status === 'Nghỉ việc' ? 'danger' : ''}`}><i></i>{status === 'Nghỉ việc' ? 'Đã nghỉ' : status}</span></td>
+                                    <td><span className={`employee-status ${workState === 'Đang làm việc' ? 'success' : workState === 'Tạm nghỉ' ? 'warning' : 'danger'}`}><i></i>{workState === 'Nghỉ việc' ? 'Đã nghỉ việc' : workState}</span></td>
+                                    <td>{stage ? <span className={`employee-status ${stage === 'Chính thức' ? 'success' : 'warning'}`}><i></i>{stage}</span> : <span>—</span>}</td>
                                     <td className="employee-row-actions" onClick={(event) => event.stopPropagation()}>
                                         <button
                                             className="employee-row-menu"

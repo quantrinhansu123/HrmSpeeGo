@@ -392,3 +392,42 @@
     justify-content: space-between;
   }
 }
+
+.company-docs-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.company-docs-files .company-docs-link {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-docs-attachments {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.company-docs-attachments li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.company-docs-attachments button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: #b42318;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}

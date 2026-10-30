@@ -258,6 +258,7 @@ function AttendancePreview() {
   const [detailViewMode, setDetailViewMode] = useState('matrix')
   const [isResetModalOpen, setIsResetModalOpen] = useState(false)
   const [sheet, setSheet] = useState('attendance')
+  const [weekFilter, setWeekFilter] = useState('')
   const [payrollBundle, setPayrollBundle] = useState({
     penalties: [],
     leave: {},
@@ -300,9 +301,38 @@ function AttendancePreview() {
     return days
   }, [attendanceSettings, month, daysInSelectedMonth])
 
+  // Tuần Thứ 2 → Chủ nhật, cắt theo ranh giới tháng.
+  const monthWeeks = useMemo(() => {
+    const weeks = []
+    monthDaysHeader.forEach(d => {
+      const last = weeks[weeks.length - 1]
+      if (!last || d.dow === 'T2') {
+        weeks.push({ index: weeks.length + 1, start: d.day, end: d.day })
+      } else {
+        last.end = d.day
+      }
+    })
+    const mm = String(month || '').slice(5, 7)
+    return weeks.map(week => ({
+      ...week,
+      label: `Tuần ${week.index}`,
+      rangeLabel: `${String(week.start).padStart(2, '0')}/${mm} - ${String(week.end).padStart(2, '0')}/${mm}`
+    }))
+  }, [month, monthDaysHeader])
+  const activeWeek = useMemo(
+    () => monthWeeks.find(week => String(week.index) === String(weekFilter)) || null,
+    [monthWeeks, weekFilter]
+  )
+  const visibleDays = useMemo(
+    () => activeWeek
+      ? monthDaysHeader.filter(d => d.day >= activeWeek.start && d.day <= activeWeek.end)
+      : monthDaysHeader,
+    [activeWeek, monthDaysHeader]
+  )
+
   const matrixHolidayLegend = useMemo(
-    () => monthDaysHeader.filter(d => d.isHoliday),
-    [monthDaysHeader]
+    () => visibleDays.filter(d => d.isHoliday),
+    [visibleDays]
   )
 
   const matrixRows = useMemo(() => {
@@ -352,6 +382,7 @@ function AttendancePreview() {
           manualWorkday,
           isManual: manualWorkday !== undefined && manualWorkday !== null && manualWorkday !== ''
         }
+        if (activeWeek && (day < activeWeek.start || day > activeWeek.end)) return
         const num = parseFloat(code)
         if (!isNaN(num)) calcTotal += num
         else if (code === 'P1' || code === 'P') calcTotal += 1.0
@@ -362,10 +393,10 @@ function AttendancePreview() {
         name: r.employeeName || '',
         position: r.position || r.chuc_vu || r.displayDepartment || '',
         dailyMap,
-        totalCong: r.workdays != null ? Number(r.workdays).toFixed(2) : (calcTotal ? calcTotal.toFixed(2) : '0.00')
+        totalCong: !activeWeek && r.workdays != null ? Number(r.workdays).toFixed(2) : (calcTotal ? calcTotal.toFixed(2) : '0.00')
       }
     })
-  }, [attendanceSettings, rows, month, monthDaysHeader, excelSearch, manualWorkdays])
+  }, [activeWeek, attendanceSettings, rows, month, monthDaysHeader, excelSearch, manualWorkdays])
 
   const applySnapshot = useCallback((snapshot, nextMonth) => {
     if (!snapshot?.rows) {
@@ -539,6 +570,7 @@ function AttendancePreview() {
 
   const handleMonthChange = async (nextMonth) => {
     setMonth(nextMonth)
+    setWeekFilter('')
     setManualNotice('')
     await loadMonthSnapshot(nextMonth)
   }
@@ -1119,11 +1151,7 @@ function AttendancePreview() {
     })
   }, [month])
   const weeklyPeople = useMemo(() => {
-    const weekRanges = [1, 8, 15, 22, 29].map((start, index) => ({
-      label: `Tuần ${index + 1}`,
-      start,
-      end: Math.min(start + 6, calendar.length)
-    }))
+    const weekRanges = monthWeeks.filter(week => !activeWeek || week.index === activeWeek.index)
     const checks = [
       ['Đi muộn', day => day?.late],
       ['Không chấm công', day => day?.missingPunch],
@@ -1156,10 +1184,12 @@ function AttendancePreview() {
         }
       })
       .filter(Boolean)
-  }, [calendar.length, month, rows])
+  }, [activeWeek, month, monthWeeks, rows])
   const weekLabels = useMemo(
-    () => [1, 2, 3, 4, 5].map(index => `Tuần ${index}`),
-    []
+    () => monthWeeks
+      .filter(week => !activeWeek || week.index === activeWeek.index)
+      .map(week => `${week.label} (${week.rangeLabel})`),
+    [activeWeek, monthWeeks]
   )
   const detailDays = useMemo(() => {
     if (!detailRow || !month) return []
@@ -1460,6 +1490,15 @@ function AttendancePreview() {
         <section className="attendance-preview-weeks">
           <div className="attendance-preview-weeks__head">
             <h2>Tổng hợp theo tuần</h2>
+            <label className="attendance-week-filter">
+                Tuần
+                <select value={weekFilter} onChange={event => setWeekFilter(event.target.value)}>
+                  <option value="">Cả tháng</option>
+                  {monthWeeks.map(week => (
+                    <option key={week.index} value={week.index}>{week.label} ({week.rangeLabel})</option>
+                  ))}
+                </select>
+              </label>
             <span>{weeklyPeople.length} nhân sự có phát sinh</span>
           </div>
           <div className="attendance-preview-weeks__scroll">
@@ -1681,6 +1720,15 @@ function AttendancePreview() {
               </p>
             </div>
             <div className="attendance-excel-detail-tools">
+              <label className="attendance-week-filter">
+                Tuần
+                <select value={weekFilter} onChange={event => setWeekFilter(event.target.value)}>
+                  <option value="">Cả tháng</option>
+                  {monthWeeks.map(week => (
+                    <option key={week.index} value={week.index}>{week.label} ({week.rangeLabel})</option>
+                  ))}
+                </select>
+              </label>
               <input
                 type="search"
                 placeholder="Tìm tên, mã NV, phòng ban..."
@@ -1727,13 +1775,13 @@ function AttendancePreview() {
                     <th rowSpan="2" className="col-name">Họ và tên</th>
                     <th rowSpan="2" className="col-company">Công ty</th>
                     <th rowSpan="2" className="col-pos">Chức vụ</th>
-                    <th colSpan={monthDaysHeader.length} className="matrix-month-title">
-                      Ngày trong tháng
+                    <th colSpan={visibleDays.length} className="matrix-month-title">
+                      {activeWeek ? `${activeWeek.label} (${activeWeek.rangeLabel})` : 'Ngày trong tháng'}
                     </th>
                     <th rowSpan="2" className="col-total">Tổng tính lương</th>
                   </tr>
                   <tr className="matrix-days-row">
-                    {monthDaysHeader.map(d => (
+                    {visibleDays.map(d => (
                       <th
                         key={d.dayStr}
                         className={`day-col ${d.isSunday ? 'is-sunday' : ''} ${d.isSaturday ? 'is-saturday' : ''} ${d.isHoliday ? 'is-holiday' : ''}`}
@@ -1748,7 +1796,7 @@ function AttendancePreview() {
                 <tbody>
                   {matrixRows.length === 0 ? (
                     <tr>
-                      <td colSpan={monthDaysHeader.length + 6} className="empty">
+                      <td colSpan={visibleDays.length + 6} className="empty">
                         Chưa có dữ liệu bảng công cho tháng {month}.
                       </td>
                     </tr>
@@ -1760,7 +1808,7 @@ function AttendancePreview() {
                         <td className="col-name font-semibold">{emp.name || '-'}</td>
                         <td className="col-company">{companyName}</td>
                         <td className="col-pos">{emp.position || '-'}</td>
-                        {monthDaysHeader.map(d => {
+                        {visibleDays.map(d => {
                           const cell = emp.dailyMap[d.dayStr] || {}
                           const val = cell.code || ''
                           const isOff = val === '0' || (d.isSunday && !val)

@@ -6,18 +6,23 @@ import { prepareEmployeeImportSheet, planEmployeeSheetImport } from '../utils/em
 import { supabase } from '../services/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getCompanyIdForUser } from '../utils/companyContext'
-import { asIdentityText, formatDateDisplay, getEmployeeEmploymentStatus, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
+import StatusFilterOptions from '../components/StatusFilterOptions'
+import { asIdentityText, composeEmploymentFields, formatDateDisplay, getEmployeeEmploymentStatus, getEmployeeStage, getEmployeeWorkState, matchesEmployeeStatusFilter, mapAppToUser, mapUserToApp, parseFlexibleDate, runUsersMutationWithSchemaFallback } from '../utils/helpers'
 import { fetchUsersDirectory } from '../services/employeeDirectory'
-import { fbGet, fbListCollectionIds } from '../services/firebase'
+import { fbGet, fbListCollectionIds, fbSet } from '../services/firebase'
 import { aggregateEmployeeActivity, matchesEmployeeStat } from '../utils/employeeDirectoryStats'
-import { withEmployeeContract } from '../utils/employeeContracts'
+import { employeeContractKey, withEmployeeContract } from '../utils/employeeContracts'
 
 const loadXlsx = () => import('xlsx')
 
+// Thứ tự cột theo mẫu nhân sự của công ty.
+// TRẠNG THÁI = Đang làm việc / Tạm nghỉ / Nghỉ việc; TÌNH TRẠNG = Thử việc / Chính thức.
 const EMPLOYEE_EXCEL_HEADERS = [
     'STT',
     'Mã NV',
-    'HỌ VÀ TÊN',
+    'CHI NHÁNH',
+    'TRẠNG THÁI',
+    'HỌ TÊN',
     'GIỚI TÍNH',
     'NGÀY SINH',
     'VỊ TRÍ',
@@ -26,19 +31,24 @@ const EMPLOYEE_EXCEL_HEADERS = [
     'TÌNH TRẠNG',
     'NGÀY VÀO LÀM',
     'NGÀY LÊN CHÍNH THỨC',
+    'NOTED',
+    'CƠ CHẾ LƯƠNG',
+    'TỔNG LƯƠNG',
     'SĐT',
-    'CCCD',
+    'SỐ CCCD',
     'NGÀY CẤP',
-    'NƠI CẤP',
-    'ĐỊA CHỈ',
-    'NGÂN HÀNG',
-    'SỐ TK',
-    'TÊN TÀI KHOẢN',
-    'GHI CHÚ',
+    'EMAIL CÁ NHÂN',
+    'BỘ PHẬN',
+    'LOẠI HỢP ĐỒNG',
+    'NGÀY HẾT HẠN HỢP ĐỒNG',
+    'NƠI CẤP CCCD',
+    'ĐỊA CHỈ THƯỜNG TRÚ',
+    'ĐỊA CHỈ TẠM TRÚ',
+    'TÌNH TRẠNG HÔN NHÂN',
 ]
 
 /** Cột giữ dạng Text trên Excel (không bỏ số 0 đầu). */
-const EMPLOYEE_EXCEL_TEXT_HEADERS = new Set(['SĐT', 'CCCD', 'SỐ TK'])
+const EMPLOYEE_EXCEL_TEXT_HEADERS = new Set(['SĐT', 'SỐ CCCD', 'SỐ TK'])
 
 const PHONE_IMPORT_HEADERS = new Set(['sdt', 'so_dien_thoai', 'dien_thoai', 'phone'])
 const CCCD_IMPORT_HEADERS = new Set(['so_cccd', 'cccd', 'cmnd'])
@@ -180,10 +190,8 @@ function Employees() {
         let filtered = employees.filter(item => {
             if (!item) return false
 
-            const tinhTrang = getEmployeeEmploymentStatus(item)
-            const trangThai = item.trang_thai || ''
             // Mặc định ẩn NV nghỉ việc; chỉ hiện khi chọn lọc "Nghỉ việc"
-            if (!filterStatus && (trangThai === 'Nghỉ việc' || tinhTrang === 'Nghỉ việc')) return false
+            if (!filterStatus && getEmployeeWorkState(item) === 'Nghỉ việc') return false
 
             const nameField = item.ho_va_ten || item.name || item.Tên || ""
             const shiftName = String(item.ca_lam_viec || item.shift || '').trim()
@@ -200,7 +208,7 @@ function Employees() {
                 || (filterBranch === '__none__' ? !item.chi_nhanh : item.chi_nhanh === filterBranch)
             const matchDept = !filterDept
                 || (filterDept === '__none__' ? !item.bo_phan : item.bo_phan === filterDept)
-            const matchStatus = !filterStatus || tinhTrang === filterStatus
+            const matchStatus = matchesEmployeeStatusFilter(item, filterStatus)
             const contractType = item.loai_hop_dong || item.contractType || ''
             const matchContract = !filterContract || contractType === filterContract
             const matchShift = !filterShift
@@ -337,7 +345,7 @@ function Employees() {
         // Dòng mẫu dùng chuỗi SĐT/CCCD có số 0 đầu để cột được lưu dạng Text.
         const sampleRow = EMPLOYEE_EXCEL_HEADERS.map((header) => {
             if (header === 'SĐT') return '0912345678'
-            if (header === 'CCCD') return '001234567890'
+            if (header === 'SỐ CCCD') return '001234567890'
             if (header === 'SỐ TK') return '0123456789'
             return ''
         })
@@ -349,27 +357,39 @@ function Employees() {
         XLSX.writeFile(wb, 'Mau_import_nhan_su.xlsx')
     }
 
+    const dateCell = (value) => {
+        const text = formatDateDisplay(value)
+        return text === '-' ? '' : text
+    }
+
     const employeeToExcelRow = (emp, idx) => ([
         idx + 1,
         emp.employeeId || '',
+        emp.chi_nhanh || '',
+        getEmployeeWorkState(emp),
         emp.ho_va_ten || emp.name || emp.Tên || '',
         emp.gioi_tinh || '',
-        formatDateDisplay(emp.ngay_sinh || emp.dob) === '-' ? '' : formatDateDisplay(emp.ngay_sinh || emp.dob),
+        dateCell(emp.ngay_sinh || emp.dob),
         emp.vi_tri || '',
         emp.ca_lam_viec || '',
-        emp.team || emp.bo_phan || '',
-        emp.tinh_trang || getEmployeeEmploymentStatus(emp) || '',
-        formatDateDisplay(emp.ngay_vao_lam) === '-' ? '' : formatDateDisplay(emp.ngay_vao_lam),
-        formatDateDisplay(emp.ngay_lam_chinh_thuc) === '-' ? '' : formatDateDisplay(emp.ngay_lam_chinh_thuc),
+        emp.team || '',
+        getEmployeeStage(emp),
+        dateCell(emp.ngay_vao_lam),
+        dateCell(emp.ngay_lam_chinh_thuc),
+        emp.ghi_chu || emp.notes || '',
+        emp.co_che_luong || '',
+        emp.tong_luong || '',
         asIdentityText(emp.sđt ?? emp.sdt, 'phone'),
         asIdentityText(emp.cccd, 'cccd'),
-        formatDateDisplay(emp.ngay_cap) === '-' ? '' : formatDateDisplay(emp.ngay_cap),
+        dateCell(emp.ngay_cap),
+        emp.email || '',
+        emp.bo_phan || '',
+        emp.loai_hop_dong || '',
+        dateCell(emp.ngay_het_han),
         emp.noi_cap || '',
         emp.dia_chi_thuong_tru || emp.address || '',
-        emp.ngan_hang || emp.bank_name || '',
-        asIdentityText(emp.so_tk ?? emp.bank_account_number, 'generic'),
-        emp.ten_tai_khoan || emp.bank_account_name || '',
-        emp.ghi_chu || emp.notes || '',
+        emp.dia_chi_tam_tru || '',
+        emp.tinh_trang_hon_nhan || '',
     ])
 
     const exportToExcel = async () => {
@@ -573,6 +593,19 @@ function Employees() {
                 return msg
             }
 
+            const saveImportedContract = async (employeeDbId, row) => {
+                if (!row.loai_hop_dong && !row.ngay_het_han) return
+                try {
+                    await fbSet(`hr/employeeContracts/${employeeContractKey(companyId, employeeDbId)}`, {
+                        contractType: row.loai_hop_dong || '',
+                        contractEndDate: parseFlexibleDate(row.ngay_het_han) || ''
+                    })
+                } catch (contractError) {
+                    console.error('Không lưu được hợp đồng khi import:', contractError)
+                    errors.push({ row: 0, name: row.ho_va_ten, reason: 'Đã lưu hồ sơ nhưng chưa lưu được loại hợp đồng/ngày hết hạn' })
+                }
+            }
+
             const existingByCode = new Map()
             currentEmployees.forEach((emp) => {
                 const code = normalizeCode(emp.employeeId)
@@ -609,11 +642,14 @@ function Employees() {
                     role: pick(rowObj, 'vai_tro', 'role') || 'user',
                     password: pick(rowObj, 'mat_khau', 'password'),
                     chi_nhanh: pick(rowObj, 'chi_nhanh', 'branch'),
-                    bo_phan: pick(rowObj, 'bo_phan', 'phong_ban', 'department', 'team'),
+                    // File mẫu mới có cả cột TEAM lẫn BỘ PHẬN; chỉ lấy TEAM làm bộ phận cho file cũ không có cột bộ phận.
+                    bo_phan: pick(rowObj, 'bo_phan', 'phong_ban', 'department') || (headers.some(h => ['bo_phan', 'phong_ban', 'department'].includes(h)) ? '' : pick(rowObj, 'team')),
                     team: pick(rowObj, 'team'),
                     vi_tri: pick(rowObj, 'vi_tri', 'chuc_vu', 'position'),
-                    trang_thai: pick(rowObj, 'trang_thai', 'status'),
-                    tinh_trang: pick(rowObj, 'tinh_trang'),
+                    ...composeEmploymentFields({
+                        workState: pick(rowObj, 'trang_thai', 'status'),
+                        stage: pick(rowObj, 'tinh_trang')
+                    }),
                     tinh_trang_hon_nhan: pick(rowObj, 'tinh_trang_hon_nhan', 'hon_nhan'),
                     ngay_sinh: pick(rowObj, 'ngay_thang_nam_sinh', 'ngay_sinh', 'dob', 'birth_date'),
                     ngay_vao_lam: pick(rowObj, 'ngay_vao_lam', 'ngay_bat_dau', 'ngay_nhan_viec'),
@@ -621,8 +657,11 @@ function Employees() {
                     ca_lam_viec: pick(rowObj, 'ca_lam', 'ca_lam_viec', 'ca', 'shift'),
                     cccd: pick(rowObj, 'so_cccd', 'cccd', 'cmnd'),
                     ngay_cap: pick(rowObj, 'ngay_cap'),
-                    noi_cap: pick(rowObj, 'noi_cap'),
+                    noi_cap: pick(rowObj, 'noi_cap', 'noi_cap_cccd'),
                     dia_chi_thuong_tru: pick(rowObj, 'dia_chi_thuong_tru', 'thuong_tru', 'dia_chi', 'address'),
+                    dia_chi_tam_tru: pick(rowObj, 'dia_chi_tam_tru', 'tam_tru'),
+                    loai_hop_dong: pick(rowObj, 'loai_hop_dong'),
+                    ngay_het_han: pick(rowObj, 'ngay_het_han_hop_dong', 'ngay_het_han', 'ngay_het_han_hd'),
                     que_quan: pick(rowObj, 'que_quan'),
                     gioi_tinh: pick(rowObj, 'gioi_tinh', 'gender'),
                     ngan_hang: pick(rowObj, 'ngan_hang', 'bank_name', 'bank'),
@@ -663,6 +702,7 @@ function Employees() {
                 if (!isValidDate(payload.ngay_sinh)) rowErrors.push(`Ngày sinh không hợp lệ: "${payload.ngay_sinh}" (cần dd/mm/yyyy)`)
                 if (!isValidDate(payload.ngay_vao_lam)) rowErrors.push(`Ngày vào làm không hợp lệ: "${payload.ngay_vao_lam}" (cần dd/mm/yyyy)`)
                 if (!isValidDate(payload.ngay_lam_chinh_thuc)) rowErrors.push(`Ngày chính thức không hợp lệ: "${payload.ngay_lam_chinh_thuc}" (cần dd/mm/yyyy)`)
+                if (!isValidDate(payload.ngay_het_han)) rowErrors.push(`Ngày hết hạn hợp đồng không hợp lệ: "${payload.ngay_het_han}" (cần dd/mm/yyyy)`)
                 if (!isValidDate(payload.ngay_cap)) rowErrors.push(`Ngày cấp CCCD không hợp lệ: "${payload.ngay_cap}" (cần dd/mm/yyyy)`)
 
                 if (rowErrors.length > 0) {
@@ -677,6 +717,11 @@ function Employees() {
 
                 const dbPayload = { ...mapAppToUser(payload) }
                 const existing = codeKey ? existingByCode.get(codeKey) : null
+                // Không ghi đè trạng thái hiện có bằng giá trị rỗng khi file không có cột trạng thái/tình trạng.
+                if (existing?.id && !payload.trang_thai && !payload.tinh_trang) {
+                    delete dbPayload.employment_status
+                    delete dbPayload.status
+                }
 
                 let mutationResult
                 if (existing?.id) {
@@ -711,8 +756,10 @@ function Employees() {
                     skipped++
                 } else if (existing?.id) {
                     updated++
+                    await saveImportedContract(existing.id, payload)
                 } else {
                     imported++
+                    await saveImportedContract(dbPayload.id, payload)
                     if (codeKey) {
                         existingByCode.set(codeKey, { id: dbPayload.id, employeeId: payload.employeeId })
                     }
@@ -1199,11 +1246,7 @@ function Employees() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                            <option value="">Tất cả trạng thái</option>
-                            <option value="Thử việc">Thử việc</option>
-                            <option value="Chính thức">Chính thức</option>
-                            <option value="Tạm nghỉ">Tạm nghỉ</option>
-                            <option value="Nghỉ việc">Đã nghỉ</option>
+                            <StatusFilterOptions />
                         </select>
                         <select value={filterBirthMonth} onChange={(e) => setFilterBirthMonth(e.target.value)}>
                             <option value="">Tất cả tháng sinh</option>
@@ -1305,12 +1348,13 @@ function Employees() {
                             <div className="form-group">
                                 <label>Lưu ý định dạng cột (theo thứ tự):</label>
                                 <ul style={{ paddingLeft: '20px', marginTop: '8px' }}>
-                                    <li>STT, Mã NV, Họ và tên</li>
+                                    <li>STT, Mã NV, Chi nhánh, Trạng thái (Đang làm việc/Tạm nghỉ/Nghỉ việc), Họ tên</li>
                                     <li>Giới tính, Ngày sinh, Vị trí, Ca làm, TEAM</li>
-                                    <li>Tình trạng, Ngày vào làm, Ngày lên chính thức</li>
-                                    <li>SĐT, CCCD (giữ số 0 đầu), Ngày cấp, Nơi cấp</li>
-                                    <li>Địa chỉ, Ngân hàng, Số TK (giữ số 0 đầu), Tên tài khoản</li>
-                                    <li>Ghi chú</li>
+                                    <li>Tình trạng (Thử việc/Chính thức), Ngày vào làm, Ngày lên chính thức, Noted</li>
+                                    <li>Cơ chế lương, Tổng lương</li>
+                                    <li>SĐT, Số CCCD (giữ số 0 đầu), Ngày cấp, Nơi cấp CCCD, Email cá nhân</li>
+                                    <li>Bộ phận, Loại hợp đồng, Ngày hết hạn hợp đồng</li>
+                                    <li>Địa chỉ thường trú, Địa chỉ tạm trú, Tình trạng hôn nhân</li>
                                 </ul>
                                 <small>Hàng đầu tiên là header. Tải mẫu Excel để đúng cột. CCCD/SĐT/Số TK nên để định dạng Text trên Excel.</small>
                             </div>

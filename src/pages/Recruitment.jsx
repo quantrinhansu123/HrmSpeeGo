@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx'
 import CandidateModal from '../components/CandidateModal'
 import RecruitmentPlanModal from '../components/RecruitmentPlanModal'
 import { fbDelete, fbGet, fbPush, fbUpdate } from '../services/firebase'
+import { asIdentityText } from '../utils/helpers'
 
 function Recruitment() {
   const [plans, setPlans] = useState([])
@@ -112,7 +113,7 @@ function Recruitment() {
       const payload = {
         ho_va_ten: candidate.ho_ten || candidate.name || '',
         email: candidate.email || '',
-        sđt: candidate.sdt || candidate.sđt || '',
+        sđt: asIdentityText(candidate.sdt || candidate.sđt, 'phone'),
         chi_nhanh: candidate.chi_nhanh || '',
         bo_phan: candidate.bo_phan || candidate.department || '',
         // Set vị trí hiển thị là Thử việc theo yêu cầu
@@ -120,7 +121,7 @@ function Recruitment() {
         trang_thai: 'Thử việc',
         status: 'probation',
         ngay_vao_lam: new Date().toISOString().split('T')[0],
-        cccd: candidate.cccd || '',
+        cccd: asIdentityText(candidate.cccd, 'cccd'),
         ngay_cap: candidate.ngay_cap || '',
         noi_cap: candidate.noi_cap || '',
         que_quan: candidate.que_quan || '',
@@ -390,11 +391,11 @@ function Recruitment() {
         c.bo_phan || '',
         c.nguon_cv || '',
         c.hr_phu_trach || '',
-        c.sdt || c.sđt || '',
+        asIdentityText(c.sdt || c.sđt, 'phone'),
         c.email || '',
         c.trang_thai || '',
         c.ngay_tiep_nhan || '',
-        c.cccd || '',
+        asIdentityText(c.cccd, 'cccd'),
         c.ngay_cap || '',
         c.noi_cap || '',
         c.que_quan || '',
@@ -825,7 +826,7 @@ function Recruitment() {
                       <td>{c.bo_phan || ''}</td>
                       <td>{c.nguon_cv || ''}</td>
                       <td>{c.hr_phu_trach || ''}</td>
-                      <td>{c.sdt || c.sđt || ''}</td>
+                      <td>{asIdentityText(c.sdt || c.sđt, 'phone')}</td>
                       <td>{c.email || ''}</td>
                       <td>{status}</td>
                       <td>{c.ngay_tiep_nhan ? new Date(c.ngay_tiep_nhan).toLocaleDateString('vi-VN') : ''}</td>
@@ -972,7 +973,7 @@ function Recruitment() {
                             <td>{item.bo_phan}</td>
                             <td>{item.hr_phu_trach}</td>
                             <td>{item.email}</td>
-                            <td>{item.sdt}</td>
+                            <td>{asIdentityText(item.sdt, 'phone')}</td>
                             <td>{item.trang_thai}</td>
                           </tr>
                         ))}

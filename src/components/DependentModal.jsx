@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fbPush, fbUpdate } from '../services/firebase'
-import { normalizeString } from '../utils/helpers'
+import { asIdentityText, normalizeString } from '../utils/helpers'
 
 function DependentModal({ dependent, employees, isOpen, onClose, onSave, readOnly = false }) {
   const [formData, setFormData] = useState({
@@ -37,7 +37,7 @@ function DependentModal({ dependent, employees, isOpen, onClose, onSave, readOnl
         hoTen: dependent.hoTen || dependent.name || '',
         quanHe: dependent.quanHe || dependent.relationship || '',
         ngaySinh: dependent.ngaySinh || '',
-        cccd: dependent.cccd || dependent.cmnd || '',
+        cccd: asIdentityText(dependent.cccd || dependent.cmnd, 'cccd'),
         tuNgay: dependent.tuNgay || '',
         denNgay: dependent.denNgay || '',
         status: dependent.status || 'Đang áp dụng'

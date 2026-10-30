@@ -56,7 +56,7 @@ const isOnlineAttendanceLog = log =>
 
 const buildMapsUrl = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`
 
-const captureGeolocation = () =>
+const requestPosition = options =>
   new Promise(resolve => {
     if (!navigator.geolocation) {
       resolve({ error: 'unsupported' })
@@ -81,9 +81,44 @@ const captureGeolocation = () =>
           message: err?.message || ''
         })
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      options
     )
   })
+
+// Máy tính thường không có GPS: thử độ chính xác cao trước, sau đó dùng vị trí theo Wi-Fi/IP của trình duyệt.
+const captureGeolocation = async () => {
+  const precise = await requestPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 0 })
+  if (!precise.error || precise.error === 'denied' || precise.error === 'unsupported') return precise
+  const coarse = await requestPosition({ enableHighAccuracy: false, timeout: 20000, maximumAge: 60000 })
+  return coarse.error ? precise : coarse
+}
+
+// Đổi toạ độ thành địa chỉ đọc được (OpenStreetMap Nominatim); lỗi mạng thì bỏ qua.
+const reverseGeocode = async (lat, lng) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=vi&lat=${lat}&lon=${lng}`,
+      { signal: controller.signal }
+    )
+    if (!response.ok) return ''
+    const data = await response.json()
+    return String(data?.display_name || '')
+  } catch {
+    return ''
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+const describeDevice = () => {
+  const ua = navigator.userAgent || ''
+  const isMobile = navigator.userAgentData?.mobile ?? /Android|iPhone|iPad|Mobile/i.test(ua)
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Trình duyệt khác'
+  const platform = navigator.userAgentData?.platform || navigator.platform || ''
+  return `${isMobile ? 'Điện thoại' : 'Máy tính'} · ${platform} · ${browser}`
+}
 
 const formatLocationLabel = location => {
   if (!location) return '—'
@@ -94,6 +129,7 @@ const formatLocationLabel = location => {
     return 'Không lấy được vị trí'
   }
   if (location.lat == null || location.lng == null) return '—'
+  if (location.address) return location.address
   const lat = Number(location.lat).toFixed(5)
   const lng = Number(location.lng).toFixed(5)
   return `${lat}, ${lng}`
@@ -376,6 +412,15 @@ function OnlineAttendance() {
         uploadedPhotoUrl = await uploadToCloudinary(photoPreview)
       }
 
+      // 2a. Lấy vị trí tại thời điểm chấm công (không chặn chấm công nếu thiếu vị trí)
+      const capturedLocation = await captureGeolocation()
+      setLiveLocation(capturedLocation)
+      setLocationStatus(capturedLocation.error ? 'error' : 'ready')
+      if (!capturedLocation.error) {
+        capturedLocation.address = await reverseGeocode(capturedLocation.lat, capturedLocation.lng)
+      }
+      capturedLocation.device = describeDevice()
+
       // 2. Gọi RPC chấm công của hệ thống
       const functionName = action === 'in' ? 'employee_online_check_in' : 'employee_online_check_out'
       const { data, error: requestError } = await supabase.rpc(functionName)
@@ -384,18 +429,16 @@ function OnlineAttendance() {
         throw new Error(requestError.message)
       }
 
-      // 3. Cập nhật thêm ảnh Cloudinary vào bản ghi
-      if (uploadedPhotoUrl) {
-        try {
-          const recordDate = data?.date || new Date().toISOString().slice(0, 10)
-          const recordId = `online_${user.id || user.auth_user_id}_${recordDate.replace(/-/g, '')}`
-          const patch = action === 'in'
-            ? { checkInPhoto: uploadedPhotoUrl }
-            : { checkOutPhoto: uploadedPhotoUrl }
-          await fbUpdate(`hr/attendanceLogs/${recordId}`, patch)
-        } catch (updateErr) {
-          console.warn('Lưu ảnh phụ:', updateErr.message)
-        }
+      // 3. Cập nhật thêm ảnh Cloudinary và vị trí vào bản ghi
+      try {
+        const recordDate = data?.date || new Date().toISOString().slice(0, 10)
+        const recordId = data?.record?.id || `online_${user.id || user.auth_user_id}_${recordDate.replace(/-/g, '')}`
+        const prefix = action === 'in' ? 'checkIn' : 'checkOut'
+        const patch = { [`${prefix}Location`]: capturedLocation }
+        if (uploadedPhotoUrl) patch[`${prefix}Photo`] = uploadedPhotoUrl
+        await fbUpdate(`hr/attendanceLogs/${recordId}`, patch)
+      } catch (updateErr) {
+        console.warn('Lưu ảnh/vị trí phụ:', updateErr.message)
       }
 
       // 4. Cập nhật state giao diện
@@ -405,7 +448,8 @@ function OnlineAttendance() {
         record: {
           ...(current?.record || {}),
           ...(data?.record || {}),
-          [action === 'in' ? 'checkInPhoto' : 'checkOutPhoto']: uploadedPhotoUrl
+          [action === 'in' ? 'checkInPhoto' : 'checkOutPhoto']: uploadedPhotoUrl,
+          [action === 'in' ? 'checkInLocation' : 'checkOutLocation']: capturedLocation
         }
       }))
 
@@ -472,6 +516,31 @@ function OnlineAttendance() {
           <div className="oa-shift-badge">
             Ca làm việc: <strong>{standardIn} - {standardOut}</strong>
           </div>
+        </div>
+        <div className="oa-location-card">
+          <div className="oa-card-label">VỊ TRÍ CHẤM CÔNG</div>
+          {locationStatus === 'loading' && <div className="oa-loc-status is-loading">Đang xác định vị trí…</div>}
+          {locationStatus === 'error' && (
+            <div className="oa-loc-status is-error">
+              {formatLocationLabel(liveLocation)}. Hãy cho phép trình duyệt truy cập vị trí để Admin kiểm tra.
+            </div>
+          )}
+          {locationStatus === 'ready' && liveLocation && (
+            <div className="oa-loc-info">
+              <div className="oa-loc-coords">
+                <a className="oa-loc-link" href={liveLocation.mapsUrl} target="_blank" rel="noreferrer" title="Mở Google Maps">
+                  {Number(liveLocation.lat).toFixed(5)}, {Number(liveLocation.lng).toFixed(5)}
+                </a>
+              </div>
+              {liveLocation.accuracy != null && (
+                <div className="oa-loc-accuracy">Độ chính xác ±{Math.round(liveLocation.accuracy)}m</div>
+              )}
+            </div>
+          )}
+          <small className="oa-loc-device">Thiết bị: {describeDevice()}. Vị trí được lưu khi bạn Check-in / Check-out.</small>
+          <button type="button" className="oa-btn-refresh-loc" onClick={refreshLiveLocation} disabled={locationStatus === 'loading'}>
+            Lấy lại vị trí
+          </button>
         </div>
       </div>
 
@@ -648,11 +717,14 @@ function OnlineAttendance() {
             <thead>
               <tr>
                 <th>STT</th>
+                {isAdminOrManager && <th>Họ tên</th>}
                 <th>Ngày</th>
                 <th>Thứ</th>
                 <th>Time Check-in (Now)</th>
+                <th>Vị trí Check-in</th>
                 <th>Ảnh Check-in</th>
                 <th>Time Check-out (Now)</th>
+                <th>Vị trí Check-out</th>
                 <th>Ảnh Check-out</th>
                 <th>Tổng giờ</th>
                 <th>Đi muộn</th>
@@ -663,7 +735,7 @@ function OnlineAttendance() {
             <tbody>
               {filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="11" style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
+                  <td colSpan={isAdminOrManager ? 13 : 12} style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
                     Chưa có lịch sử chấm công nào trong tháng {selectedMonth}.
                   </td>
                 </tr>
@@ -676,9 +748,19 @@ function OnlineAttendance() {
                   return (
                     <tr key={log.id || idx}>
                       <td>{idx + 1}</td>
+                      {isAdminOrManager && (
+                        <td data-label="Họ tên">
+                          <strong>{log.employeeName || log.name || '—'}</strong>
+                          {log.employeeCode ? <small className="oa-loc-cell-acc"> {log.employeeCode}</small> : null}
+                        </td>
+                      )}
                       <td data-label="Ngày"><strong>{displayDate(log.date)}</strong></td>
                       <td data-label="Thứ">{log.dayOfWeek || '—'}</td>
                       <td data-label="Check-in"><span className="oa-time-tag">{checkInFull}</span></td>
+                      <td data-label="Vị trí Check-in">
+                        <LocationCell location={log.checkInLocation} />
+                        {log.checkInLocation?.device ? <small className="oa-loc-cell-acc">{log.checkInLocation.device}</small> : null}
+                      </td>
                       <td data-label="Ảnh Check-in">
                         {log.checkInPhoto ? (
                           <a href={log.checkInPhoto} target="_blank" rel="noreferrer" title="Bấm xem ảnh Cloudinary">
@@ -687,6 +769,10 @@ function OnlineAttendance() {
                         ) : '—'}
                       </td>
                       <td data-label="Check-out"><span className="oa-time-tag">{checkOutFull}</span></td>
+                      <td data-label="Vị trí Check-out">
+                        <LocationCell location={log.checkOutLocation} />
+                        {log.checkOutLocation?.device ? <small className="oa-loc-cell-acc">{log.checkOutLocation.device}</small> : null}
+                      </td>
                       <td data-label="Ảnh Check-out">
                         {log.checkOutPhoto ? (
                           <a href={log.checkOutPhoto} target="_blank" rel="noreferrer" title="Bấm xem ảnh Cloudinary">

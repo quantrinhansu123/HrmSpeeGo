@@ -94,6 +94,7 @@ export const USERS_DIRECTORY_COLUMNS = [
   'identity_issue_date',
   'identity_issue_place',
   'address',
+  'temporary_address',
   'hometown',
   'gender',
   'marital_status',
@@ -148,6 +149,75 @@ export const getEmployeeEmploymentStatus = employee => {
   // Giữ nguyên giá trị nghiệp vụ khác nếu có, nhưng không tạo giá trị mặc định.
   const firstValue = candidates.find(value => String(value || '').trim())
   return firstValue ? String(firstValue).trim() : ''
+}
+
+/**
+ * Hồ sơ nhân sự có hai thông tin độc lập:
+ * - Trạng thái: Đang làm việc / Tạm nghỉ / Nghỉ việc (đang đi làm hay không)
+ * - Tình trạng: Thử việc / Chính thức (giai đoạn hợp đồng)
+ * Giá trị hiệu lực (employment_status) vẫn là một chuỗi để các màn hình cũ
+ * đọc được: Tạm nghỉ/Nghỉ việc nếu có, ngược lại là Tình trạng.
+ */
+export const WORK_STATE_OPTIONS = Object.freeze(['Đang làm việc', 'Tạm nghỉ', 'Nghỉ việc'])
+export const EMPLOYMENT_STAGE_OPTIONS = Object.freeze(['Thử việc', 'Chính thức'])
+
+const matchOption = (value, options) => {
+  const normalized = normalizeStatusText(value)
+  if (!normalized) return ''
+  const aliases = {
+    'đang làm': 'Đang làm việc',
+    'đang làm việc': 'Đang làm việc',
+    'đã nghỉ': 'Nghỉ việc',
+    'đã nghỉ việc': 'Nghỉ việc'
+  }
+  const resolved = aliases[normalized] || value
+  return options.find(option => normalizeStatusText(option) === normalizeStatusText(resolved)) || ''
+}
+
+export const getEmployeeWorkState = employee => {
+  const effective = matchOption(getEmployeeEmploymentStatus(employee), WORK_STATE_OPTIONS)
+  return effective === 'Tạm nghỉ' || effective === 'Nghỉ việc' ? effective : 'Đang làm việc'
+}
+
+export const getEmployeeStage = employee => {
+  if (!employee) return ''
+  const candidates = [
+    getEmployeeEmploymentStatus(employee),
+    employee.tinh_trang,
+    employee.status
+  ]
+  for (const value of candidates) {
+    const stage = matchOption(value, EMPLOYMENT_STAGE_OPTIONS)
+    if (stage) return stage
+  }
+  return ''
+}
+
+/** Lọc theo một giá trị thuộc nhóm Trạng thái hoặc Tình trạng. */
+export const matchesEmployeeStatusFilter = (employee, filterValue) => {
+  if (!filterValue) return true
+  if (WORK_STATE_OPTIONS.includes(filterValue)) return getEmployeeWorkState(employee) === filterValue
+  return getEmployeeStage(employee) === filterValue
+}
+
+/**
+ * Gộp Trạng thái + Tình trạng nhập từ form/Excel thành các trường lưu trữ.
+ * Chấp nhận file cũ có Thử việc/Chính thức trong cột Trạng thái.
+ */
+export const composeEmploymentFields = ({ workState = '', stage = '' } = {}) => {
+  let nextWorkState = matchOption(workState, WORK_STATE_OPTIONS)
+  let nextStage = matchOption(stage, EMPLOYMENT_STAGE_OPTIONS)
+  if (!nextStage) nextStage = matchOption(workState, EMPLOYMENT_STAGE_OPTIONS)
+  if (!nextWorkState) nextWorkState = matchOption(stage, WORK_STATE_OPTIONS)
+  const effective = nextWorkState === 'Tạm nghỉ' || nextWorkState === 'Nghỉ việc'
+    ? nextWorkState
+    : nextStage
+  return {
+    trang_thai: effective,
+    employmentStatus: effective,
+    employment_status: effective,
+    tinh_trang: nextStage
+  }
 }
 
 /**
@@ -214,6 +284,7 @@ export const mapUserToApp = (user) => {
     ngay_cap: user.identity_issue_date || '',
     noi_cap: user.identity_issue_place || '',
     dia_chi_thuong_tru: user.address || '',
+    dia_chi_tam_tru: user.temporary_address || '',
     que_quan: user.hometown || '',
     ngay_sinh: user.dob || '',
     gioi_tinh: user.gender || '',
@@ -307,6 +378,8 @@ export const mapAppToUser = (data) => {
     is_team_leader: data.is_leader === true || data.is_leader === 'yes',
     // Rỗng phải được lưu rỗng để phân biệt với “Thử việc”; không tự suy diễn
     // nhân sự chưa được HR đánh dấu thành “Chính thức”.
+    // employment_status giữ giá trị hiệu lực (Thử việc/Chính thức/Tạm nghỉ/Nghỉ việc) cho các màn hình khác;
+    // status lưu riêng Tình trạng (Thử việc/Chính thức). Xem composeEmploymentFields.
     employment_status: data.trang_thai ?? data.employmentStatus ?? data.employment_status ?? '',
     status: data.tinh_trang ?? data.status ?? '',
     shift: data.ca_lam_viec || '',
@@ -316,6 +389,7 @@ export const mapAppToUser = (data) => {
     identity_issue_date: formatDateForDB(data.ngay_cap),
     identity_issue_place: data.noi_cap || '',
     address: data.dia_chi_thuong_tru || data.address || '',
+    temporary_address: data.dia_chi_tam_tru || '',
     hometown: data.que_quan || '',
     dob: formatDateForDB(data.ngay_sinh),
     gender: data.gioi_tinh || '',

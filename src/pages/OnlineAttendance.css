@@ -864,3 +864,14 @@
     justify-content: space-between;
   }
 }
+
+.oa-loc-device {
+  display: block;
+  margin: 6px 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.oa-loc-cell small {
+  display: block;
+}
