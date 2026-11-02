@@ -17,6 +17,7 @@ const LeaveDays = lazy(() => import('./pages/LeaveDays'))
 const Login = lazy(() => import('./pages/Login'))
 const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
+const AttendanceHistory = lazy(() => import('./pages/AttendanceHistory'))
 const ShiftRegistration = lazy(() => import('./pages/ShiftRegistration'))
 const Recruitment = lazy(() => import('./pages/Recruitment'))
 const CompanyDocuments = lazy(() => import('./pages/CompanyDocuments'))
@@ -38,6 +39,7 @@ function App() {
             <Route element={<AppLayout />}>
               <Route path="/bang-cong" element={<MyAttendance />} />
               <Route path="/cham-cong-online" element={<OnlineAttendance />} />
+              <Route path="/lich-su-cham-cong" element={<AttendanceHistory />} />
               <Route path="/ngay-nghi-phep" element={<LeaveDays />} />
               <Route path="/dang-ky-ca" element={<ShiftRegistration />} />
               <Route path="/approvals" element={<Approvals />} />

@@ -3,7 +3,7 @@
 .my-attendance__header p { margin: 6px 0 0; color: #64748b; }
 .my-attendance__header label { display: grid; gap: 5px; min-width: 150px; color: #64748b; font-size: .82rem; }
 .my-attendance__header-actions { display: flex; align-items: flex-end; gap: 10px; }
-.my-attendance__header-actions > .btn { min-height: 38px; border-radius: 5px; color: #0b3b75; font-weight: 600; }
+.my-attendance__header-actions > .btn { min-height: 38px; border-radius: 5px; color: var(--primary); font-weight: 600; }
 .my-attendance__header select { padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
 .my-attendance__identity { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; padding: 0; overflow: hidden; }
 .my-attendance__identity div { display: grid; gap: 4px; padding: 16px 18px; border-right: 1px solid #e2e8f0; }

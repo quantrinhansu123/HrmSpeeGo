@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../services/supabase'
-import { fbSet } from '../services/firebase'
+import { fbGet, fbSet } from '../services/firebase'
 import {
   asIdentityText,
   composeEmploymentFields,
@@ -15,10 +15,13 @@ import {
 import { employeeContractKey } from '../utils/employeeContracts'
 import {
   DEFAULT_ATTENDANCE_SHIFT,
+  getAttendanceShiftOptions,
   SALE_ATTENDANCE_SHIFT
 } from '../utils/attendanceShift'
 
-const EMPLOYEE_SHIFT_OPTIONS = [DEFAULT_ATTENDANCE_SHIFT, SALE_ATTENDANCE_SHIFT]
+// Danh sách dự phòng khi chưa đọc được cài đặt ca; danh sách thật lấy từ
+// "Cài đặt ca" để ca mới thêm luôn xuất hiện trong hồ sơ nhân sự.
+const DEFAULT_EMPLOYEE_SHIFT_OPTIONS = [DEFAULT_ATTENDANCE_SHIFT, SALE_ATTENDANCE_SHIFT]
 
 function normalizeFiles(files = []) {
   return (files || []).map((file, idx) => {
@@ -194,6 +197,29 @@ function EmployeeModal({
 
   const [avatarUrlInput, setAvatarUrlInput] = useState('')
   const [galleryUrlInput, setGalleryUrlInput] = useState('')
+  const [shiftOptions, setShiftOptions] = useState(DEFAULT_EMPLOYEE_SHIFT_OPTIONS)
+
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    fbGet('hr/attendanceSettings/default')
+      .then(storedSettings => {
+        if (cancelled) return
+        const options = getAttendanceShiftOptions(storedSettings)
+          // Cài đặt ca trả về standardCheckIn/Out; đổi sang start/end để hiển thị.
+          .map(shift => ({
+            name: shift.name || shift.id,
+            start: shift.standardCheckIn || shift.start || '',
+            end: shift.standardCheckOut || shift.end || ''
+          }))
+          .filter(shift => shift.name)
+        setShiftOptions(options.length ? options : DEFAULT_EMPLOYEE_SHIFT_OPTIONS)
+      })
+      .catch(() => {
+        if (!cancelled) setShiftOptions(DEFAULT_EMPLOYEE_SHIFT_OPTIONS)
+      })
+    return () => { cancelled = true }
+  }, [isOpen, companyId])
 
   const generateEmployeeId = () => {
     const nextId = `NV${Date.now().toString().slice(-6)}`
@@ -1021,10 +1047,10 @@ function EmployeeModal({
                       onChange={handleChange}
                       disabled={!editable}
                     >
-                      {formData.ca_lam_viec && !EMPLOYEE_SHIFT_OPTIONS.some(shift => shift.name === formData.ca_lam_viec) && (
+                      {formData.ca_lam_viec && !shiftOptions.some(shift => shift.name === formData.ca_lam_viec) && (
                         <option value={formData.ca_lam_viec}>{formData.ca_lam_viec} (dữ liệu cũ)</option>
                       )}
-                      {EMPLOYEE_SHIFT_OPTIONS.map(shift => (
+                      {shiftOptions.map(shift => (
                         <option key={shift.name} value={shift.name}>
                           {shift.name} ({shift.start} - {shift.end})
                         </option>

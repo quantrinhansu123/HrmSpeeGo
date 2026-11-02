@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../services/supabase'
-import { fbGet, fbUpdate, fbGetAttendanceByEmployee, fbGetAttendanceLogsByMonth } from '../services/firebase'
+import { fbGet, fbUpdate } from '../services/firebase'
 import { rebuildAttendanceMonthSummaryForDate } from '../services/attendanceMonthSummary'
 import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
 import { uploadToCloudinary } from '../utils/cloudinary'
 import {
-  applyCalculatedAttendanceTiming,
   normalizeAttendanceShiftSettings,
   resolveAttendanceShift
 } from '../utils/attendanceShift'
@@ -22,37 +21,6 @@ const getTime = value => {
     ? '—'
     : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })
 }
-
-const formatDateTimeNow = (timeValue, dateStr) => {
-  if (!timeValue) return '—'
-  const dateObj = new Date(timeValue)
-  if (!Number.isNaN(dateObj.getTime())) {
-    return dateObj.toLocaleString('vi-VN', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
-  }
-  if (dateStr && /^\d{1,2}:\d{2}/.test(String(timeValue))) {
-    const [y, m, d] = dateStr.split('-')
-    return `${timeValue} ${d}/${m}/${y}`
-  }
-  return String(timeValue)
-}
-
-const displayDate = value => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return value || '—'
-  const [year, month, day] = value.split('-')
-  return `${day}/${month}/${year}`
-}
-
-const isOnlineAttendanceLog = log =>
-  String(log?.source || '') === 'employee-online' ||
-  String(log?.workMode || '').toLowerCase() === 'online'
 
 const buildMapsUrl = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`
 
@@ -135,26 +103,6 @@ const formatLocationLabel = location => {
   return `${lat}, ${lng}`
 }
 
-const LocationCell = ({ location, label }) => {
-  if (!location) return <span className="oa-loc-empty">—</span>
-  if (location.error || location.lat == null || location.lng == null) {
-    return <span className="oa-loc-empty">{formatLocationLabel(location)}</span>
-  }
-  const text = formatLocationLabel(location)
-  const href = location.mapsUrl || buildMapsUrl(location.lat, location.lng)
-  return (
-    <div className="oa-loc-cell">
-      {label ? <small className="oa-loc-cell-label">{label}</small> : null}
-      <a className="oa-loc-link" href={href} target="_blank" rel="noreferrer" title="Mở Google Maps">
-        {text}
-      </a>
-      {location.accuracy != null && Number.isFinite(Number(location.accuracy)) ? (
-        <small className="oa-loc-cell-acc">±{Math.round(Number(location.accuracy))}m</small>
-      ) : null}
-    </div>
-  )
-}
-
 function OnlineAttendance() {
   const { user } = useAuth()
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'manager'
@@ -180,14 +128,6 @@ function OnlineAttendance() {
   const [liveLocation, setLiveLocation] = useState(null)
   const [locationStatus, setLocationStatus] = useState('idle') // idle | loading | ready | error
 
-  // 5. Lịch sử chấm công (List) & Bộ lọc tháng
-  const [historyLogs, setHistoryLogs] = useState([])
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  })
-
   const refreshLiveLocation = useCallback(async () => {
     setLocationStatus('loading')
     const result = await captureGeolocation()
@@ -199,71 +139,6 @@ function OnlineAttendance() {
   useEffect(() => {
     refreshLiveLocation()
   }, [refreshLiveLocation])
-
-  const loadHistory = useCallback(async () => {
-    if (!user?.id && !user?.auth_user_id) return
-    setHistoryLoading(true)
-    try {
-      if (isAdminOrManager) {
-        const month = selectedMonth || new Date().toISOString().slice(0, 7)
-        const data = await fbGetAttendanceLogsByMonth(month)
-        const list = Object.entries(data || {})
-          .map(([id, val]) => applyCalculatedAttendanceTiming({ ...val, id }, null, attendanceSettings))
-          .filter(isOnlineAttendanceLog)
-        list.sort((a, b) => {
-          const byDate = String(b.date || '').localeCompare(String(a.date || ''))
-          if (byDate) return byDate
-          return String(a.employeeName || '').localeCompare(String(b.employeeName || ''), 'vi')
-        })
-        setHistoryLogs(list)
-      } else {
-        const data = await fbGetAttendanceByEmployee(user)
-        if (data) {
-          const list = Object.entries(data).map(([id, val]) =>
-            applyCalculatedAttendanceTiming({ ...val, id }, user, attendanceSettings)
-          )
-          list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-          setHistoryLogs(list)
-        } else {
-          setHistoryLogs([])
-        }
-      }
-    } catch (e) {
-      console.warn('Lỗi tải lịch sử chấm công:', e)
-    } finally {
-      setHistoryLoading(false)
-    }
-  }, [attendanceSettings, isAdminOrManager, selectedMonth, user])
-
-  useEffect(() => {
-    loadHistory()
-  }, [loadHistory])
-
-  // Danh sách các tháng có dữ liệu
-  const availableMonths = useMemo(() => {
-    const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-    const set = new Set([currentMonth, selectedMonth].filter(Boolean))
-    historyLogs.forEach(log => {
-      const ym = String(log.date || '').slice(0, 7)
-      if (/^\d{4}-\d{2}$/.test(ym)) set.add(ym)
-    })
-    // Admin: thêm vài tháng gần đây để chọn khi chưa có log
-    if (isAdminOrManager) {
-      const now = new Date()
-      for (let i = 0; i < 6; i += 1) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-      }
-    }
-    return Array.from(set).sort().reverse()
-  }, [historyLogs, isAdminOrManager, selectedMonth])
-
-  // Lọc log theo tháng đã chọn (admin đã lọc theo tháng khi load)
-  const filteredLogs = useMemo(() => {
-    if (isAdminOrManager) return historyLogs
-    if (!selectedMonth) return historyLogs
-    return historyLogs.filter(log => String(log.date || '').startsWith(selectedMonth))
-  }, [historyLogs, isAdminOrManager, selectedMonth])
 
   // Cập nhật đồng hồ mỗi giây
   useEffect(() => {
@@ -456,7 +331,6 @@ function OnlineAttendance() {
       setPhotoPreview(null)
       stopCamera()
       setNotice(action === 'in' ? '✓ Check-in thành công!' : '✓ Check-out thành công!')
-      loadHistory()
 
       // Đồng bộ vào bảng công tháng (attendanceMonthSummaries) để /bang-cong-preview thấy ngay.
       const recordDate = data?.date || data?.record?.date || new Date().toISOString().slice(0, 10)
@@ -495,8 +369,11 @@ function OnlineAttendance() {
           </p>
         </div>
         <div className="oa-header-actions">
+          <Link className="oa-btn-view oa-btn-view--ghost" to="/lich-su-cham-cong">
+            <i className="fas fa-clock-rotate-left" aria-hidden="true"></i> Lịch sử chấm công
+          </Link>
           <Link className="oa-btn-view" to={isAdminOrManager ? '/bang-cong-preview' : '/bang-cong'}>
-            Xem bảng công
+            <i className="fas fa-calendar-check" aria-hidden="true"></i> Xem bảng công
           </Link>
         </div>
       </div>
@@ -683,131 +560,6 @@ function OnlineAttendance() {
           </p>
         </div>
       )}
-
-      {/* 5. Bảng Danh sách lịch sử chấm công (List theo yêu cầu của anh Công) */}
-      <div className="oa-history-section">
-        <div className="oa-history-header">
-          <div>
-            <h3>📋 Bảng danh sách chấm công (Lịch sử)</h3>
-            <p className="oa-history-sub">
-              Cột thời gian ghi nhận theo thời gian thực (Now: cả ngày & giờ)
-            </p>
-          </div>
-          <div className="oa-history-filter-wrap">
-            <label className="oa-month-label">
-              <span>Tháng:</span>
-              <select
-                className="oa-month-select"
-                value={selectedMonth}
-                onChange={e => setSelectedMonth(e.target.value)}
-              >
-                {availableMonths.map(m => (
-                  <option key={m} value={m}>
-                    Tháng {m.split('-')[1]}/{m.split('-')[0]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span className="oa-history-count">{filteredLogs.length} ngày</span>
-          </div>
-        </div>
-
-        <div className="oa-table-responsive">
-          <table className="oa-history-table">
-            <thead>
-              <tr>
-                <th>STT</th>
-                {isAdminOrManager && <th>Họ tên</th>}
-                <th>Ngày</th>
-                <th>Thứ</th>
-                <th>Time Check-in (Now)</th>
-                <th>Vị trí Check-in</th>
-                <th>Ảnh Check-in</th>
-                <th>Time Check-out (Now)</th>
-                <th>Vị trí Check-out</th>
-                <th>Ảnh Check-out</th>
-                <th>Tổng giờ</th>
-                <th>Đi muộn</th>
-                <th>Về sớm</th>
-                <th>Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLogs.length === 0 ? (
-                <tr>
-                  <td colSpan={isAdminOrManager ? 13 : 12} style={{ textAlign: 'center', padding: '28px', color: '#64748b' }}>
-                    Chưa có lịch sử chấm công nào trong tháng {selectedMonth}.
-                  </td>
-                </tr>
-              ) : (
-                filteredLogs.map((log, idx) => {
-                  const checkInFull = formatDateTimeNow(log.vao || log.checkIn, log.date)
-                  const checkOutFull = formatDateTimeNow(log.ra || log.checkOut, log.date)
-                  const isLate = Number(log.lateMinutes || log.vaoTre || 0) > 0
-                  const isEarly = Number(log.earlyMinutes || log.raSom || 0) > 0
-                  return (
-                    <tr key={log.id || idx}>
-                      <td>{idx + 1}</td>
-                      {isAdminOrManager && (
-                        <td data-label="Họ tên">
-                          <strong>{log.employeeName || log.name || '—'}</strong>
-                          {log.employeeCode ? <small className="oa-loc-cell-acc"> {log.employeeCode}</small> : null}
-                        </td>
-                      )}
-                      <td data-label="Ngày"><strong>{displayDate(log.date)}</strong></td>
-                      <td data-label="Thứ">{log.dayOfWeek || '—'}</td>
-                      <td data-label="Check-in"><span className="oa-time-tag">{checkInFull}</span></td>
-                      <td data-label="Vị trí Check-in">
-                        <LocationCell location={log.checkInLocation} />
-                        {log.checkInLocation?.device ? <small className="oa-loc-cell-acc">{log.checkInLocation.device}</small> : null}
-                      </td>
-                      <td data-label="Ảnh Check-in">
-                        {log.checkInPhoto ? (
-                          <a href={log.checkInPhoto} target="_blank" rel="noreferrer" title="Bấm xem ảnh Cloudinary">
-                            <img src={log.checkInPhoto} alt="Ảnh vào" className="oa-table-thumb" />
-                          </a>
-                        ) : '—'}
-                      </td>
-                      <td data-label="Check-out"><span className="oa-time-tag">{checkOutFull}</span></td>
-                      <td data-label="Vị trí Check-out">
-                        <LocationCell location={log.checkOutLocation} />
-                        {log.checkOutLocation?.device ? <small className="oa-loc-cell-acc">{log.checkOutLocation.device}</small> : null}
-                      </td>
-                      <td data-label="Ảnh Check-out">
-                        {log.checkOutPhoto ? (
-                          <a href={log.checkOutPhoto} target="_blank" rel="noreferrer" title="Bấm xem ảnh Cloudinary">
-                            <img src={log.checkOutPhoto} alt="Ảnh ra" className="oa-table-thumb" />
-                          </a>
-                        ) : '—'}
-                      </td>
-                      <td data-label="Tổng giờ"><strong>{log.hours || log.gio || 0}h</strong></td>
-                      <td data-label="Đi muộn">
-                        {isLate ? (
-                          <span className="oa-badge badge-danger">{log.lateMinutes || log.vaoTre}p</span>
-                        ) : (
-                          <span className="oa-badge badge-success">0p</span>
-                        )}
-                      </td>
-                      <td data-label="Về sớm">
-                        {isEarly ? (
-                          <span className="oa-badge badge-warning">{log.earlyMinutes || log.raSom}p</span>
-                        ) : (
-                          <span className="oa-badge badge-success">0p</span>
-                        )}
-                      </td>
-                      <td data-label="Trạng thái">
-                        <span className={`oa-badge ${isLate ? 'badge-danger' : 'badge-success'}`}>
-                          {log.status || (isLate ? 'Muộn' : 'Đúng giờ')}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   )
 }

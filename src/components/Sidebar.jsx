@@ -15,6 +15,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/employees', icon: 'fas fa-users', label: 'Hồ sơ nhân sự' },
     { path: '/giay-to-cong-ty', icon: 'fas fa-folder-open', label: 'Giấy tờ công ty' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
+    { path: '/lich-su-cham-cong', icon: 'fas fa-clock-rotate-left', label: 'Lịch sử chấm công' },
     { path: '/bang-phat', icon: 'fas fa-file-invoice-dollar', label: 'Bảng phạt' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
@@ -38,7 +39,8 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
     { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/dang-ky-ca', icon: 'fas fa-calendar-week', label: 'Đăng ký ca' },
-    { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
+    { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
+    { path: '/lich-su-cham-cong', icon: 'fas fa-clock-rotate-left', label: 'Lịch sử chấm công' }
   ]
 
   const accountingItems = [
@@ -46,7 +48,8 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
     { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/holiday-settings', icon: 'fas fa-calendar-day', label: 'Cài đặt chấm công' },
-    { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
+    { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
+    { path: '/lich-su-cham-cong', icon: 'fas fa-clock-rotate-left', label: 'Lịch sử chấm công' }
   ]
 
   const accountingOnly = isAccountingUser(user) && !isCoreStaffUser(user)

@@ -165,7 +165,7 @@
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  background: linear-gradient(135deg, #0b3b75 0%, #062b59 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: #fff;
   flex: 0 0 auto;
 }
@@ -1070,8 +1070,8 @@
   gap: 8px;
 }
 
-.apv-btn--primary { background: #0b3b75; color: #fff; }
-.apv-btn--primary:hover { background: #062b59; }
+.apv-btn--primary { background: var(--primary); color: #fff; }
+.apv-btn--primary:hover { background: var(--primary-dark); }
 .apv-btn--primary:disabled { background: #b7c2c8; cursor: not-allowed; }
 
 .apv-btn--approve { background: #16a34a; color: #fff; }

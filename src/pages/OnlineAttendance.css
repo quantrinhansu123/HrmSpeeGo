@@ -11,29 +11,32 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border);
 }
 
 .oa-header h1 {
   margin: 0;
-  color: #0f172a;
-  font-size: 1.85rem;
+  color: var(--text);
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .oa-subtitle {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 0.95rem;
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
   font-weight: 500;
 }
 
 .oa-header-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .oa-btn-settings {
@@ -41,36 +44,55 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #334155;
-  font-weight: 600;
-  font-size: 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.875rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .oa-btn-settings:hover {
-  background: #f8fafc;
-  border-color: #94a3b8;
+  background: var(--surface-muted);
+  border-color: var(--text-faint);
 }
 
 .oa-btn-view {
   display: inline-flex;
   align-items: center;
-  padding: 8px 16px;
-  border-radius: 6px;
-  background: #0284c7;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
   color: #ffffff;
   text-decoration: none;
-  font-weight: 600;
-  font-size: 0.9rem;
-  transition: background 0.2s;
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  border: 1px solid var(--primary);
 }
 
 .oa-btn-view:hover {
-  background: #0369a1;
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+.oa-btn-view i {
+  font-size: 0.9rem;
+}
+
+.oa-btn-view--ghost {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.oa-btn-view--ghost:hover {
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 
 /* Dashboard Grid: Đồng hồ & Vị trí */

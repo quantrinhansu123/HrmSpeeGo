@@ -11,7 +11,7 @@ function Layout({ children }) {
   // Approvals keeps a mobile-first phone layout on small screens, but on desktop
   // it expands to a full-width workspace while still using the main sidebar.
   const isImmersive = location.pathname.startsWith('/approvals')
-  const isEmployee = ['/bang-cong', '/cham-cong-online', '/ngay-nghi-phep'].includes(location.pathname)
+  const isEmployee = ['/bang-cong', '/cham-cong-online', '/lich-su-cham-cong', '/ngay-nghi-phep'].includes(location.pathname)
   const [menuOpen, setMenuOpen] = useState(false)
   const isStaff = isCoreStaffUser(user)
   const isPersonalAttendance = String(user?.role || '').toLowerCase() === 'user' && !isAccountingUser(user)

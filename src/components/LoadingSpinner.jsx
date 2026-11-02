@@ -29,7 +29,7 @@ const LoadingSpinner = ({ text = 'Đang tải dữ liệu...' }) => {
           width: '42px',
           height: '42px',
           borderRadius: '50%',
-          borderLeftColor: '#ff5b1a',
+          borderLeftColor: 'var(--secondary)',
           borderTopColor: '#0d427a',
           animation: 'hrmSpinAnim 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite',
           marginBottom: '16px'
@@ -47,7 +47,7 @@ const LoadingSpinner = ({ text = 'Đang tải dữ liệu...' }) => {
             style={{
               background: 'none',
               border: 'none',
-              color: '#ff5b1a',
+              color: 'var(--secondary)',
               textDecoration: 'underline',
               cursor: 'pointer',
               fontWeight: 600,

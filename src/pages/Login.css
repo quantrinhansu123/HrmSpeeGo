@@ -23,7 +23,7 @@
 
 .system-login__intro { margin-bottom: 32px; }
 .system-login__intro img { display: block; width: 180px; height: 112px; margin-bottom: 18px; object-fit: contain; }
-.system-login__intro h1 { margin: 0 0 8px; color: #0b3b75; font-size: 2rem; font-weight: 800; line-height: 1.2; }
+.system-login__intro h1 { margin: 0 0 8px; color: var(--primary); font-size: 2rem; font-weight: 800; line-height: 1.2; }
 .system-login__intro p { margin: 0; color: #64748b; font-size: 1.05rem; }
 
 .system-login__error {
@@ -56,7 +56,7 @@
   font-size: 1rem;
 }
 
-.system-login__field input:focus { border-color: #7799bd; box-shadow: 0 0 0 3px rgba(11, 59, 117, .09); }
+.system-login__field input:focus { border-color: #7799bd; box-shadow: 0 0 0 3px rgba(37, 99, 235, .09); }
 
 .system-login__submit {
   display: inline-flex;
@@ -66,10 +66,10 @@
   gap: 10px;
   margin-top: 7px;
   padding: 12px 18px;
-  border: 1px solid #0b3b75;
+  border: 1px solid var(--primary);
   border-radius: 6px;
   color: #fff;
-  background: #0b3b75;
+  background: var(--primary);
   font: inherit;
   font-size: 1.05rem;
   font-weight: 700;
@@ -77,10 +77,10 @@
   box-shadow: 0 3px 7px rgba(0, 51, 102, .16);
 }
 
-.system-login__submit:hover { background: #062b59; }
+.system-login__submit:hover { background: var(--primary-dark); }
 .system-login__submit:disabled { opacity: .65; cursor: wait; }
 .system-login__employee-link { margin: 18px 0 0; color: #64748b; font-size: .88rem; line-height: 1.45; }
-.system-login__employee-link a { color: #0b3b75; font-weight: 650; }
+.system-login__employee-link a { color: var(--primary); font-weight: 650; }
 .system-login__form-panel footer { margin-top: 30px; color: #8a94a3; font-size: .85rem; }
 
 .system-login__branding {
@@ -92,7 +92,7 @@
   padding: 56px 64px;
   overflow: hidden;
   color: #fff;
-  background: linear-gradient(135deg, #0b3b75 0%, #062b59 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
 }
 
 .system-login__branding::before,
@@ -117,7 +117,7 @@
 .system-login__brand-logo img { display: block; width: 100%; height: 158px; object-fit: contain; filter: contrast(1.08) saturate(1.08); }
 .system-login__branding h2 { margin: 0 0 10px; font-size: clamp(2rem, 4vw, 3.5rem); font-weight: 800; letter-spacing: 2px; }
 .system-login__slogan { margin: 0; opacity: .88; font-size: 1.25rem; letter-spacing: 4px; }
-.system-login__accent { width: 100px; height: 4px; margin: 28px auto; background: #ff5a1f; }
+.system-login__accent { width: 100px; height: 4px; margin: 28px auto; background: var(--secondary); }
 .system-login__description { max-width: 520px; margin: 0 auto; opacity: .82; font-size: 1.05rem; line-height: 1.6; }
 
 @media (max-width: 767px) {
