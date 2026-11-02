@@ -108,6 +108,7 @@ function HolidaySettings() {
   }
 
   const updateSelectedShift = (field, value) => {
+    setNotice('')
     setSettings(current => ({
       ...current,
       shifts: {
@@ -118,6 +119,26 @@ function HolidaySettings() {
         }
       }
     }))
+  }
+
+  const addShift = () => {
+    const id = `custom_${crypto.randomUUID()}`
+    setSettings(current => ({
+      ...current,
+      shifts: {
+        ...current.shifts,
+        [id]: {
+          id,
+          name: '',
+          standardCheckIn: '08:00',
+          standardCheckOut: '17:00',
+          splitShift: { enabled: false }
+        }
+      }
+    }))
+    setSelectedShiftId(id)
+    setError('')
+    setNotice('Đã thêm ca mới. Nhập tên, chọn khung giờ rồi bấm Lưu cài đặt.')
   }
 
   const toggleSelectedSplitShift = enabled => {
@@ -201,6 +222,21 @@ function HolidaySettings() {
   }
 
   const saveSettings = async () => {
+    const shifts = Object.values(settings.shifts)
+    const invalidDetails = shifts.find(shift =>
+      !shift.name?.trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(shift.standardCheckIn || '') ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(shift.standardCheckOut || '')
+    )
+    const duplicateName = shifts.find((shift, index) => shifts.slice(0, index).some(other =>
+      other.name.trim().toLocaleLowerCase('vi') === shift.name.trim().toLocaleLowerCase('vi')
+    ))
+    if (invalidDetails || duplicateName) {
+      setSelectedShiftId((invalidDetails || duplicateName).id)
+      setActiveTab('shifts')
+      setError(invalidDetails ? 'Vui lòng nhập tên ca và đầy đủ giờ vào, giờ ra.' : 'Tên ca đã tồn tại. Vui lòng chọn tên khác.')
+      setNotice('')
+      return
+    }
     const invalidShift = getAttendanceShiftOptions(settings).find(
       shift => shift.standardCheckIn === shift.standardCheckOut
     )
@@ -350,12 +386,15 @@ function HolidaySettings() {
                     className={`btn${selectedShiftId === shift.id ? ' btn-primary' : ''}`}
                     onClick={() => setSelectedShiftId(shift.id)}
                   >
-                    {shift.name} ({shift.standardCheckIn}–{shift.standardCheckOut})
+                    {shift.name || 'Ca mới'} ({shift.standardCheckIn}–{shift.standardCheckOut})
                   </button>
                 ))}
+                <button type="button" className="btn" onClick={addShift} disabled={saving}>
+                  <i className="fas fa-plus"></i> Thêm ca mới
+                </button>
               </div>
 
-              <div className="holiday-settings-grid">
+              <div className="holiday-settings-grid holiday-settings-shift-fields">
                 <label>
                   <span>Tên ca</span>
                   <input
@@ -391,7 +430,7 @@ function HolidaySettings() {
                   />
                   <span>
                     <strong>Bật chia ca thành 2 buổi</strong>
-                    <small>Chỉ tính phút nằm trong khung từng buổi. Đi muộn hoặc về sớm làm giảm công buổi đó theo tỷ lệ; khoảng nghỉ giữa hai buổi không tính công.</small>
+                    <small>Tính công theo giờ thực tế từng buổi, không tính giờ nghỉ giữa ca.</small>
                   </span>
                 </label>
 
@@ -439,7 +478,7 @@ function HolidaySettings() {
                       ))}
                     </div>
                     <p className="holiday-settings-split-note">
-                      Các mốc giờ và công tối đa có thể sửa riêng cho từng ca. Một hoặc nhiều cặp Vào/Ra đều được giới hạn trong giờ từng buổi; nếu thiếu một lượt chấm thì dùng khoảng từ Vào đầu đến Ra cuối. Khoảng nghỉ giữa hai buổi được tự động loại khỏi công.
+                      Đi muộn/về sớm giảm công theo tỷ lệ. Thiếu lượt chấm: dùng giờ vào đầu và ra cuối.
                     </p>
                   </>
                 )}
@@ -454,7 +493,7 @@ function HolidaySettings() {
                     overtime: { ...(current.overtime || {}), autoCalculate: event.target.checked }
                   }))}
                 />
-                Tự động tính phần vượt 480 phút (HR có thể tắt để tự đánh dấu Excel)
+                Tự động tính tăng ca sau 480 phút (tắt để HR nhập từ Excel)
               </label>
             </>
           )}

@@ -187,3 +187,25 @@ test('lưu cấu hình chia hai buổi độc lập cho từng ca', () => {
   }, {}, settings)
   assert.equal(explicitEmployeeShift.splitShift.morning.end, '12:00')
 })
+
+test('preserves custom shifts through saving and reload, including split hours', () => {
+  const custom = {
+    id: 'custom_evening', name: 'Ca tối', standardCheckIn: '14:00', standardCheckOut: '22:00',
+    splitShift: {
+      enabled: true,
+      morning: { start: '14:00', end: '18:00', workdays: 0.5 },
+      afternoon: { start: '19:00', end: '22:00', workdays: 0.5 }
+    }
+  }
+  for (const shifts of [{ custom_evening: custom }, [custom]]) {
+    const payload = buildAttendanceShiftSettingsPayload({ shifts })
+    const reloaded = normalizeAttendanceShiftSettings(payload)
+    assert.deepEqual(reloaded.shifts.custom_evening, custom)
+    assert.ok(reloaded.shifts.administrative)
+    assert.ok(reloaded.shifts.saleMorning)
+    const resolved = resolveAttendanceShift({ shift: 'Ca tối' }, {}, reloaded)
+    assert.equal(resolved.start, '14:00')
+    assert.equal(resolved.end, '22:00')
+    assert.deepEqual(resolved.splitShift, custom.splitShift)
+  }
+})

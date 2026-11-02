@@ -124,6 +124,14 @@ export const normalizeAttendanceShiftSettings = (settings = {}) => {
     },
     holidays,
     shifts: {
+      ...Object.fromEntries(
+        (Array.isArray(storedShifts)
+          ? storedShifts.map(shift => [shift?.id, shift])
+          : Object.entries(storedShifts))
+          .filter(([id, shift]) => id && shift && typeof shift === 'object' &&
+            !Object.values(ATTENDANCE_SHIFT_IDS).includes(id))
+          .map(([id, shift]) => [id, normalizeConfiguredShift(id, shift, DEFAULT_ATTENDANCE_SHIFT)])
+      ),
       [ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE]: normalizeConfiguredShift(
         ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE,
         legacyAdministrative,

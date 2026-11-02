@@ -20,6 +20,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
     ...(user?.role === 'admin' || user?.role === 'hr' ? [{ path: '/bang-phep', icon: 'fas fa-calendar-alt', label: 'Bảng phép' }] : []),
     { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
+    { path: '/dang-ky-ca', icon: 'fas fa-calendar-week', label: 'Đăng ký ca' },
     { path: '/holiday-settings', icon: 'fas fa-cog', label: 'Cài đặt' }
   ]
 
@@ -36,6 +37,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
     { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
+    { path: '/dang-ky-ca', icon: 'fas fa-calendar-week', label: 'Đăng ký ca' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }
   ]
 
