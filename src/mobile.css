@@ -9,7 +9,7 @@
     --mobile-radius: 12px;
     --mobile-border: #e2e8f0;
     --mobile-shadow: 0 1px 3px rgb(0 0 0 / 3%);
-    font-family: 'Employees Inter', sans-serif;
+    font-family: var(--font-sans);
     background: #f8fafc;
   }
   .app-shell:not(:has(.employees-page)) .container {
@@ -30,6 +30,44 @@
   }
   .app-shell:not(:has(.employees-page)) .mobile-priority-nav__link i { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #eff6ff; font-size: 14px; }
   .app-shell:not(:has(.employees-page)) .mobile-priority-nav__link.is-active { background: #eff6ff; font-weight: 600; }
+  .app-shell .mobile-utility-nav {
+    position: fixed;
+    left: 50%;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 90;
+    display: flex;
+    gap: 2px;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  }
+  .app-shell .mobile-utility-nav button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 58px;
+    min-height: 44px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+  }
+  .app-shell .mobile-utility-nav button i { font-size: 15px; }
+  .app-shell .mobile-utility-nav button:hover { background: var(--surface-muted); color: var(--primary); }
+  .app-shell .mobile-utility-nav button:active { background: var(--primary-soft); color: var(--primary); }
+  .app-shell .main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
   .app-shell:not(:has(.employees-page)) .header { position: sticky; top: 0; z-index: 100; box-shadow: none; }
   .app-shell:not(:has(.employees-page)) .header-menu-btn { display: inline-flex; width: 40px; height: 40px; background: #fff; color: #475569; border-radius: 8px; }
   body.menu-open:has(.app-shell:not(:has(.employees-page))) { overflow: hidden; }
@@ -65,9 +103,11 @@
     display: flex; flex-wrap: wrap; flex-direction: row; align-items: center; gap: 8px; min-width: 0;
   }
 
-  /* Online attendance: the same history values and photo links in labelled cards. */
+  /* Online attendance: hero clock + touch-friendly actions. */
   .app-shell .online-attendance-v2 { padding: 0; }
-  .app-shell .oa-btn-view { background: var(--primary); }
+  .app-shell .oa-btn-view { min-height: 40px; }
+  .app-shell .oa-btn-view:not(.oa-btn-view--ghost) { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .app-shell .oa-btn-view--ghost { background: #fff; border-color: var(--border); color: var(--text); }
   .app-shell :is(.attendance-preview-page,.attendance-penalties-page) { padding: 0; background: transparent; font-family: inherit; }
   .app-shell .attendance-preview-empty {
     display: grid; gap: 10px; min-height: 0; padding: 20px 14px;
@@ -91,40 +131,34 @@
   .app-shell .mobile-actions__panel button { width: 100%; min-height: 40px; padding: 8px 12px; border-radius: 8px; font-size: 13px; white-space: normal; }
   .app-shell .mobile-actions__panel .attendance-preview-detail-btn { color: var(--primary); border-color: #e2e8f0; background: #f8fafc; }
   .app-shell .oa-dashboard-grid { gap: 12px; margin-bottom: 12px; }
-  .app-shell :is(.oa-clock-card,.oa-location-card,.oa-punch-box,.oa-action-card,.oa-completed-card,.oa-history-section) {
-    padding: 14px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: var(--mobile-shadow);
+  .app-shell .oa-clock-card {
+    padding: 20px 16px; border-radius: 16px; border: 0;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
   }
-  .app-shell .oa-clock-card { background: #fff; color: var(--primary); }
-  .app-shell .oa-clock-card :is(.oa-card-label,.oa-date) { color: #64748b; }
-  .app-shell .oa-clock-card .oa-time { color: var(--primary); font-size: 32px; }
-  .app-shell .oa-clock-card :is(.oa-digit,.oa-colon) { color: var(--primary); font-size: 32px; }
-  .app-shell .oa-clock-card .oa-clock-date { color: #64748b; font-size: 13px; }
-  .app-shell .oa-shift-badge { background: #f1f5f9; color: #64748b; font-size: 12px; }
-  .app-shell .oa-shift-badge strong { color: var(--primary); }
-  .app-shell .oa-punches-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-bottom: 12px; }
-  .app-shell .oa-punch-box { min-width: 0; }
-  .app-shell .oa-punch-box h3 { font-size: 13px; }
-  .app-shell .oa-punch-header { flex-wrap: wrap; gap: 5px; }
-  .app-shell .oa-punch-header h4 { font-size: 11px; }
-  .app-shell .oa-punch-time { font-size: 22px; }
+  .app-shell .oa-clock-card .oa-card-label { color: #94a3b8; }
+  .app-shell .oa-clock-card .oa-digital-clock { font-size: 2.6rem; letter-spacing: 0; }
+  .app-shell .oa-clock-meta { gap: 6px 10px; }
+  .app-shell .oa-clock-meta .oa-clock-date { color: #cbd5e1; font-size: 12px; }
+  .app-shell .oa-shift-badge { background: rgba(255, 255, 255, 0.12); color: #e2e8f0; font-size: 11px; padding: 3px 8px; }
+  .app-shell .oa-shift-badge strong { color: #38bdf8; }
+  .app-shell .oa-location-card {
+    padding: 14px; border-radius: 12px; border: 1px solid var(--border);
+    background: #fff; box-shadow: var(--mobile-shadow);
+  }
+  .app-shell .oa-punches-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; align-items: stretch; }
+  .app-shell .oa-punch-box { min-width: 0; padding: 14px; display: flex; flex-direction: column; }
+  .app-shell .oa-punch-header { flex-wrap: wrap; gap: 5px; min-height: 40px; align-content: flex-start; }
+  .app-shell .oa-punch-time { font-size: 20px; line-height: 1.25; margin-bottom: 6px; overflow-wrap: anywhere; }
+  .app-shell .oa-punch-status { margin-top: auto; min-height: 0; display: flex; align-items: flex-end; }
   .app-shell .oa-punch-status .oa-badge { white-space: normal; line-height: 1.5; }
-  .app-shell .oa-history-header { flex-direction: column; align-items: stretch; gap: 10px; }
-  .app-shell .oa-history-filter-wrap { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-  .app-shell .oa-history-section { background: transparent; padding: 0; border: 0; box-shadow: none; }
-  .app-shell .oa-table-responsive { overflow: visible; border: 0; }
-  .app-shell .oa-history-table { display: block; min-width: 0; width: 100%; }
-  .app-shell .oa-history-table thead { display: none; }
-  .app-shell .oa-history-table tbody { display: grid; gap: 10px; }
-  .app-shell .oa-history-table tr {
-    display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; padding: 14px;
-    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: var(--mobile-shadow);
-  }
-  .app-shell .oa-history-table td { display: grid; gap: 4px; min-width: 0; padding: 0; border: 0; white-space: normal; font-size: 13px; }
-  .app-shell .oa-history-table td::before { content: attr(data-label); font-size: 11px; color: #64748b; }
-  .app-shell .oa-history-table td:first-child { display: none; }
-  .app-shell .oa-history-table td[colspan] { display: block; grid-column: 1 / -1; }
-  .app-shell .oa-time-tag { white-space: normal; overflow-wrap: anywhere; }
-  .app-shell .oa-badge { justify-self: start; font-size: 11px; }
+  .app-shell .oa-action-card { padding: 16px; }
+  .app-shell .oa-action-card h3 { font-size: 16px; }
+  .app-shell .oa-photo-sources { flex-direction: column; }
+  .app-shell .oa-photo-sources .oa-btn-open-cam { width: 100%; }
+  .app-shell :is(.oa-btn-open-cam, .oa-btn-capture, .oa-btn-cancel-cam, .oa-btn-retake, .oa-btn-refresh-loc) { min-height: 44px; }
+  .app-shell .oa-btn-submit { min-height: 52px; font-size: 15px; border-radius: 12px; }
+  .app-shell .oa-completed-card { padding: 20px 16px; border-radius: 12px; }
 
   /* Reuse existing attendance/penalty cards, including the 768px boundary. */
   .app-shell .my-attendance__identity { grid-template-columns: repeat(2,minmax(0,1fr)); margin-bottom: 12px; }
@@ -265,7 +299,7 @@
   .app-shell .apv-stats-detail-panel__body td::before { content: attr(data-label); color: #64748b; font-size: 11px; }
   .app-shell .apv-stats-detail-panel__body td:first-child { display: none; }
   .app-shell .apv-stats-detail-panel__body .apv-badge { justify-self: start; }
-  .app-shell :is(.modal-content,.status-history-view) { --mobile-shadow: 0 1px 3px rgb(0 0 0 / 3%); font-family: 'Employees Inter', sans-serif; }
+  .app-shell :is(.modal-content,.status-history-view) { --mobile-shadow: 0 1px 3px rgb(0 0 0 / 3%); font-family: var(--font-sans); }
   .app-shell :is(.modal-header,.modal-body,.modal-footer) { padding: 14px; min-width: 0; }
   .app-shell .modal-header h3 { font-size: 16px; overflow-wrap: anywhere; }
   .app-shell .modal-close { min-width: 40px; min-height: 40px; flex-shrink: 0; }

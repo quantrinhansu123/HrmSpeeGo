@@ -88,21 +88,6 @@ const describeDevice = () => {
   return `${isMobile ? 'Điện thoại' : 'Máy tính'} · ${platform} · ${browser}`
 }
 
-const formatLocationLabel = location => {
-  if (!location) return '—'
-  if (location.error) {
-    if (location.error === 'denied') return 'Không có vị trí (bị từ chối)'
-    if (location.error === 'unsupported') return 'Thiết bị không hỗ trợ GPS'
-    if (location.error === 'timeout') return 'Hết thời gian lấy vị trí'
-    return 'Không lấy được vị trí'
-  }
-  if (location.lat == null || location.lng == null) return '—'
-  if (location.address) return location.address
-  const lat = Number(location.lat).toFixed(5)
-  const lng = Number(location.lng).toFixed(5)
-  return `${lat}, ${lng}`
-}
-
 function OnlineAttendance() {
   const { user } = useAuth()
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'manager'
@@ -123,22 +108,6 @@ function OnlineAttendance() {
 
   // 3. Cài đặt ca làm việc
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
-
-  // 4. Định vị GPS
-  const [liveLocation, setLiveLocation] = useState(null)
-  const [locationStatus, setLocationStatus] = useState('idle') // idle | loading | ready | error
-
-  const refreshLiveLocation = useCallback(async () => {
-    setLocationStatus('loading')
-    const result = await captureGeolocation()
-    setLiveLocation(result)
-    setLocationStatus(result.error ? 'error' : 'ready')
-    return result
-  }, [])
-
-  useEffect(() => {
-    refreshLiveLocation()
-  }, [refreshLiveLocation])
 
   // Cập nhật đồng hồ mỗi giây
   useEffect(() => {
@@ -289,8 +258,6 @@ function OnlineAttendance() {
 
       // 2a. Lấy vị trí tại thời điểm chấm công (không chặn chấm công nếu thiếu vị trí)
       const capturedLocation = await captureGeolocation()
-      setLiveLocation(capturedLocation)
-      setLocationStatus(capturedLocation.error ? 'error' : 'ready')
       if (!capturedLocation.error) {
         capturedLocation.address = await reverseGeocode(capturedLocation.lat, capturedLocation.lng)
       }
@@ -389,35 +356,12 @@ function OnlineAttendance() {
             <span className="oa-colon">:</span>
             <span className="oa-digit oa-seconds">{secondsStr}</span>
           </div>
-          <div className="oa-clock-date">{dateFormatted}</div>
-          <div className="oa-shift-badge">
-            Ca làm việc: <strong>{standardIn} - {standardOut}</strong>
+          <div className="oa-clock-meta">
+            <div className="oa-clock-date">{dateFormatted}</div>
+            <div className="oa-shift-badge">
+              Ca làm việc: <strong>{standardIn} - {standardOut}</strong>
+            </div>
           </div>
-        </div>
-        <div className="oa-location-card">
-          <div className="oa-card-label">VỊ TRÍ CHẤM CÔNG</div>
-          {locationStatus === 'loading' && <div className="oa-loc-status is-loading">Đang xác định vị trí…</div>}
-          {locationStatus === 'error' && (
-            <div className="oa-loc-status is-error">
-              {formatLocationLabel(liveLocation)}. Hãy cho phép trình duyệt truy cập vị trí để Admin kiểm tra.
-            </div>
-          )}
-          {locationStatus === 'ready' && liveLocation && (
-            <div className="oa-loc-info">
-              <div className="oa-loc-coords">
-                <a className="oa-loc-link" href={liveLocation.mapsUrl} target="_blank" rel="noreferrer" title="Mở Google Maps">
-                  {Number(liveLocation.lat).toFixed(5)}, {Number(liveLocation.lng).toFixed(5)}
-                </a>
-              </div>
-              {liveLocation.accuracy != null && (
-                <div className="oa-loc-accuracy">Độ chính xác ±{Math.round(liveLocation.accuracy)}m</div>
-              )}
-            </div>
-          )}
-          <small className="oa-loc-device">Thiết bị: {describeDevice()}. Vị trí được lưu khi bạn Check-in / Check-out.</small>
-          <button type="button" className="oa-btn-refresh-loc" onClick={refreshLiveLocation} disabled={locationStatus === 'loading'}>
-            Lấy lại vị trí
-          </button>
         </div>
       </div>
 
@@ -490,7 +434,7 @@ function OnlineAttendance() {
               <video ref={videoRef} autoPlay playsInline muted className="oa-video-feed" />
               <div className="oa-camera-controls">
                 <button type="button" className="oa-btn-capture" onClick={capturePhoto}>
-                  📸 Chụp ảnh ngay
+                  <i className="fas fa-camera" aria-hidden="true"></i> Chụp ảnh ngay
                 </button>
                 <button type="button" className="oa-btn-cancel-cam" onClick={stopCamera}>
                   Đóng camera
@@ -505,9 +449,9 @@ function OnlineAttendance() {
               <img src={photoPreview} alt="Ảnh xác thực" className="oa-captured-image" />
               <div className="oa-preview-actions">
                 <button type="button" className="oa-btn-retake" onClick={() => setPhotoPreview(null)}>
-                  ✕ Bỏ ảnh / Chụp lại
+                  <i className="fas fa-xmark" aria-hidden="true"></i> Bỏ ảnh / Chụp lại
                 </button>
-                <span className="oa-photo-ok">✓ Ảnh đã sẵn sàng tải lên Cloudinary</span>
+                <span className="oa-photo-ok"><i className="fas fa-circle-check" aria-hidden="true"></i> Ảnh đã sẵn sàng tải lên Cloudinary</span>
               </div>
             </div>
           )}
@@ -516,7 +460,7 @@ function OnlineAttendance() {
           {!isCameraActive && !photoPreview && (
             <div className="oa-photo-sources">
               <button type="button" className="oa-btn-open-cam" onClick={startCamera}>
-                🎥 Bật Camera máy tính
+                <i className="fas fa-video" aria-hidden="true"></i> Bật Camera máy tính
               </button>
             </div>
           )}
@@ -551,7 +495,7 @@ function OnlineAttendance() {
       {/* Đã xong cả ngày */}
       {checkedIn && checkedOut && (
         <div className="oa-completed-card">
-          <div className="oa-done-icon">✓</div>
+          <div className="oa-done-icon"><i className="fas fa-check" aria-hidden="true"></i></div>
           <h3>Bạn đã hoàn thành chấm công ngày hôm nay!</h3>
           <p>
             Vào: <strong>{getTime(record?.vao || record?.checkIn)}</strong> · Ra:{' '}

@@ -171,6 +171,20 @@
   color: #7dd3fc;
 }
 
+.oa-clock-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.oa-clock-meta .oa-clock-date,
+.oa-clock-meta .oa-shift-badge {
+  margin-top: 0;
+}
+
 .oa-clock-date {
   margin-top: 6px;
   color: #cbd5e1;
@@ -417,6 +431,10 @@
   background: #eff6ff;
   border: 1px solid #bfdbfe;
   color: #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .oa-btn-open-cam:hover {
@@ -467,6 +485,10 @@
   font-weight: 700;
   font-size: 1rem;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .oa-btn-capture:hover {
@@ -481,6 +503,10 @@
   color: #ffffff;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 /* Photo Preview */
@@ -515,12 +541,18 @@
   font-weight: 600;
   cursor: pointer;
   align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .oa-photo-ok {
   color: #10b981;
   font-size: 0.85rem;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* Submit Bar */

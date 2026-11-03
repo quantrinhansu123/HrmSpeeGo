@@ -95,6 +95,10 @@ button, input, select, textarea {
   display: none;
 }
 
+.mobile-utility-nav {
+  display: none;
+}
+
 .header-menu-btn {
   flex-shrink: 0;
   width: 40px;

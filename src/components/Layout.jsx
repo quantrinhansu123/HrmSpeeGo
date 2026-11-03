@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { isAccountingUser, isCoreStaffUser } from '../utils/staffAccess'
 import Header from './Header'
@@ -13,8 +13,17 @@ function Layout({ children }) {
   const isImmersive = location.pathname.startsWith('/approvals')
   const isEmployee = ['/bang-cong', '/cham-cong-online', '/lich-su-cham-cong', '/ngay-nghi-phep'].includes(location.pathname)
   const [menuOpen, setMenuOpen] = useState(false)
+  const navigate = useNavigate()
   const isStaff = isCoreStaffUser(user)
   const isPersonalAttendance = String(user?.role || '').toLowerCase() === 'user' && !isAccountingUser(user)
+  const homePath = isAccountingUser(user) && !isCoreStaffUser(user)
+    ? '/bang-cong-preview'
+    : (String(user?.role || '').toLowerCase() === 'user' ? '/cham-cong-online' : '/employees')
+  const handleBack = () => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate(homePath)
+  }
+  const handleReload = () => window.location.reload()
   const mobileLinks = [
     { to: '/cham-cong-online', icon: 'fa-camera', label: 'Chấm công' },
     { to: isPersonalAttendance ? '/bang-cong' : '/bang-cong-preview', icon: 'fa-calendar-check', label: 'Bảng công' },
@@ -65,6 +74,20 @@ function Layout({ children }) {
           {children}
         </main>
       </div>
+      <nav className="mobile-utility-nav" aria-label="Điều hướng nhanh">
+        <button type="button" onClick={handleBack} aria-label="Quay lại">
+          <i className="fas fa-arrow-left" aria-hidden="true"></i>
+          <span>Back</span>
+        </button>
+        <button type="button" onClick={() => navigate(homePath)} aria-label="Trang chủ">
+          <i className="fas fa-house" aria-hidden="true"></i>
+          <span>Home</span>
+        </button>
+        <button type="button" onClick={handleReload} aria-label="Tải lại">
+          <i className="fas fa-rotate-right" aria-hidden="true"></i>
+          <span>Reload</span>
+        </button>
+      </nav>
     </div>
   )
 }
