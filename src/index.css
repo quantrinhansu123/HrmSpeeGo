@@ -555,6 +555,12 @@ button, input, select, textarea {
 
 .top-horizontal-scrollbar__spacer { height: 1px; }
 
+.top-horizontal-scrollbar--top {
+  position: fixed;
+  margin: 0;
+  z-index: 70;
+}
+
 .top-horizontal-scrollbar--bottom {
   top: auto;
   bottom: 0;

@@ -17,7 +17,28 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
     let candidates = []
     let syncing = false
     let refreshFrame = 0
+    let viewportFrame = 0
     const targetListeners = new Map()
+
+    const positionTopTrack = () => {
+      if (position !== 'top') return
+      const rect = container.getBoundingClientRect()
+      const style = window.getComputedStyle(container)
+      const left = Math.max(0, rect.left + parseFloat(style.paddingLeft || 0))
+      const width = Math.max(0, Math.min(
+        rect.width - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0),
+        window.innerWidth - left
+      ))
+      const header = document.querySelector('.app-shell .header')
+      const quickNav = document.querySelector('.app-shell .mobile-priority-nav')
+      const headerBottom = header && window.getComputedStyle(header).display !== 'none'
+        ? header.getBoundingClientRect().bottom : 0
+      const navBottom = quickNav && window.getComputedStyle(quickNav).display !== 'none'
+        ? quickNav.getBoundingClientRect().bottom : 0
+      track.style.left = `${left}px`
+      track.style.width = `${width}px`
+      track.style.top = `${Math.max(0, headerBottom, navBottom)}px`
+    }
 
     const syncTrackMetrics = (target) => {
       if (!target || !target.isConnected) return
@@ -33,6 +54,27 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
       activeTarget = target
       setHasScrollableContent(Boolean(target))
       requestAnimationFrame(() => syncTrackMetrics(target))
+    }
+
+    const focusVisibleTarget = () => {
+      if (position !== 'top' || !candidates.length) return
+      const railBottom = (parseFloat(track.style.top) || 0) + track.offsetHeight
+      const visible = candidates
+        .map(target => ({ target, rect: target.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.bottom > railBottom && rect.top < window.innerHeight)
+        .sort((left, right) =>
+          Math.max(0, left.rect.top - railBottom) - Math.max(0, right.rect.top - railBottom))
+      if (visible[0] && visible[0].target !== activeTarget) activateTarget(visible[0].target)
+    }
+
+    const handleViewportChange = () => {
+      if (viewportFrame) cancelAnimationFrame(viewportFrame)
+      viewportFrame = requestAnimationFrame(() => {
+        viewportFrame = 0
+        positionTopTrack()
+        focusVisibleTarget()
+        if (activeTarget) syncTrackMetrics(activeTarget)
+      })
     }
 
     const handleTrackScroll = () => {
@@ -90,12 +132,14 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
       })
 
       candidates = nextCandidates
+      positionTopTrack()
       if (!activeTarget || !candidates.includes(activeTarget)) {
         activateTarget(candidates[0] || null)
       } else {
         setHasScrollableContent(true)
         syncTrackMetrics(activeTarget)
       }
+      focusVisibleTarget()
 
       resizeObserver.disconnect()
       resizeObserver.observe(container)
@@ -112,7 +156,7 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      if (activeTarget) syncTrackMetrics(activeTarget)
+      if (activeTarget) handleViewportChange()
       else scheduleRefresh()
     })
     const mutationObserver = new MutationObserver((records) => {
@@ -127,6 +171,8 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
       attributeFilter: ['class', 'style']
     })
     window.addEventListener('resize', scheduleRefresh)
+    window.addEventListener('scroll', handleViewportChange, { passive: true })
+    container.addEventListener('scroll', handleViewportChange, { passive: true })
     refreshTargets()
 
     return () => {
@@ -134,7 +180,10 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
       mutationObserver.disconnect()
       resizeObserver.disconnect()
       window.removeEventListener('resize', scheduleRefresh)
+      window.removeEventListener('scroll', handleViewportChange)
+      container.removeEventListener('scroll', handleViewportChange)
       if (refreshFrame) cancelAnimationFrame(refreshFrame)
+      if (viewportFrame) cancelAnimationFrame(viewportFrame)
       targetListeners.forEach((listeners, target) => {
         target.removeEventListener('scroll', listeners.onScroll)
         target.removeEventListener('pointerenter', listeners.onActivate)
@@ -142,7 +191,7 @@ function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
         target.removeEventListener('pointerdown', listeners.onActivate)
       })
     }
-  }, [containerRef])
+  }, [containerRef, position])
 
   return (
     <div
