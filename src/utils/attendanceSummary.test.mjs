@@ -53,7 +53,8 @@ test('selects the nearest configured shift and recalculates work for 05:55 and 0
     standardWorkMinutes: 480,
     shifts: {
       administrative: { name: 'Ca 6h', standardCheckIn: '06:00', standardCheckOut: '14:00' },
-      saleMorning: { name: 'Ca 4h', standardCheckIn: '04:00', standardCheckOut: '13:30' }
+      saleMorning: { name: 'Ca 4h', standardCheckIn: '04:00', standardCheckOut: '13:30' },
+      lateMorning: { name: 'Ca 8h', standardCheckIn: '08:00', standardCheckOut: '16:00' }
     }
   }
   const rows = buildAttendanceSummary({
@@ -75,8 +76,8 @@ test('selects the nearest configured shift and recalculates work for 05:55 and 0
   assert.equal(early.lateMinutes, 0)
   assert.equal(early.hours, 8)
   assert.equal(early.workdays, 1)
-  assert.equal(late.standardCheckIn, '06:00')
-  assert.equal(late.lateMinutes, 138)
+  assert.equal(late.standardCheckIn, '08:00')
+  assert.equal(late.lateMinutes, 18)
   assert.equal(late.hours, 5.7)
   assert.equal(late.workdays, 0.71)
 })

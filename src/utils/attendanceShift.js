@@ -361,12 +361,12 @@ export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) =
     .find(Boolean)
   if (logConfiguredShift) return logConfiguredShift
 
-  // Legacy profiles often say "Ca full/Ca ngày" even when the team has several
-  // starts. For Sale employees, use the closest configured start to the punch;
-  // without a punch, keep the existing role fallback.
+  // When a punch has no row-specific shift, choose the closest configured start.
+  // Profile role/name fallbacks are only used when no punch time is available.
+  const nearestShift = nearestConfiguredShift(firstValue(log.vao, log.checkIn), settings)
+  if (nearestShift) return nearestShift
+
   if (employeeIsSale(employee, log)) {
-    const nearestShift = nearestConfiguredShift(firstValue(log.vao, log.checkIn), settings)
-    if (nearestShift) return nearestShift
     return configuredShiftFromName('Ca Sáng Sale', settings) || SALE_ATTENDANCE_SHIFT
   }
 

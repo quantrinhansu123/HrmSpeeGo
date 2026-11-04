@@ -110,6 +110,11 @@ test('assigns Sale punches to the closest configured shift at 05:55 and 08:18', 
         name: 'Ca 4h',
         standardCheckIn: '04:00',
         standardCheckOut: '13:30'
+      },
+      lateMorning: {
+        name: 'Ca 8h',
+        standardCheckIn: '08:00',
+        standardCheckOut: '16:00'
       }
     }
   })
@@ -119,8 +124,16 @@ test('assigns Sale punches to the closest configured shift at 05:55 and 08:18', 
 
   assert.equal(early.shift.start, '06:00')
   assert.equal(early.lateMinutes, 0)
-  assert.equal(later.shift.start, '06:00')
-  assert.equal(later.lateMinutes, 138)
+  assert.equal(later.shift.start, '08:00')
+  assert.equal(later.lateMinutes, 18)
+
+  const nonSale = calculateAttendanceTiming({
+    employee: { position: 'HR', shift: 'Ca ngày' },
+    checkIn: '08:18',
+    attendanceSettings
+  })
+  assert.equal(nonSale.shift.start, '08:00')
+  assert.equal(nonSale.lateMinutes, 18)
 })
 
 test('uses the shift id stored on the attendance row before the employee fallback', () => {
