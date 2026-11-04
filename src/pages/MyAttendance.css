@@ -63,7 +63,7 @@
 .my-attendance__correction-modal-head button { width: 34px; height: 34px; border: 0; border-radius: 8px; color: #475569; background: #f1f5f9; font-size: 1.35rem; cursor: pointer; }
 .my-attendance__correction-modal form { display: grid; gap: 14px; padding: 18px 20px 20px; }
 .my-attendance__correction-modal form > label { display: grid; gap: 6px; color: #334155; font-size: .9rem; font-weight: 700; }
-.my-attendance__correction-modal input, .my-attendance__correction-modal textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; color: #0f172a; background: #fff; font: inherit; }
+.my-attendance__correction-modal input, .my-attendance__correction-modal select, .my-attendance__correction-modal textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; color: #0f172a; background: #fff; font: inherit; }
 .my-attendance__correction-modal textarea { resize: vertical; }
 .my-attendance__correction-modal form label small, .my-attendance__correction-help { margin: 0; color: #64748b; font-size: .82rem; font-weight: 400; }
 .my-attendance__correction-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 4px; }

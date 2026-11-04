@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceByEmployee, fbGetAttendanceLogsByMonth } from '../services/firebase'
@@ -122,6 +122,8 @@ function AttendanceHistory() {
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [historyLogs, setHistoryLogs] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const initialMonthResolved = useRef(false)
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -136,6 +138,7 @@ function AttendanceHistory() {
   const loadHistory = useCallback(async () => {
     if (!user?.id && !user?.auth_user_id) return
     setHistoryLoading(true)
+    setHistoryError('')
     try {
       if (isAdminOrManager) {
         const month = selectedMonth || new Date().toISOString().slice(0, 7)
@@ -157,12 +160,19 @@ function AttendanceHistory() {
           )
           list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
           setHistoryLogs(list)
+          if (!initialMonthResolved.current) {
+            initialMonthResolved.current = true
+            setSelectedMonth(current => list.some(log => String(log.date || '').startsWith(current))
+              ? current
+              : String(list[0]?.date || '').slice(0, 7) || current)
+          }
         } else {
           setHistoryLogs([])
         }
       }
     } catch (error) {
       console.warn('Lỗi tải lịch sử chấm công:', error)
+      setHistoryError(error?.message || 'Không thể tải lịch sử chấm công.')
     } finally {
       setHistoryLoading(false)
     }
@@ -280,6 +290,7 @@ function AttendanceHistory() {
       </div>
 
       <section className="ah-card">
+        {historyError && <p role="alert" className="ah-error">{historyError}</p>}
         <div className="ah-card__head">
           <h2 className="ah-card__title">Bảng danh sách chấm công</h2>
           <span className="ah-card__meta">

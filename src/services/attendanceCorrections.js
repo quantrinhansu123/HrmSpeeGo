@@ -20,13 +20,15 @@ export const loadAttendanceCorrectionRequests = async () => {
 export const submitAttendanceCorrection = async ({
   date,
   attendanceLogId,
+  pairIndex = null,
   checkIn,
   checkOut,
   reason
 }) => {
-  const { data, error } = await supabase.rpc('submit_attendance_correction', {
+  const { data, error } = await supabase.rpc(pairIndex === null ? 'submit_attendance_correction' : 'submit_attendance_pair_correction', {
     p_date: date,
     p_log_id: attendanceLogId,
+    ...(pairIndex === null ? {} : { p_pair_index: pairIndex }),
     p_check_in: checkIn,
     p_check_out: checkOut,
     p_reason: reason
@@ -35,8 +37,8 @@ export const submitAttendanceCorrection = async ({
   return data
 }
 
-export const decideAttendanceCorrection = async ({ id, decision, comment = '' }) => {
-  const { data, error } = await supabase.rpc('decide_attendance_correction', {
+export const decideAttendanceCorrection = async ({ id, decision, comment = '', pairIndex = null }) => {
+  const { data, error } = await supabase.rpc(pairIndex === null ? 'decide_attendance_correction' : 'decide_attendance_pair_correction', {
     p_id: id,
     p_decision: decision,
     p_comment: comment

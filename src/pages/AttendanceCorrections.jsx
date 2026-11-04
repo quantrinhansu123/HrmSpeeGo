@@ -52,7 +52,7 @@ function AttendanceCorrections() {
     setWorkingId(request.id)
     setNotice('')
     try {
-      await decideAttendanceCorrection({ id: request.id, decision, comment })
+      await decideAttendanceCorrection({ id: request.id, decision, comment, pairIndex: request.pairIndex ?? null })
       let summaryError = ''
       if (decision === 'approved') {
         try {
@@ -98,6 +98,7 @@ function AttendanceCorrections() {
               <span className={`attendance-corrections__status is-${request.status}`}>{statusLabels[request.status] || request.status}</span>
             </div>
             <div className="attendance-corrections__times">
+              {request.pairIndex !== null && request.pairIndex !== undefined && <p>Lượt chấm {Number(request.pairIndex) + 1}</p>}
               <div><span>Giờ vào</span><strong>{displayTime(request.originalCheckIn)}</strong><i aria-hidden="true">→</i><strong>{proposedTime(request, 'requestedCheckIn')}</strong></div>
               <div><span>Giờ ra</span><strong>{displayTime(request.originalCheckOut)}</strong><i aria-hidden="true">→</i><strong>{proposedTime(request, 'requestedCheckOut')}</strong></div>
             </div>

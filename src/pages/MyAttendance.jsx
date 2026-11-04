@@ -46,6 +46,7 @@ function MyAttendance() {
   const [correctionRequests, setCorrectionRequests] = useState([])
   const [correctionError, setCorrectionError] = useState('')
   const [selectedCorrection, setSelectedCorrection] = useState(null)
+  const [correctionPairIndex, setCorrectionPairIndex] = useState(0)
   const [correctionForm, setCorrectionForm] = useState({ checkIn: '', checkOut: '', reason: '' })
   const [correctionNotice, setCorrectionNotice] = useState('')
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
@@ -95,10 +96,15 @@ function MyAttendance() {
   const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, employeeId, logs, month, user])
 
   const openCorrectionForm = log => {
+    const pairs = punchesForLog(log)
+    const openIndex = pairs.findIndex(pair => pair.checkIn && !pair.checkOut)
+    const pairIndex = openIndex >= 0 ? openIndex : pairs.length - 1
+    const pair = pairs[pairIndex] || {}
     setSelectedCorrection(log)
+    setCorrectionPairIndex(pairIndex)
     setCorrectionForm({
-      checkIn: formatAttendanceTime(log?.vao || log?.checkIn) || '',
-      checkOut: formatAttendanceTime(log?.ra || log?.checkOut) || '',
+      checkIn: formatAttendanceTime(pair.checkIn) || '',
+      checkOut: formatAttendanceTime(pair.checkOut) || '',
       reason: ''
     })
     setCorrectionNotice('')
@@ -107,8 +113,9 @@ function MyAttendance() {
   const submitCorrection = async event => {
     event.preventDefault()
     if (!selectedCorrection || correctionSubmitting) return
-    const originalCheckIn = formatAttendanceTime(selectedCorrection.vao || selectedCorrection.checkIn) || ''
-    const originalCheckOut = formatAttendanceTime(selectedCorrection.ra || selectedCorrection.checkOut) || ''
+    const selectedPair = punchesForLog(selectedCorrection)[correctionPairIndex] || {}
+    const originalCheckIn = formatAttendanceTime(selectedPair.checkIn) || ''
+    const originalCheckOut = formatAttendanceTime(selectedPair.checkOut) || ''
     const requestedCheckIn = correctionForm.checkIn === originalCheckIn ? null : correctionForm.checkIn
     const requestedCheckOut = correctionForm.checkOut === originalCheckOut ? null : correctionForm.checkOut
     if (requestedCheckIn === null && requestedCheckOut === null) {
@@ -122,6 +129,8 @@ function MyAttendance() {
       await submitAttendanceCorrection({
         date: dateValue(selectedCorrection),
         attendanceLogId: selectedCorrection.id,
+        pairIndex: Array.isArray(selectedCorrection.punchPairs) && selectedCorrection.punchPairs.length
+          ? correctionPairIndex : null,
         checkIn: requestedCheckIn,
         checkOut: requestedCheckOut,
         reason: correctionForm.reason
@@ -216,7 +225,7 @@ function MyAttendance() {
           {correctionNotice && !selectedCorrection && <p className="my-attendance__correction-notice" role="status">{correctionNotice}</p>}
           {correctionRequests.length ? <div className="my-attendance__requests-list">{correctionRequests.slice(0, 8).map(request => (
             <article key={request.id} className="my-attendance__request-row">
-              <div><strong>{new Date(`${request.date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span>Vào: {request.requestedCheckIn !== null && request.requestedCheckIn !== undefined ? requestTimeLabel(request.requestedCheckIn) : timeValue(request.originalCheckIn)} · Ra: {request.requestedCheckOut !== null && request.requestedCheckOut !== undefined ? requestTimeLabel(request.requestedCheckOut) : timeValue(request.originalCheckOut)}</span></div>
+              <div><strong>{new Date(`${request.date}T00:00:00`).toLocaleDateString('vi-VN')}{request.pairIndex !== null && request.pairIndex !== undefined ? ` · Lượt ${Number(request.pairIndex) + 1}` : ''}</strong><span>Vào: {request.requestedCheckIn !== null && request.requestedCheckIn !== undefined ? requestTimeLabel(request.requestedCheckIn) : timeValue(request.originalCheckIn)} · Ra: {request.requestedCheckOut !== null && request.requestedCheckOut !== undefined ? requestTimeLabel(request.requestedCheckOut) : timeValue(request.originalCheckOut)}</span></div>
               <span className={`my-attendance__request-status is-${request.status}`}>{requestStatusLabels[request.status] || request.status}</span>
               {request.comment && <small>Phản hồi: {request.comment}</small>}
             </article>
@@ -228,6 +237,19 @@ function MyAttendance() {
           <div className="my-attendance__correction-modal-head"><div><h2 id="my-attendance-correction-title">Yêu cầu điều chỉnh chấm công</h2><p>{new Date(`${dateValue(selectedCorrection)}T00:00:00`).toLocaleDateString('vi-VN')}</p></div><button type="button" aria-label="Đóng" disabled={correctionSubmitting} onClick={() => setSelectedCorrection(null)}>×</button></div>
           <form onSubmit={submitCorrection}>
             <p className="my-attendance__correction-help">Nhập giờ chấm công đúng. Để xóa một mốc bị ghi nhầm, hãy xóa nội dung ô tương ứng.</p>
+            {Array.isArray(selectedCorrection.punchPairs) && selectedCorrection.punchPairs.length > 1 && <label>Lượt chấm
+              <select value={correctionPairIndex} onChange={event => {
+                const index = Number(event.target.value)
+                const pair = selectedCorrection.punchPairs[index] || {}
+                setCorrectionPairIndex(index)
+                setCorrectionForm(current => ({ ...current,
+                  checkIn: formatAttendanceTime(pair.checkIn) || '',
+                  checkOut: formatAttendanceTime(pair.checkOut) || ''
+                }))
+              }}>
+                {selectedCorrection.punchPairs.map((pair, index) => <option key={index} value={index}>Lượt {index + 1}: {timeValue(pair.checkIn)} → {pair.checkOut ? timeValue(pair.checkOut) : 'Đang mở'}</option>)}
+              </select>
+            </label>}
             <label>Giờ vào<input type="time" value={correctionForm.checkIn} onChange={event => setCorrectionForm(current => ({ ...current, checkIn: event.target.value }))} /></label>
             <label>Giờ ra<input type="time" value={correctionForm.checkOut} onChange={event => setCorrectionForm(current => ({ ...current, checkOut: event.target.value }))} /><small>Nếu quên chấm công khi kết thúc ca, nhập giờ ra thực tế tại đây.</small></label>
             <label>Lý do<textarea required minLength="5" maxLength="1000" rows="3" value={correctionForm.reason} onChange={event => setCorrectionForm(current => ({ ...current, reason: event.target.value }))} placeholder="Ví dụ: Tôi đã kết thúc ca lúc 17:35 nhưng quên bấm chấm công ra." /></label>

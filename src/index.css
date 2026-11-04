@@ -555,6 +555,14 @@ button, input, select, textarea {
 
 .top-horizontal-scrollbar__spacer { height: 1px; }
 
+.top-horizontal-scrollbar--bottom {
+  top: auto;
+  bottom: 0;
+  margin: 10px 0 0;
+}
+
+.top-horizontal-scrollbar--bottom[data-visible="false"] { margin: 0; }
+
 .main::-webkit-scrollbar,
 .main :where(*)::-webkit-scrollbar { width: 10px; height: 10px; }
 .main::-webkit-scrollbar-track,

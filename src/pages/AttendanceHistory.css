@@ -9,6 +9,14 @@
   padding: 4px 2px 24px;
 }
 
+.ah-error {
+  margin: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: #b42318;
+  background: #fef2f2;
+}
+
 /* Header */
 .ah-header {
   display: flex;

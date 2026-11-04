@@ -75,6 +75,7 @@ function Layout({ children }) {
         <main className="main" ref={mainRef}>
           <TopHorizontalScrollbar containerRef={mainRef} />
           {children}
+          <TopHorizontalScrollbar containerRef={mainRef} position="bottom" />
         </main>
       </div>
       <nav className="mobile-utility-nav" aria-label="Điều hướng nhanh">

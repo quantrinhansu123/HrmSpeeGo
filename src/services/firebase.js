@@ -325,7 +325,10 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
   const rows = new Map()
   const addQueryResults = results => results.forEach(({ data, error }) => {
     if (error) throw error
-    ;(data || []).forEach(row => rows.set(row.id, row))
+    ;(data || []).forEach(row => {
+      const linkedId = String(row.data?.employeeId || '').trim()
+      if (!linkedId || !employeeId || linkedId === employeeId) rows.set(row.id, row)
+    })
   })
   if (employeeId) {
     const pageSize = 1000
@@ -371,7 +374,8 @@ export const fbGetAttendanceByEmployee = async (employee = {}) => {
       candidateRows.flat().forEach(row => {
         const data = row.data || {}
         const candidateNames = nameFields.map(field => data[field])
-        if (candidateNames.some(name => matchesAttendanceName(name, employeeName))) {
+        if ((!data.employeeId || !employeeId || String(data.employeeId) === employeeId)
+          && candidateNames.some(name => matchesAttendanceName(name, employeeName))) {
           rows.set(row.id, row)
         }
       })

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 const SCROLLABLE_OVERFLOW = new Set(['auto', 'scroll', 'overlay'])
 
-function TopHorizontalScrollbar({ containerRef }) {
+function TopHorizontalScrollbar({ containerRef, position = 'top' }) {
   const trackRef = useRef(null)
   const spacerRef = useRef(null)
   const [hasScrollableContent, setHasScrollableContent] = useState(false)
@@ -44,9 +44,10 @@ function TopHorizontalScrollbar({ containerRef }) {
 
     const refreshTargets = () => {
       const nextCandidates = []
-      const tables = container.querySelectorAll('table')
+      const tables = container.querySelectorAll('table, .table-responsive, [class*="table-wrap"], [class*="-scroll"]')
 
       tables.forEach((table) => {
+        if (table.closest('.top-horizontal-scrollbar')) return
         let element = table
         while (element && element !== container) {
           const overflowX = window.getComputedStyle(element).overflowX
@@ -115,7 +116,7 @@ function TopHorizontalScrollbar({ containerRef }) {
       else scheduleRefresh()
     })
     const mutationObserver = new MutationObserver((records) => {
-      if (records.some((record) => !track.contains(record.target))) scheduleRefresh()
+      if (records.some((record) => !record.target.closest?.('.top-horizontal-scrollbar'))) scheduleRefresh()
     })
 
     track.addEventListener('scroll', handleTrackScroll, { passive: true })
@@ -146,10 +147,10 @@ function TopHorizontalScrollbar({ containerRef }) {
   return (
     <div
       ref={trackRef}
-      className="top-horizontal-scrollbar"
+      className={`top-horizontal-scrollbar top-horizontal-scrollbar--${position}`}
       data-visible={hasScrollableContent}
       role="region"
-      aria-label="Thanh cuộn ngang bảng"
+      aria-label={`Thanh cuộn ngang bảng phía ${position === 'bottom' ? 'dưới' : 'trên'}`}
       tabIndex={hasScrollableContent ? 0 : -1}
     >
       <div ref={spacerRef} className="top-horizontal-scrollbar__spacer" />
