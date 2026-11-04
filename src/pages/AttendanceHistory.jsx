@@ -46,6 +46,40 @@ const isOnlineAttendanceLog = log =>
   String(log?.source || '') === 'employee-online' ||
   String(log?.workMode || '').toLowerCase() === 'online'
 
+const punchPairsForLog = log => Array.isArray(log?.punchPairs) && log.punchPairs.length
+  ? log.punchPairs
+  : [{
+      checkIn: log?.vao || log?.checkIn,
+      checkOut: log?.ra || log?.checkOut,
+      checkInLocation: log?.checkInLocation,
+      checkOutLocation: log?.checkOutLocation,
+      checkInPhoto: log?.checkInPhoto,
+      checkOutPhoto: log?.checkOutPhoto
+    }]
+
+const withAttendanceTiming = (log, employee, settings) => {
+  const pairs = log?.punchPairs
+  if (!Array.isArray(pairs) || !pairs.length) return applyCalculatedAttendanceTiming(log, employee, settings)
+  const firstPunch = pairs.find(pair => pair.checkIn)
+  const lastPunch = [...pairs].reverse().find(pair => pair.checkOut)
+  const valueOrFallback = (pair, field, fallback) => pair?.[field] !== null && pair?.[field] !== undefined && pair?.[field] !== ''
+    ? Number(pair[field]) || 0
+    : Number(fallback) || 0
+  const lateMinutes = valueOrFallback(firstPunch, 'lateMinutes', log.lateMinutes ?? log.vaoTre)
+  const earlyMinutes = valueOrFallback(lastPunch, 'earlyMinutes', log.earlyMinutes ?? log.raSom)
+  return {
+    ...log,
+    checkInLocation: log.checkInLocation || firstPunch?.checkInLocation,
+    checkOutLocation: log.checkOutLocation || lastPunch?.checkOutLocation,
+    checkInPhoto: log.checkInPhoto || firstPunch?.checkInPhoto,
+    checkOutPhoto: log.checkOutPhoto || lastPunch?.checkOutPhoto,
+    lateMinutes,
+    earlyMinutes,
+    vaoTre: lateMinutes,
+    raSom: earlyMinutes
+  }
+}
+
 const buildMapsUrl = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`
 
 const formatLocationLabel = location => {
@@ -107,7 +141,7 @@ function AttendanceHistory() {
         const month = selectedMonth || new Date().toISOString().slice(0, 7)
         const data = await fbGetAttendanceLogsByMonth(month)
         const list = Object.entries(data || {})
-          .map(([id, val]) => applyCalculatedAttendanceTiming({ ...val, id }, null, attendanceSettings))
+          .map(([id, val]) => withAttendanceTiming({ ...val, id }, null, attendanceSettings))
           .filter(isOnlineAttendanceLog)
         list.sort((a, b) => {
           const byDate = String(b.date || '').localeCompare(String(a.date || ''))
@@ -119,7 +153,7 @@ function AttendanceHistory() {
         const data = await fbGetAttendanceByEmployee(user)
         if (data) {
           const list = Object.entries(data).map(([id, val]) =>
-            applyCalculatedAttendanceTiming({ ...val, id }, user, attendanceSettings)
+            withAttendanceTiming({ ...val, id }, user, attendanceSettings)
           )
           list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
           setHistoryLogs(list)
@@ -172,8 +206,9 @@ function AttendanceHistory() {
       if (isEarly) early += 1
       if (!isLate && !isEarly) onTime += 1
     })
-    return { total: filteredLogs.length, late, early, onTime }
-  }, [filteredLogs])
+    const attendanceDays = new Set(filteredLogs.map(log => `${log.employeeId || user.id}::${String(log.date || '').slice(0, 10)}`))
+    return { total: attendanceDays.size, late, early, onTime }
+  }, [filteredLogs, user.id])
 
   const monthLabel = `${selectedMonth.split('-')[1]}/${selectedMonth.split('-')[0]}`
 
@@ -291,6 +326,7 @@ function AttendanceHistory() {
                 </tr>
               ) : (
                 filteredLogs.map((log, idx) => {
+                  const punchPairs = punchPairsForLog(log)
                   const isLate = Number(log.lateMinutes || log.vaoTre || 0) > 0
                   const isEarly = Number(log.earlyMinutes || log.raSom || 0) > 0
                   const status = log.status || (isLate ? 'Đi muộn' : 'Đúng giờ')
@@ -310,10 +346,11 @@ function AttendanceHistory() {
                       )}
                       <td data-label="Ngày">
                         <strong className="ah-date">{displayDate(log.date)}</strong>
+                        {log.shiftName || log.tenCa ? <small className="ah-shift-name">{log.shiftName || log.tenCa}</small> : null}
                       </td>
                       <td data-label="Thứ">{log.dayOfWeek || '—'}</td>
                       <td data-label="Giờ vào">
-                        <span className="ah-time">{formatTime(log.vao || log.checkIn)}</span>
+                        <div className="ah-punch-list">{punchPairs.map((pair, pairIndex) => <span className="ah-time" key={`in-${pairIndex}`}>{formatTime(pair.checkIn)}</span>)}</div>
                       </td>
                       <td data-label="Vị trí vào">
                         <LocationCell location={log.checkInLocation} />
@@ -328,7 +365,7 @@ function AttendanceHistory() {
                         )}
                       </td>
                       <td data-label="Giờ ra">
-                        <span className="ah-time">{formatTime(log.ra || log.checkOut)}</span>
+                        <div className="ah-punch-list">{punchPairs.map((pair, pairIndex) => <span className="ah-time" key={`out-${pairIndex}`}>{formatTime(pair.checkOut)}</span>)}</div>
                       </td>
                       <td data-label="Vị trí ra">
                         <LocationCell location={log.checkOutLocation} />

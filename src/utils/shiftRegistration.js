@@ -81,22 +81,38 @@ export const buildRegistrationChanges = ({ days, selections, existingByDate, opt
   const upserts = []
   const removals = []
   days.forEach(({ date }) => {
-    const existing = existingByDate[date]
-    const shiftId = selections[date] || ''
-    if (existing?.status === 'approved') return
-    if (!shiftId) {
-      if (existing) removals.push(existing.id)
-      return
+    const existingValue = existingByDate[date]
+    const existing = Array.isArray(existingValue) ? existingValue : existingValue ? [existingValue] : []
+    const selectionValue = selections[date]
+    const selectedIds = new Set(Array.isArray(selectionValue) ? selectionValue : selectionValue ? [selectionValue] : [])
+    const approvedIds = new Set(existing.filter(row => row.status === 'approved').map(row => row.shift_id))
+    if (approvedIds.has('off')) {
+      selectedIds.clear()
+      selectedIds.add('off')
     }
-    if (existing?.shift_id === shiftId && existing.status !== 'rejected') return
-    const option = options.find(item => item.id === shiftId)
-    if (!option) return
-    upserts.push({
-      work_date: date,
-      shift_id: option.id,
-      shift_name: option.name,
-      start_time: option.start || null,
-      end_time: option.end || null
+    else if (approvedIds.size) selectedIds.delete('off')
+    else if (selectedIds.has('off')) {
+      selectedIds.clear()
+      selectedIds.add('off')
+    }
+    const retainedIds = new Set([...selectedIds, ...approvedIds])
+
+    existing.forEach(row => {
+      if (row.status !== 'approved' && !retainedIds.has(row.shift_id)) removals.push(row.id)
+    })
+
+    selectedIds.forEach(shiftId => {
+      const row = existing.find(item => item.shift_id === shiftId)
+      if (row && row.status !== 'rejected') return
+      const option = options.find(item => item.id === shiftId)
+      if (!option) return
+      upserts.push({
+        work_date: date,
+        shift_id: option.id,
+        shift_name: option.name,
+        start_time: option.start || null,
+        end_time: option.end || null
+      })
     })
   })
   return { upserts, removals }

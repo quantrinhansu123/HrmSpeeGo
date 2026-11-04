@@ -71,6 +71,10 @@ Chạy [`migrations/20261003130000_approval_monthly_leave_limit.sql`](./migratio
 
 Chạy [`migrations/20261104100000_attendance_punch_corrections.sql`](./migrations/20261104100000_attendance_punch_corrections.sql) để bật yêu cầu điều chỉnh giờ vào/ra: nhân viên gửi yêu cầu từ **Bảng công cá nhân**, HR/quản lý duyệt tại **Duyệt điều chỉnh công**. Giờ chấm công chỉ được cập nhật sau khi duyệt.
 
+Chạy [`migrations/20261104120000_multiple_daily_attendance.sql`](./migrations/20261104120000_multiple_daily_attendance.sql) sau [`migrations/20261102100000_employee_shift_registrations.sql`](./migrations/20261102100000_employee_shift_registrations.sql) để cho phép đăng ký nhiều ca/ngày và chấm nhiều cặp vào/ra, bao gồm ca qua đêm.
+
+Sau đó chạy [`migrations/20261104130000_multi_punch_correction_support.sql`](./migrations/20261104130000_multi_punch_correction_support.sql) để đồng bộ giờ đã được HR duyệt sửa vào cặp chấm công tương ứng.
+
 ## Tài khoản mặc định
 - Email: `admin@company.local`
 - Password: `123456`

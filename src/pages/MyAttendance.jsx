@@ -17,6 +17,21 @@ const decimalValue = value => value === null || value === undefined || value ===
 const timeValue = value => {
   return formatAttendanceTime(value) || '—'
 }
+const punchesForLog = log => Array.isArray(log?.punchPairs) && log.punchPairs.length
+  ? log.punchPairs
+  : [{ checkIn: log?.vao || log?.checkIn, checkOut: log?.ra || log?.checkOut }]
+const timingForLog = (log, employee, settings) => {
+  const pairs = log?.punchPairs
+  if (!Array.isArray(pairs) || !pairs.length) return applyCalculatedAttendanceTiming(log, employee, settings)
+  const firstPunch = pairs.find(pair => pair.checkIn)
+  const lastPunch = [...pairs].reverse().find(pair => pair.checkOut)
+  const valueOrFallback = (pair, key, fallback) => pair?.[key] !== null && pair?.[key] !== undefined && pair?.[key] !== ''
+    ? numberValue(pair[key])
+    : numberValue(fallback)
+  const lateMinutes = valueOrFallback(firstPunch, 'lateMinutes', log.lateMinutes ?? log.vaoTre)
+  const earlyMinutes = valueOrFallback(lastPunch, 'earlyMinutes', log.earlyMinutes ?? log.raSom)
+  return { ...log, lateMinutes, earlyMinutes, vaoTre: lateMinutes, raSom: earlyMinutes }
+}
 const requestStatusLabels = { pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Đã từ chối' }
 const requestTimeLabel = value => value === '' ? 'Xóa mốc chấm công' : timeValue(value)
 
@@ -75,7 +90,7 @@ function MyAttendance() {
   })), [attendanceSettings, employeeId, logs, months, user])
   const monthLogs = useMemo(() => logs
     .filter(log => dateValue(log).startsWith(month))
-    .map(log => applyCalculatedAttendanceTiming(log, user, attendanceSettings))
+    .map(log => timingForLog(log, user, attendanceSettings))
     .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [attendanceSettings, logs, month, user])
   const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, employeeId, logs, month, user])
 
@@ -165,11 +180,11 @@ function MyAttendance() {
             </table>
           </div>
         </section>
-        <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Time (Check-in)</th><th>TimeCheckout</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th><th>Điều chỉnh</th></tr></thead><tbody>
+        <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Ca</th><th>Lượt vào/ra</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th><th>Điều chỉnh</th></tr></thead><tbody>
           {monthLogs.length ? monthLogs.map(log => {
             const date = dateValue(log), hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
             const pending = hasPendingCorrection(log.id)
-            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{decimalValue(log.cong)}</td><td>{decimalValue(hours)}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td><td><button type="button" className="my-attendance__request-button" disabled={pending} onClick={() => openCorrectionForm(log)}>{pending ? 'Đang chờ duyệt' : 'Yêu cầu sửa'}</button></td></tr>
+            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{log.shiftName || log.tenCa || '—'}</td><td><div className="my-attendance__punch-list">{punchesForLog(log).map((pair, index) => <span key={`${pair.checkInTimestamp || pair.checkIn}-${index}`}>{timeValue(pair.checkIn)} → {pair.checkOut ? timeValue(pair.checkOut) : 'Đang mở'}</span>)}</div></td><td>{decimalValue(log.cong)}</td><td>{decimalValue(hours)}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td><td><button type="button" className="my-attendance__request-button" disabled={pending} onClick={() => openCorrectionForm(log)}>{pending ? 'Đang chờ duyệt' : 'Yêu cầu sửa'}</button></td></tr>
           }) : <tr><td colSpan="10" className="my-attendance__empty">Không có dữ liệu trong tháng này.</td></tr>}
         </tbody></table></div>
         <div className="my-attendance__mobile-list">
@@ -177,10 +192,10 @@ function MyAttendance() {
             const date = dateValue(log)
             const hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
             return <article key={log.id} className="my-attendance__mobile-day">
-              <div className="my-attendance__mobile-day-head"><strong>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</strong><span>{log.dayOfWeek || log.thu || '—'} · {log.kyHieu || log.status || '—'}</span></div>
+              <div className="my-attendance__mobile-day-head"><strong>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</strong><span>{log.shiftName || log.tenCa || '—'} · {log.kyHieu || log.status || '—'}</span></div>
+              <div className="my-attendance__punch-list">{punchesForLog(log).map((pair, index) => <span key={`${pair.checkInTimestamp || pair.checkIn}-${index}`}>Lượt {index + 1}: {timeValue(pair.checkIn)} → {pair.checkOut ? timeValue(pair.checkOut) : 'Đang mở'}</span>)}</div>
               <div className="my-attendance__mobile-day-grid">
-                <div><span>Giờ vào</span><strong>{timeValue(log.vao || log.checkIn)}</strong></div>
-                <div><span>Giờ ra</span><strong>{timeValue(log.ra || log.checkOut)}</strong></div>
+                <div><span>Ca</span><strong>{log.shiftName || log.tenCa || '—'}</strong></div>
                 <div><span>Công</span><strong>{decimalValue(log.cong)}</strong></div>
                 <div><span>Giờ</span><strong>{decimalValue(hours)}</strong></div>
               </div>

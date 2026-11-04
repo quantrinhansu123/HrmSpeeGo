@@ -3,6 +3,7 @@ import { departmentForAttendanceSummary } from './attendanceDepartment.js'
 import {
   applyCalculatedAttendanceTiming,
   attendanceTimeToMinutes,
+  calculateAttendanceTiming,
   formatAttendanceTime,
   resolveAttendanceShift
 } from './attendanceShift.js'
@@ -23,7 +24,13 @@ const attendancePunchPairs = log => {
     return log.punchPairs
       .map(pair => ({
         checkIn: formatAttendanceTime(pair?.checkIn),
-        checkOut: formatAttendanceTime(pair?.checkOut)
+        checkOut: formatAttendanceTime(pair?.checkOut),
+        checkInTimestamp: pair?.checkInTimestamp || pair?.checkInAt || '',
+        checkOutTimestamp: pair?.checkOutTimestamp || pair?.checkOutAt || '',
+        shiftId: String(pair?.shiftId || log?.shiftId || ''),
+        shiftName: String(pair?.shiftName || log?.shiftName || log?.tenCa || ''),
+        lateMinutes: pair?.lateMinutes,
+        earlyMinutes: pair?.earlyMinutes
       }))
       .filter(pair => pair.checkIn || pair.checkOut)
   }
@@ -37,7 +44,12 @@ const attendancePunchPairs = log => {
   }
   const pairs = []
   for (let index = 0; index < punches.length; index += 2) {
-    pairs.push({ checkIn: punches[index] || '', checkOut: punches[index + 1] || '' })
+    pairs.push({
+      checkIn: punches[index] || '',
+      checkOut: punches[index + 1] || '',
+      shiftId: String(log?.shiftId || ''),
+      shiftName: String(log?.shiftName || log?.tenCa || '')
+    })
   }
   return pairs
 }
@@ -66,7 +78,8 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   let onlineWorkdays = 0
   let offlineWorkdays = 0
   let sourceHours = 0
-  const actualPunches = []
+  const actualPunchGroups = new Map()
+  const observedPunches = []
   let hasSourceWorkday = false
   let hasPunch = false
   let missingPunch = false
@@ -74,6 +87,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   let checkIn = ''
   let checkOut = ''
   let shiftName = ''
+  const shiftNames = new Set()
   let calculationMode = 'full-day'
   let splitShiftBreakdown = []
   const sampleLog = logs[0] || {}
@@ -83,7 +97,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
 
   logs.forEach(sourceLog => {
     const preservesSourceValues = ['source-value', 'matrix-value'].includes(sourceLog.calculationMode)
-    const log = preservesSourceValues
+    const log = preservesSourceValues || (Array.isArray(sourceLog.punchPairs) && sourceLog.punchPairs.length)
       ? sourceLog
       : applyCalculatedAttendanceTiming(sourceLog, employee, attendanceSettings)
     const logHours = numberValue(log.hours ?? log.soGio ?? log.gio ?? log.tongGio ?? (
@@ -91,23 +105,75 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
       numberValue(log.gioPlus)
     ))
     sourceHours += Math.max(0, logHours)
-    const logCheckIn = formatAttendanceTime(log.checkIn || log.vao)
-    const logCheckOut = formatAttendanceTime(log.checkOut || log.ra)
+    const isSyntheticPunch = Boolean(log.syntheticPunch || log.isDerivedFromCode)
+    const logPairs = isSyntheticPunch ? [] : attendancePunchPairs(log)
+    const logCheckIn = logPairs.find(pair => pair.checkIn)?.checkIn || formatAttendanceTime(log.checkIn || log.vao)
+    const logCheckOut = [...logPairs].reverse().find(pair => pair.checkOut)?.checkOut || formatAttendanceTime(log.checkOut || log.ra)
     const hasCheckIn = Boolean(logCheckIn)
     const hasCheckOut = Boolean(logCheckOut)
-    const isSyntheticPunch = Boolean(log.syntheticPunch || log.isDerivedFromCode)
     const useSourceValues = ['source-value', 'matrix-value'].includes(log.calculationMode)
     if (useSourceValues) calculationMode = log.calculationMode
     if (!isSyntheticPunch) {
-      lateMinutes += numberValue(log.lateMinutes ?? log.vaoTre)
-      earlyMinutes += numberValue(log.earlyMinutes ?? log.raSom)
+      if (useSourceValues || !logPairs.length) {
+        lateMinutes += numberValue(log.lateMinutes ?? log.vaoTre)
+        earlyMinutes += numberValue(log.earlyMinutes ?? log.raSom)
+      } else {
+        const firstCheckInIndex = logPairs.findIndex(pair => Boolean(pair.checkIn))
+        const lastCheckOutIndex = logPairs.reduce((lastIndex, pair, index) => pair.checkOut ? index : lastIndex, -1)
+        logPairs.forEach((pair, index) => {
+          const timing = () => calculateAttendanceTiming({
+            employee,
+            log: {
+              ...log,
+              shiftId: pair.shiftId || log.shiftId,
+              shiftName: pair.shiftName || log.shiftName || log.tenCa
+            },
+            checkIn: pair.checkIn,
+            checkOut: pair.checkOut,
+            attendanceSettings
+          })
+          lateMinutes += index === firstCheckInIndex && pair.lateMinutes !== null && pair.lateMinutes !== undefined && pair.lateMinutes !== ''
+            ? numberValue(pair.lateMinutes)
+            : index === firstCheckInIndex && pair.checkIn ? numberValue(timing().lateMinutes) : 0
+          earlyMinutes += index === lastCheckOutIndex && pair.earlyMinutes !== null && pair.earlyMinutes !== undefined && pair.earlyMinutes !== ''
+            ? numberValue(pair.earlyMinutes)
+            : index === lastCheckOutIndex && pair.checkOut ? numberValue(timing().earlyMinutes) : 0
+        })
+      }
     }
-    if (!isSyntheticPunch && !useSourceValues && hasCheckIn && hasCheckOut) {
-      actualPunches.push({ checkIn: logCheckIn, checkOut: logCheckOut })
+    if (!isSyntheticPunch && !useSourceValues) {
+      const groupsUpdatedFromLog = new Set()
+      logPairs.forEach(pair => {
+        if (pair.checkIn) observedPunches.push({ time: pair.checkIn, timestamp: pair.checkInTimestamp, action: 'in' })
+        if (pair.checkOut) observedPunches.push({ time: pair.checkOut, timestamp: pair.checkOutTimestamp, action: 'out' })
+        if (pair.checkIn || pair.checkOut) {
+          const groupKey = pair.shiftId || pair.shiftName || log.shiftId || log.shiftName || log.tenCa || '__day__'
+          const group = actualPunchGroups.get(groupKey) || {
+            pairs: [],
+            log: {
+              shiftId: pair.shiftId || log.shiftId,
+              shiftName: pair.shiftName || log.shiftName || log.tenCa,
+              standardCheckIn: log.standardCheckIn,
+              standardCheckOut: log.standardCheckOut
+            },
+            shiftName: pair.shiftName || log.shiftName || log.tenCa
+          }
+          group.pairs.push(pair)
+          if (!groupsUpdatedFromLog.has(groupKey)) {
+            group.log.tc1 = numberValue(group.log.tc1) + numberValue(log.tc1)
+            group.log.tc2 = numberValue(group.log.tc2) + numberValue(log.tc2)
+            group.log.tc3 = numberValue(group.log.tc3) + numberValue(log.tc3)
+            group.log.overtimeAutoDisabled = group.log.overtimeAutoDisabled || Boolean(log.overtimeAutoDisabled)
+            groupsUpdatedFromLog.add(groupKey)
+          }
+          actualPunchGroups.set(groupKey, group)
+        }
+      })
     }
-    if (!isSyntheticPunch && hasCheckIn && (!checkIn || logCheckIn < checkIn)) checkIn = logCheckIn
-    if (!isSyntheticPunch && hasCheckOut && (!checkOut || logCheckOut > checkOut)) checkOut = logCheckOut
-    if (!shiftName) shiftName = log.shiftName || log.tenCa || resolvedShift?.name || ''
+    if (!isSyntheticPunch && logPairs.some(pair => Boolean(pair.checkIn) !== Boolean(pair.checkOut))) missingPunch = true
+    const logShiftName = String(log.shiftName || log.tenCa || resolvedShift?.name || '').trim()
+    if (logShiftName) shiftNames.add(logShiftName)
+    if (!shiftName) shiftName = logShiftName
     const status = String(log.kyHieu || log.status || '').trim().toUpperCase()
     const logWorkdays =
       numberValue(log.cong) + numberValue(log.congPlus)
@@ -128,7 +194,6 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     hasPunch = hasPunch || (!isSyntheticPunch && (hasCheckIn || hasCheckOut))
     missingPunch =
       missingPunch ||
-      (!isSyntheticPunch && hasCheckIn !== hasCheckOut) ||
       status === 'KR' ||
       status === 'KV'
     unapprovedAbsence =
@@ -169,34 +234,50 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     ? Number(attendanceSettings.unpaidBreakMinutes)
     : 0
   const autoCalculateOvertime = attendanceSettings?.overtime?.autoCalculate !== false
-  if (actualPunches.length > 0) {
-    const firstPunch = actualPunches
-      .slice()
-      .sort((left, right) => (attendanceTimeToMinutes(left.checkIn) ?? 0) - (attendanceTimeToMinutes(right.checkIn) ?? 0))[0]
-    const lastPunch = actualPunches
-      .slice()
-      .sort((left, right) => (attendanceTimeToMinutes(right.checkOut) ?? 0) - (attendanceTimeToMinutes(left.checkOut) ?? 0))[0]
-    const metrics = calculateAttendanceMetrics({
-      log: {
-        ...(logs[0] || {}),
-        tc1: logs.reduce((sum, log) => sum + numberValue(log.tc1), 0),
-        tc2: logs.reduce((sum, log) => sum + numberValue(log.tc2), 0),
-        tc3: logs.reduce((sum, log) => sum + numberValue(log.tc3), 0),
-        overtimeAutoDisabled: logs.some(log => Boolean(log.overtimeAutoDisabled))
-      },
-      checkIn: firstPunch.checkIn,
-      checkOut: lastPunch.checkOut,
-      standardMinutes,
-      breakMinutes,
-      autoCalculateOvertime,
-      punchPairs: logs.flatMap(attendancePunchPairs),
-      splitShift: resolvedShift?.splitShift
+  if (actualPunchGroups.size > 0) {
+    actualPunchGroups.forEach(group => {
+      const orderedPairs = group.pairs.slice().sort((left, right) => {
+        const leftAt = Date.parse(left.checkInTimestamp || left.checkOutTimestamp || '')
+        const rightAt = Date.parse(right.checkInTimestamp || right.checkOutTimestamp || '')
+        if (Number.isFinite(leftAt) && Number.isFinite(rightAt)) return leftAt - rightAt
+        const leftTime = attendanceTimeToMinutes(left.checkIn || left.checkOut) ?? 0
+        const rightTime = attendanceTimeToMinutes(right.checkIn || right.checkOut) ?? 0
+        return leftTime - rightTime
+      })
+      const firstPunch = orderedPairs.find(pair => pair.checkIn) || orderedPairs[0]
+      const lastPunch = [...orderedPairs].reverse().find(pair => pair.checkOut) || orderedPairs[orderedPairs.length - 1]
+      const groupShift = resolveAttendanceShift(employee, {
+        ...group.log,
+        vao: firstPunch.checkIn,
+        shiftName: group.shiftName || logs[0]?.shiftName,
+        shiftId: group.pairs[0]?.shiftId
+      }, attendanceSettings)
+      const metrics = calculateAttendanceMetrics({
+        log: group.log,
+        checkIn: firstPunch.checkIn,
+        checkOut: lastPunch.checkOut,
+        standardMinutes,
+        breakMinutes,
+        autoCalculateOvertime,
+        punchPairs: orderedPairs,
+        splitShift: groupShift?.splitShift
+      })
+      hours += metrics.hours
+      workdays += metrics.regularWorkdays
+      overtimeHours += metrics.overtimeHours
+      calculationMode = metrics.calculationMode || calculationMode
+      if (metrics.splitShiftBreakdown?.length) splitShiftBreakdown.push(...metrics.splitShiftBreakdown)
     })
-    hours = metrics.hours
-    workdays = metrics.regularWorkdays
-    overtimeHours = metrics.overtimeHours
-    calculationMode = metrics.calculationMode || 'full-day'
-    splitShiftBreakdown = metrics.splitShiftBreakdown || []
+
+    const observedWithTimestamp = observedPunches.filter(punch => Number.isFinite(Date.parse(punch.timestamp || '')))
+    if (observedWithTimestamp.length) {
+      observedWithTimestamp.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+      checkIn = observedWithTimestamp.find(punch => punch.action === 'in')?.time || ''
+      checkOut = [...observedWithTimestamp].reverse().find(punch => punch.action === 'out')?.time || ''
+    } else {
+      checkIn = observedPunches.find(punch => punch.action === 'in')?.time || ''
+      checkOut = [...observedPunches].reverse().find(punch => punch.action === 'out')?.time || ''
+    }
   } else if (!hasSourceWorkday) {
     const metrics = calculateAttendanceMetrics({
       log: logs[0] || {},
@@ -274,7 +355,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     checkOut,
     standardCheckIn,
     standardCheckOut,
-    shiftName: shiftName || resolvedShift?.name || '',
+    shiftName: [...shiftNames].join(' / ') || shiftName || resolvedShift?.name || '',
     isHoliday: Boolean(holiday),
     holidayName: holiday?.name || '',
     holidayWorkdays: holiday ? roundDecimal(regularWorkdaysExact + extraWorkdaysExact) : 0,

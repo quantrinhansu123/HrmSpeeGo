@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../services/supabase'
-import { fbGet, fbUpdate } from '../services/firebase'
+import { fbGet } from '../services/firebase'
 import { rebuildAttendanceMonthSummaryForDate } from '../services/attendanceMonthSummary'
 import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
 import { uploadToCloudinary } from '../utils/cloudinary'
@@ -92,6 +92,7 @@ function OnlineAttendance() {
   const { user } = useAuth()
   const isAdminOrManager = user?.role === 'admin' || user?.role === 'hr' || user?.role === 'manager'
   const [today, setToday] = useState(null)
+  const [selectedShiftKey, setSelectedShiftKey] = useState('')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -181,12 +182,54 @@ function OnlineAttendance() {
     loadToday()
   }, [loadToday])
 
-  const record = today?.record || null
-  const checkedIn = Boolean(record?.checkIn || record?.vao)
-  const checkedOut = Boolean(record?.checkOut || record?.ra)
+  const shifts = useMemo(() => {
+    if (Array.isArray(today?.shifts)) return today.shifts
+    if (!today) return []
+    return [{
+      shiftId: '__profile__',
+      workDate: today.date,
+      name: today.shiftName || 'Ca làm việc',
+      standardCheckIn: today.standardCheckIn,
+      standardCheckOut: today.standardCheckOut,
+      record: today.record || null
+    }]
+  }, [today])
+  const shiftKey = shift => `${shift?.workDate || ''}::${shift?.shiftId || ''}`
+  useEffect(() => {
+    if (!shifts.length) return
+    if (shifts.some(shift => shiftKey(shift) === selectedShiftKey)) return
+    const activeShift = shifts.find(shift =>
+      (shift.record?.punchPairs || []).some(pair => pair.checkIn && !pair.checkOut)
+    )
+    setSelectedShiftKey(shiftKey(activeShift || shifts[0]))
+  }, [selectedShiftKey, shifts])
+  const selectedShift = shifts.find(shift => shiftKey(shift) === selectedShiftKey) || shifts[0] || null
+  const record = selectedShift?.record || null
+  const punchPairs = Array.isArray(record?.punchPairs) && record.punchPairs.length
+    ? record.punchPairs
+    : record && (record.vao || record.checkIn)
+      ? [{
+          checkIn: record.vao || record.checkIn,
+          checkOut: record.ra || record.checkOut || '',
+          checkInPhoto: record.checkInPhoto,
+          checkOutPhoto: record.checkOutPhoto
+        }]
+      : []
+  const activePair = [...punchPairs].reverse().find(pair => pair.checkIn && !pair.checkOut) || null
+  const latestPair = punchPairs[punchPairs.length - 1] || null
+  const currentPair = activePair || latestPair
+  const checkedIn = Boolean(activePair)
+  const checkedOut = Boolean(latestPair?.checkOut && !activePair)
   const userShift = useMemo(
-    () => resolveAttendanceShift(user, record || {}, attendanceSettings),
-    [attendanceSettings, record, user]
+    () => selectedShift
+      ? resolveAttendanceShift({}, {
+          shiftId: selectedShift.shiftId,
+          shiftName: selectedShift.name,
+          standardCheckIn: selectedShift.standardCheckIn,
+          standardCheckOut: selectedShift.standardCheckOut
+        }, attendanceSettings)
+      : resolveAttendanceShift(user, record || {}, attendanceSettings),
+    [attendanceSettings, record, selectedShift, user]
   )
   const standardIn = userShift.start
   const standardOut = userShift.end
@@ -199,10 +242,13 @@ function OnlineAttendance() {
     // Nếu đã check-in
     let checkInStatus = null
     if (checkedIn) {
-      const vaoStr = record?.vao || ''
+      const vaoStr = currentPair?.checkIn || record?.vao || ''
       const [vH, vM] = vaoStr.split(':').map(Number)
       if (!Number.isNaN(vH) && !Number.isNaN(vM)) {
-        const diffMinutes = (vH * 60 + vM) - (stdInHour * 60 + stdInMin)
+        const reportedLate = currentPair?.lateMinutes ?? record?.lateMinutes ?? record?.vaoTre
+        const diffMinutes = Number.isFinite(Number(reportedLate))
+          ? Number(reportedLate)
+          : (vH * 60 + vM) - (stdInHour * 60 + stdInMin)
         if (diffMinutes > 0) {
           checkInStatus = { isLate: true, text: `Đi muộn ${diffMinutes} phút`, class: 'badge-danger' }
         } else {
@@ -211,7 +257,8 @@ function OnlineAttendance() {
       }
     } else {
       // Chưa check-in -> so sánh thời gian hiện tại
-      const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes()
+      const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes() +
+        (selectedShift?.workDate && today?.date && selectedShift.workDate < today.date ? 1440 : 0)
       const stdInMinutes = stdInHour * 60 + stdInMin
       if (nowMinutes > stdInMinutes) {
         checkInStatus = { isLate: true, text: `Muộn ${nowMinutes - stdInMinutes}p nếu check-in lúc này`, class: 'badge-warning' }
@@ -223,10 +270,13 @@ function OnlineAttendance() {
     // Check-out status
     let checkOutStatus = null
     if (checkedOut) {
-      const raStr = record?.ra || ''
+      const raStr = currentPair?.checkOut || record?.ra || ''
       const [rH, rM] = raStr.split(':').map(Number)
       if (!Number.isNaN(rH) && !Number.isNaN(rM)) {
-        const diffMinutes = (rH * 60 + rM) - (stdOutHour * 60 + stdOutMin)
+        const reportedEarly = currentPair?.earlyMinutes ?? record?.earlyMinutes ?? record?.raSom
+        const diffMinutes = Number.isFinite(Number(reportedEarly))
+          ? -Number(reportedEarly)
+          : (rH * 60 + rM) - (stdOutHour * 60 + stdOutMin)
         if (diffMinutes < 0) {
           checkOutStatus = { isEarly: true, text: `Về sớm ${Math.abs(diffMinutes)} phút`, class: 'badge-warning' }
         } else if (diffMinutes > 0) {
@@ -263,37 +313,30 @@ function OnlineAttendance() {
       }
       capturedLocation.device = describeDevice()
 
-      // 2. Gọi RPC chấm công của hệ thống
-      const functionName = action === 'in' ? 'employee_online_check_in' : 'employee_online_check_out'
-      const { data, error: requestError } = await supabase.rpc(functionName)
+      if (!selectedShift?.shiftId || !selectedShift?.workDate) {
+        throw new Error('Chưa có ca làm việc được duyệt để chấm công.')
+      }
+
+      // Chấm vào/ra trong cùng RPC để ảnh và vị trí gắn đúng từng lượt.
+      const { data, error: requestError } = await supabase.rpc('employee_online_attendance_punch', {
+        p_work_date: selectedShift.workDate,
+        p_shift_id: selectedShift.shiftId,
+        p_action: action,
+        p_photo: uploadedPhotoUrl || null,
+        p_location: capturedLocation
+      })
 
       if (requestError) {
         throw new Error(requestError.message)
       }
 
-      // 3. Cập nhật thêm ảnh Cloudinary và vị trí vào bản ghi
-      try {
-        const recordDate = data?.date || new Date().toISOString().slice(0, 10)
-        const recordId = data?.record?.id || `online_${user.id || user.auth_user_id}_${recordDate.replace(/-/g, '')}`
-        const prefix = action === 'in' ? 'checkIn' : 'checkOut'
-        const patch = { [`${prefix}Location`]: capturedLocation }
-        if (uploadedPhotoUrl) patch[`${prefix}Photo`] = uploadedPhotoUrl
-        await fbUpdate(`hr/attendanceLogs/${recordId}`, patch)
-      } catch (updateErr) {
-        console.warn('Lưu ảnh/vị trí phụ:', updateErr.message)
-      }
-
-      // 4. Cập nhật state giao diện
-      setToday(current => ({
-        ...current,
-        ...data,
-        record: {
-          ...(current?.record || {}),
-          ...(data?.record || {}),
-          [action === 'in' ? 'checkInPhoto' : 'checkOutPhoto']: uploadedPhotoUrl,
-          [action === 'in' ? 'checkInLocation' : 'checkOutLocation']: capturedLocation
-        }
-      }))
+      // Cập nhật riêng log của ca vừa chấm.
+      setToday(current => {
+        const nextShifts = [...(current?.shifts || shifts)]
+        const index = nextShifts.findIndex(shift => shiftKey(shift) === shiftKey(selectedShift))
+        if (index >= 0) nextShifts[index] = { ...nextShifts[index], record: data?.record || null }
+        return { ...current, ...data, shifts: nextShifts, record: data?.record || null }
+      })
 
       setPhotoPreview(null)
       stopCamera()
@@ -312,6 +355,7 @@ function OnlineAttendance() {
           `${previous || ''} Chưa cập nhật được bảng công tổng hợp — bấm “Tổng hợp lại” trên Bảng công.`
         )
       }
+      await loadToday()
     } catch (err) {
       setError(err.message || 'Lỗi khi chấm công')
     } finally {
@@ -359,38 +403,44 @@ function OnlineAttendance() {
           <div className="oa-clock-meta">
             <div className="oa-clock-date">{dateFormatted}</div>
             <div className="oa-shift-badge">
-              Ca làm việc: <strong>{standardIn} - {standardOut}</strong>
+              {selectedShift?.name || userShift.name}: <strong>{standardIn} - {standardOut}</strong>
             </div>
           </div>
         </div>
       </div>
 
+      {shifts.length > 1 && (
+        <label className="oa-shift-select">
+          <span>Chọn ca cần chấm</span>
+          <select value={selectedShiftKey} onChange={event => setSelectedShiftKey(event.target.value)}>
+            {shifts.map(shift => <option key={shiftKey(shift)} value={shiftKey(shift)}>
+              {shift.name} ({shift.standardCheckIn}–{shift.standardCheckOut}) · {shift.workDate}
+            </option>)}
+          </select>
+        </label>
+      )}
+
       {/* Thông báo thông điệp */}
       {error && <div className="oa-alert oa-alert-danger">{error}</div>}
       {notice && <div className="oa-alert oa-alert-success">{notice}</div>}
+      {!loading && shifts.length === 0 && <div className="oa-alert oa-alert-warning">Ngày này chưa có ca được duyệt để chấm công.</div>}
 
-      {/* Trạng thái 2 cổng: Check-in & Check-out */}
+      {/* Trạng thái lượt chấm gần nhất của ca đang chọn */}
       <div className="oa-punches-grid">
         {/* Cột Check-in */}
-        <div className={`oa-punch-box ${checkedIn ? 'is-done' : 'is-pending'}`}>
+        <div className={`oa-punch-box ${checkedIn || checkedOut ? 'is-done' : 'is-pending'}`}>
           <div className="oa-punch-header">
             <span>GIỜ VÀO (CHECK-IN)</span>
             <span className="oa-req-time">Chuẩn: {standardIn}</span>
           </div>
           <div className="oa-punch-time">
-            {checkedIn ? getTime(record?.vao || record?.checkIn) : 'Chưa chấm'}
+            {currentPair?.checkIn ? getTime(currentPair.checkIn) : 'Chưa chấm'}
           </div>
           <div className="oa-punch-status">
             {checkInStatus && (
               <span className={`oa-badge ${checkInStatus.class}`}>{checkInStatus.text}</span>
             )}
           </div>
-          {record?.checkInPhoto && (
-            <div className="oa-punch-photo-preview">
-              <img src={record.checkInPhoto} alt="Ảnh Check-in" />
-              <small>Ảnh xác thực check-in (Cloudinary)</small>
-            </div>
-          )}
         </div>
 
         {/* Cột Check-out */}
@@ -400,29 +450,34 @@ function OnlineAttendance() {
             <span className="oa-req-time">Chuẩn: {standardOut}</span>
           </div>
           <div className="oa-punch-time">
-            {checkedOut ? getTime(record?.ra || record?.checkOut) : 'Chưa check-out'}
+            {currentPair?.checkOut ? getTime(currentPair.checkOut) : 'Chưa check-out'}
           </div>
           <div className="oa-punch-status">
             {checkOutStatus ? (
               <span className={`oa-badge ${checkOutStatus.class}`}>{checkOutStatus.text}</span>
             ) : (
-              <span className="oa-badge badge-neutral">Chờ hoàn thành ca</span>
+              <span className="oa-badge badge-neutral">{checkedIn ? 'Đang trong ca' : 'Chưa vào ca'}</span>
             )}
           </div>
-          {record?.checkOutPhoto && (
-            <div className="oa-punch-photo-preview">
-              <img src={record.checkOutPhoto} alt="Ảnh Check-out" />
-              <small>Ảnh xác thực check-out (Cloudinary)</small>
-            </div>
-          )}
         </div>
       </div>
 
+      {punchPairs.length > 0 && (
+        <section className="oa-pair-history" aria-label="Lịch sử chấm trong ca">
+          <h3>Lượt chấm của ca {selectedShift?.name}</h3>
+          {punchPairs.map((pair, index) => <div className="oa-pair-history__row" key={`${pair.checkInTimestamp || pair.checkIn}-${index}`}>
+            <span>Lượt {index + 1}</span>
+            <strong>{getTime(pair.checkIn)} → {pair.checkOut ? getTime(pair.checkOut) : 'Đang mở'}</strong>
+            {pair.checkInPhoto && <a href={pair.checkInPhoto} target="_blank" rel="noreferrer">Ảnh vào</a>}
+            {pair.checkOutPhoto && <a href={pair.checkOutPhoto} target="_blank" rel="noreferrer">Ảnh ra</a>}
+          </div>)}
+        </section>
+      )}
+
       {/* Khu vực Tải / Chụp ảnh & Nút hành động */}
-      {(!checkedIn || (checkedIn && !checkedOut)) && (
-        <div className="oa-action-card">
+      {selectedShift && <div className="oa-action-card">
           <h3>
-            Xác thực chấm công {!checkedIn ? 'Check-in (Giờ vào)' : 'Check-out (Giờ ra)'}
+            Xác thực chấm công {checkedIn ? 'Check-out (Giờ ra)' : 'Check-in (Giờ vào)'} · {selectedShift?.name || 'ca làm việc'}
           </h3>
           <p className="oa-action-desc">
             Chụp hoặc tải ảnh selfie/khuôn mặt để lưu trữ xác thực trên Cloudinary.
@@ -467,39 +522,36 @@ function OnlineAttendance() {
 
           {/* Nút nộp Check-in / Check-out */}
           <div className="oa-submit-bar">
-            {!checkedIn && (
+            {!checkedIn ? (
               <button
                 type="button"
                 className="oa-btn-submit oa-btn-checkin"
-                disabled={submitting}
+                disabled={submitting || !selectedShift}
                 onClick={() => submit('in')}
               >
                 {submitting ? 'Đang gửi dữ liệu & tải ảnh...' : 'XÁC NHẬN CHECK-IN'}
               </button>
-            )}
-
-            {checkedIn && !checkedOut && (
+            ) : (
               <button
                 type="button"
                 className="oa-btn-submit oa-btn-checkout"
-                disabled={submitting}
+                disabled={submitting || !selectedShift}
                 onClick={() => submit('out')}
               >
                 {submitting ? 'Đang gửi dữ liệu & tải ảnh...' : 'XÁC NHẬN CHECK-OUT'}
               </button>
             )}
           </div>
-        </div>
-      )}
+      </div>}
 
-      {/* Đã xong cả ngày */}
-      {checkedIn && checkedOut && (
+      {/* Ca đã hoàn tất, vẫn có thể check-in lượt tiếp theo */}
+      {checkedOut && (
         <div className="oa-completed-card">
           <div className="oa-done-icon"><i className="fas fa-check" aria-hidden="true"></i></div>
-          <h3>Bạn đã hoàn thành chấm công ngày hôm nay!</h3>
+          <h3>Đã hoàn tất ca {selectedShift?.name || 'đang chọn'}.</h3>
           <p>
-            Vào: <strong>{getTime(record?.vao || record?.checkIn)}</strong> · Ra:{' '}
-            <strong>{getTime(record?.ra || record?.checkOut)}</strong> · Tổng giờ:{' '}
+            Vào: <strong>{getTime(currentPair?.checkIn)}</strong> · Ra:{' '}
+            <strong>{getTime(currentPair?.checkOut)}</strong> · Tổng giờ:{' '}
             <strong>{record?.hours || record?.gio || 0} giờ</strong>
           </p>
         </div>

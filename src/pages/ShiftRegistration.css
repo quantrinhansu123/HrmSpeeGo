@@ -17,6 +17,10 @@
 .shift-reg-table-wrap tbody tr:last-child th,
 .shift-reg-table-wrap tbody tr:last-child td { border-bottom: 0; }
 .shift-reg-table-wrap select { width: 100%; min-width: 220px; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; background: #fff; }
+.shift-reg-options { display: grid; gap: 7px; min-width: 260px; }
+.shift-reg-option { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #334155; }
+.shift-reg-option input { width: 16px; height: 16px; margin: 0; }
+.shift-reg-status-list { display: grid; gap: 4px; }
 .shift-reg-table-wrap small { display: block; color: #64748b; font-weight: 400; }
 .shift-reg-actions { display: flex; justify-content: flex-end; }
 .shift-reg-list-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }

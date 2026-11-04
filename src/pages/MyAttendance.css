@@ -30,6 +30,7 @@
 .my-attendance__table-wrap th, .my-attendance__table-wrap td { padding: 11px 13px; border-bottom: 1px solid #e2e8f0; text-align: center; white-space: nowrap; }
 .my-attendance__table-wrap th { color: #fff; background: #0b3d73; }
 .my-attendance__table-wrap .is-warning { color: #b42318; font-weight: 700; background: #fff7ed; }
+.my-attendance__punch-list { display: grid; justify-items: center; gap: 4px; color: #334155; white-space: nowrap; }
 .my-attendance__empty { padding: 30px !important; color: #64748b; }
 .my-attendance__mobile-list { display: none; }
 .my-attendance__header-actions > .my-attendance__review-link { color: #fff; background: #0b3d73; }

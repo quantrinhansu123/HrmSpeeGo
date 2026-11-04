@@ -197,7 +197,16 @@ export const calculateAttendanceMetrics = ({
   })
   const splitMetrics = calculateSplitShiftWork({ punchPairs: resolvedPunchPairs, splitShift })
   const activeSplitMetrics = partialSplitMetrics || splitMetrics
-  const workedMinutes = activeSplitMetrics?.workedMinutes ?? calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
+  const completePairs = resolvedPunchPairs.filter(pair => pair.checkIn && pair.checkOut)
+  const pairedWorkedMinutes = completePairs.length
+    ? completePairs.reduce((total, pair) => total + (calculateWorkedMinutes({
+      checkIn: pair.checkIn,
+      checkOut: pair.checkOut,
+      // Separate punch pairs already exclude the time between shifts/breaks.
+      breakMinutes: completePairs.length === 1 ? breakMinutes : 0
+    }) || 0), 0)
+    : null
+  const workedMinutes = activeSplitMetrics?.workedMinutes ?? pairedWorkedMinutes ?? calculateWorkedMinutes({ checkIn, checkOut, breakMinutes })
   const hasPunchPair = workedMinutes !== null
   const manual = manualOvertimeHours(log)
   const sourceHours = finiteNumber(

@@ -31,6 +31,22 @@ import MobileActions from '../components/MobileActions'
 
 const EXCEL_DETAIL_PAGE_SIZE = 100
 const EXCEL_DETAIL_PAGE_SIZE_OPTIONS = [50, 100, 200]
+const punchPairsForDisplay = log => Array.isArray(log?.punchPairs) && log.punchPairs.length
+  ? log.punchPairs
+  : [{ checkIn: log?.vao || log?.checkIn, checkOut: log?.ra || log?.checkOut }]
+const punchTimesForDisplay = (log, field) => punchPairsForDisplay(log)
+  .map(pair => formatTimeHM(pair[field]) || '-')
+  .join(' · ')
+const timingMinutesForLog = (log, field, fallback) => {
+  const pairs = log?.punchPairs
+  if (!Array.isArray(pairs) || !pairs.length) return Number(fallback) || 0
+  const targetPair = field === 'lateMinutes'
+    ? pairs.find(pair => pair.checkIn)
+    : [...pairs].reverse().find(pair => pair.checkOut)
+  return targetPair?.[field] !== null && targetPair?.[field] !== undefined && targetPair?.[field] !== ''
+    ? Number(targetPair[field]) || 0
+    : Number(fallback) || 0
+}
 const normalizeSearch = value => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -628,8 +644,8 @@ function AttendancePreview() {
         const hours = Number(log.hours ?? log.soGio ?? log.gio ?? 0) || 0
         const gioPlus = Number(log.gioPlus ?? 0) || 0
         const tongGio = Number(log.tongGio ?? hours + gioPlus) || 0
-        const late = Number(log.lateMinutes ?? log.vaoTre ?? 0) || 0
-        const early = Number(log.earlyMinutes ?? log.raSom ?? 0) || 0
+        const late = timingMinutesForLog(log, 'lateMinutes', log.lateMinutes ?? log.vaoTre)
+        const early = timingMinutesForLog(log, 'earlyMinutes', log.earlyMinutes ?? log.raSom)
         return {
           STT: index + 1,
           'Mã NV': log.displayEmployeeCode || log.sourceEmployeeCode || log.employeeCode || '',
@@ -641,8 +657,8 @@ function AttendancePreview() {
             ? new Date(`${dateStr}T00:00:00`).toLocaleDateString('vi-VN')
             : '',
           Thứ: log.dayOfWeek || log.thu || dayOfWeekFromDate(dateStr) || '',
-          Vào: formatTimeHM(log.vao || log.checkIn) || '',
-          Ra: formatTimeHM(log.ra || log.checkOut) || '',
+          Vào: punchTimesForDisplay(log, 'checkIn'),
+          Ra: punchTimesForDisplay(log, 'checkOut'),
           Công: log.cong ?? '',
           Giờ: hours || '',
           'Công+': log.congPlus ?? '',
@@ -1899,8 +1915,8 @@ function AttendancePreview() {
                         const hours = Number(log.hours ?? log.soGio ?? log.gio ?? 0) || 0
                         const gioPlus = Number(log.gioPlus ?? 0) || 0
                         const tongGio = Number(log.tongGio ?? hours + gioPlus) || 0
-                        const late = Number(log.lateMinutes ?? log.vaoTre ?? 0) || 0
-                        const early = Number(log.earlyMinutes ?? log.raSom ?? 0) || 0
+                        const late = timingMinutesForLog(log, 'lateMinutes', log.lateMinutes ?? log.vaoTre)
+                        const early = timingMinutesForLog(log, 'earlyMinutes', log.earlyMinutes ?? log.raSom)
                         return (
                           <tr key={log.id || `${log.employeeId}-${dateStr}-${index}`}>
                             <td data-label="STT">{excelPageStart + index}</td>
@@ -1915,8 +1931,8 @@ function AttendancePreview() {
                                 : '-'}
                             </td>
                             <td data-label="Thứ">{log.dayOfWeek || log.thu || dayOfWeekFromDate(dateStr) || '-'}</td>
-                            <td data-label="Vào">{formatTimeHM(log.vao || log.checkIn) || '-'}</td>
-                            <td data-label="Ra">{formatTimeHM(log.ra || log.checkOut) || '-'}</td>
+                            <td data-label="Vào">{punchTimesForDisplay(log, 'checkIn')}</td>
+                            <td data-label="Ra">{punchTimesForDisplay(log, 'checkOut')}</td>
                             <td data-label="Công">{log.cong ?? '-'}</td>
                             <td data-label="Giờ">{hours ? hours.toFixed(2) : '-'}</td>
                             <td data-label="Công+">{log.congPlus ?? '-'}</td>

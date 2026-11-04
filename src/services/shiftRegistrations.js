@@ -41,7 +41,7 @@ export const saveShiftRegistrations = async ({ companyId, employeeId, upserts, r
   if (upserts.length > 0) {
     const rows = upserts.map(row => ({ ...row, company_id: companyId, employee_id: employeeId }))
     const { error } = await supabase.from(TABLE)
-      .upsert(rows, { onConflict: 'company_id,employee_id,work_date' })
+      .upsert(rows, { onConflict: 'company_id,employee_id,work_date,shift_id' })
     throwShiftError(error)
   }
 }

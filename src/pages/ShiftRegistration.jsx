@@ -66,14 +66,16 @@ function ShiftRegistration() {
 
   const myByDate = useMemo(() => {
     const map = {}
-    records.filter(record => record.employee_id === user.id).forEach(record => { map[record.work_date] = record })
+    records.filter(record => record.employee_id === user.id).forEach(record => {
+      map[record.work_date] = [...(map[record.work_date] || []), record]
+    })
     return map
   }, [records, user.id])
 
-  // Ô chọn ca mặc định theo dữ liệu đã đăng ký; người dùng chỉnh thì ghi đè.
+  // Giữ nhiều ca đã đăng ký cho từng ngày; ca đã duyệt luôn được giữ lại.
   useEffect(() => {
     const next = {}
-    days.forEach(({ date }) => { next[date] = myByDate[date]?.shift_id || '' })
+    days.forEach(({ date }) => { next[date] = (myByDate[date] || []).map(record => record.shift_id) })
     setSelections(next)
   }, [days, myByDate])
 
@@ -127,14 +129,15 @@ function ShiftRegistration() {
     const grouped = new Map()
     records.forEach(record => {
       if (query && !record.employee_name.toLocaleLowerCase('vi').includes(query)) return
-      if (!grouped.has(record.employee_id)) grouped.set(record.employee_id, { name: record.employee_name, byDate: {} })
-      grouped.get(record.employee_id).byDate[record.work_date] = record
+      if (!grouped.has(record.employee_id)) grouped.set(record.employee_id, { id: record.employee_id, name: record.employee_name, byDate: {} })
+      const row = grouped.get(record.employee_id)
+      row.byDate[record.work_date] = [...(row.byDate[record.work_date] || []), record]
     })
     return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'))
   }, [records, search])
 
   const pendingIds = useMemo(
-    () => employeeRows.flatMap(row => Object.values(row.byDate)).filter(record => record.status === 'pending').map(record => record.id),
+    () => employeeRows.flatMap(row => Object.values(row.byDate).flat()).filter(record => record.status === 'pending').map(record => record.id),
     [employeeRows]
   )
   const selectedPending = pendingIds.filter(id => selectedIds.has(id))
@@ -150,7 +153,7 @@ function ShiftRegistration() {
     <header className="shift-reg-header">
       <div>
         <h1>Đăng ký ca làm việc</h1>
-        <p>Chọn ca cho từng ngày trong tuần, gửi để HR duyệt.</p>
+        <p>Chọn một hoặc nhiều ca cho từng ngày trong tuần; ca đêm được tính theo ngày bắt đầu.</p>
       </div>
       <div className="shift-reg-week" role="group" aria-label="Chọn tuần">
         <button type="button" className="btn" onClick={() => changeWeek(-1)} aria-label="Tuần trước"><i className="fas fa-chevron-left" aria-hidden="true" /></button>
@@ -169,23 +172,41 @@ function ShiftRegistration() {
         <table>
           <thead><tr><th scope="col">Ngày</th><th scope="col">Ca đăng ký</th><th scope="col">Trạng thái</th></tr></thead>
           <tbody>{days.map(day => {
-            const existing = myByDate[day.date]
-            const locked = existing?.status === 'approved'
+            const existing = myByDate[day.date] || []
             return <tr key={day.date}>
               <td data-label="Ngày">{day.label} · {formatShortDate(day.date)}</td>
               <td data-label="Ca đăng ký">
-                <select
-                  value={selections[day.date] || ''}
-                  disabled={locked || loading}
-                  onChange={event => setSelections(current => ({ ...current, [day.date]: event.target.value }))}
-                  aria-label={`Ca ngày ${day.label} ${formatShortDate(day.date)}`}
-                >
-                  <option value="">— Chưa đăng ký —</option>
-                  {options.map(option => <option key={option.id} value={option.id}>{describeShift(option)}</option>)}
-                </select>
+                <div className="shift-reg-options" aria-label={`Ca ngày ${day.label} ${formatShortDate(day.date)}`}>
+                  {options.map(option => {
+                    const existingShift = (myByDate[day.date] || []).find(record => record.shift_id === option.id)
+                    const checked = (selections[day.date] || []).includes(option.id) || existingShift?.status === 'approved'
+                    const hasApprovedWorkShift = (myByDate[day.date] || []).some(record => record.status === 'approved' && record.shift_id !== 'off')
+                    const hasApprovedDayOff = (myByDate[day.date] || []).some(record => record.status === 'approved' && record.shift_id === 'off')
+                    return <label key={option.id} className="shift-reg-option">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={loading || existingShift?.status === 'approved' || (option.id === 'off' && hasApprovedWorkShift) || (option.id !== 'off' && hasApprovedDayOff)}
+                        onChange={event => setSelections(current => {
+                          const selected = new Set(current[day.date] || [])
+                          if (event.target.checked) {
+                            if (option.id === 'off') selected.clear()
+                            else selected.delete('off')
+                            selected.add(option.id)
+                          }
+                          else selected.delete(option.id)
+                          return { ...current, [day.date]: [...selected] }
+                        })}
+                      />
+                      <span>{describeShift(option)}</span>
+                      {existingShift && <span className={`shift-reg-status is-${existingShift.status}`}>{SHIFT_STATUS_LABELS[existingShift.status]}</span>}
+                    </label>
+                  })}
+                  {options.length === 0 && <span>Chưa có ca được cấu hình.</span>}
+                </div>
               </td>
-              <td data-label="Trạng thái">{existing
-                ? <span className={`shift-reg-status is-${existing.status}`}>{SHIFT_STATUS_LABELS[existing.status]}</span>
+              <td data-label="Trạng thái">{existing.length
+                ? <div className="shift-reg-status-list">{existing.map(record => <span key={record.id} className={`shift-reg-status is-${record.status}`}>{record.shift_name}: {SHIFT_STATUS_LABELS[record.status]}</span>)}</div>
                 : '—'}</td>
             </tr>
           })}</tbody>
@@ -224,20 +245,20 @@ function ShiftRegistration() {
             <th scope="col">Nhân sự</th>
             {days.map(day => <th key={day.date} scope="col">{day.label}<small>{formatShortDate(day.date)}</small></th>)}
           </tr></thead>
-          <tbody>{employeeRows.map(row => <tr key={row.name}>
+          <tbody>{employeeRows.map(row => <tr key={row.id}>
             <th scope="row">{row.name}</th>
             {days.map(day => {
-              const record = row.byDate[day.date]
-              return <td key={day.date} data-label={`${day.label} ${formatShortDate(day.date)}`}>{record ? <div className="shift-reg-cell">
+              const dateRecords = row.byDate[day.date] || []
+              return <td key={day.date} data-label={`${day.label} ${formatShortDate(day.date)}`}>{dateRecords.length ? dateRecords.map(record => <div className="shift-reg-cell" key={record.id}>
                 {record.status === 'pending' && <input
                   type="checkbox"
                   checked={selectedIds.has(record.id)}
                   onChange={() => toggleId(record.id)}
-                  aria-label={`Chọn ca ${row.name} ${day.label}`}
+                  aria-label={`Chọn ca ${row.name} ${record.shift_name} ${day.label}`}
                 />}
                 <span>{record.shift_name}</span>
                 <span className={`shift-reg-status is-${record.status}`}>{SHIFT_STATUS_LABELS[record.status]}</span>
-              </div> : '—'}</td>
+              </div>) : '—'}</td>
             })}
           </tr>)}</tbody>
         </table>

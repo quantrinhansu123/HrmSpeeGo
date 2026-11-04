@@ -95,6 +95,40 @@
   color: var(--text);
 }
 
+.oa-shift-select {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.oa-shift-select select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
+.oa-pair-history {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.oa-pair-history h3 { margin: 0 0 4px; color: var(--text); font-size: 0.95rem; }
+.oa-pair-history__row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 8px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; }
+.oa-pair-history__row strong { color: var(--text); }
+
 /* Dashboard Grid: Đồng hồ & Vị trí */
 .oa-dashboard-grid {
   display: grid;
@@ -274,6 +308,12 @@
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   color: #15803d;
+}
+
+.oa-alert-warning {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
 }
 
 /* Cột Check-in & Check-out */
