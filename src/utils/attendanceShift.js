@@ -287,6 +287,8 @@ const employeeIsSale = (employee, log) => {
 }
 
 export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) => {
+  employee = employee && typeof employee === 'object' ? employee : {}
+  log = log && typeof log === 'object' ? log : {}
   // A punch belongs to the shift explicitly stored with that attendance row.
   // In particular, the registered shift id must win over a role-based fallback.
   const logShiftId = configuredShiftFromName(log.shiftId, settings)
@@ -420,6 +422,7 @@ export const calculateAttendanceTiming = ({
   checkOut,
   attendanceSettings = {}
 } = {}) => {
+  log = log && typeof log === 'object' ? log : {}
   const shift = resolveAttendanceShift(employee, {
     ...log,
     vao: firstValue(checkIn, log.vao, log.checkIn)

@@ -22,6 +22,16 @@ test('uses the normal morning shift for a non-Sale employee', () => {
   assert.equal(result.earlyMinutes, 10)
 })
 
+test('calculates history timing when an admin has no employee profile for the log', () => {
+  const result = applyCalculatedAttendanceTiming(
+    { vao: '08:18', ra: '17:30', source: 'employee-online' },
+    null
+  )
+  assert.equal(result.shiftName, 'Ca Hành chính')
+  assert.equal(result.lateMinutes, 0)
+  assert.equal(result.earlyMinutes, 0)
+})
+
 test('uses 04:00-13:30 for an employee identified as Sale', () => {
   const result = calculateAttendanceTiming({
     employee: { department: 'Trang', position: 'Sale', shift: 'Ca ngày' },

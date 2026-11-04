@@ -59,7 +59,7 @@ const punchPairsForLog = log => Array.isArray(log?.punchPairs) && log.punchPairs
 
 const withAttendanceTiming = (log, employee, settings) => {
   const pairs = log?.punchPairs
-  if (!Array.isArray(pairs) || !pairs.length) return applyCalculatedAttendanceTiming(log, employee, settings)
+  if (!Array.isArray(pairs) || !pairs.length) return applyCalculatedAttendanceTiming(log, employee || {}, settings)
   const firstPunch = pairs.find(pair => pair.checkIn)
   const lastPunch = [...pairs].reverse().find(pair => pair.checkOut)
   const valueOrFallback = (pair, field, fallback) => pair?.[field] !== null && pair?.[field] !== undefined && pair?.[field] !== ''
