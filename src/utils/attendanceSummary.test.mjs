@@ -47,6 +47,40 @@ test('keeps an unmatched source employee and recalculates punches by actual minu
   assert.equal(rows[0].workdays, 1)
   assert.equal(rows[0].days.get('2026-08-01').hours, 8)
 })
+
+test('selects the nearest configured shift and recalculates work for 05:55 and 08:18 punches', () => {
+  const attendanceSettings = {
+    standardWorkMinutes: 480,
+    shifts: {
+      administrative: { name: 'Ca 6h', standardCheckIn: '06:00', standardCheckOut: '14:00' },
+      saleMorning: { name: 'Ca 4h', standardCheckIn: '04:00', standardCheckOut: '13:30' }
+    }
+  }
+  const rows = buildAttendanceSummary({
+    attendanceLogs: [
+      { employeeId: 'early', date: '2026-08-02', vao: '05:55', ra: '14:00' },
+      { employeeId: 'late', date: '2026-08-02', vao: '08:18', ra: '14:00' }
+    ],
+    employees: [
+      { id: 'early', position: 'Sale', shift: 'Ca ngày' },
+      { id: 'late', position: 'Sale', shift: 'Ca ngày' }
+    ],
+    month: '2026-08',
+    attendanceSettings
+  })
+  const early = rows.find(row => row.employeeId === 'early').days.get('2026-08-02')
+  const late = rows.find(row => row.employeeId === 'late').days.get('2026-08-02')
+
+  assert.equal(early.standardCheckIn, '06:00')
+  assert.equal(early.lateMinutes, 0)
+  assert.equal(early.hours, 8)
+  assert.equal(early.workdays, 1)
+  assert.equal(late.standardCheckIn, '06:00')
+  assert.equal(late.lateMinutes, 138)
+  assert.equal(late.hours, 5.7)
+  assert.equal(late.workdays, 0.71)
+})
+
 test('recalculates the late report from actual punches and each employee shift', () => {
   const employees = [
     { id: 'normal', name: 'Nhân viên thường', position: 'HR', shift: 'Ca ngày' },

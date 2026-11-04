@@ -177,6 +177,25 @@ const shiftFromConfiguration = (shift, settings) => {
     : null
 }
 
+const nearestConfiguredShift = (checkIn, settings) => {
+  const checkInMinutes = attendanceTimeToMinutes(checkIn)
+  if (checkInMinutes === null) return null
+
+  const configured = normalizeAttendanceShiftSettings(settings).shifts
+  const nearest = Object.values(configured)
+    .map(shift => {
+      const startMinutes = attendanceTimeToMinutes(shift.standardCheckIn)
+      return {
+        shift,
+        distance: startMinutes === null ? Infinity : Math.abs(checkInMinutes - startMinutes)
+      }
+    })
+    .filter(item => Number.isFinite(item.distance))
+    .sort((left, right) => left.distance - right.distance)[0]
+
+  return nearest ? shiftFromConfiguration(nearest.shift.id, settings) : null
+}
+
 const configuredShiftFromName = (value, settings) => {
   const normalizedName = normalizeString(value)
   if (!normalizedName) return null
@@ -264,18 +283,15 @@ const employeeIsSale = (employee, log) => {
 
   if (!isSaleRole) return false
 
-  const checkIn = firstValue(log?.vao, log?.checkIn)
-  if (checkIn) {
-    const mins = attendanceTimeToMinutes(checkIn)
-    if (mins !== null && mins >= 6 * 60 + 30) {
-      return false
-    }
-  }
-
   return true
 }
 
 export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) => {
+  // A punch belongs to the shift explicitly stored with that attendance row.
+  // In particular, the registered shift id must win over a role-based fallback.
+  const logShiftId = configuredShiftFromName(log.shiftId, settings)
+  if (logShiftId) return logShiftId
+
   const employeeStart = normalizeTime(firstValue(
     employee.standardCheckIn,
     employee.shiftStart,
@@ -340,22 +356,25 @@ export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) =
     }, name, settings)
   }
 
+  const logConfiguredShift = [log.shiftName, log.tenCa]
+    .map(value => configuredShiftFromName(value, settings))
+    .find(Boolean)
+  if (logConfiguredShift) return logConfiguredShift
+
+  // Legacy profiles often say "Ca full/Ca ngày" even when the team has several
+  // starts. For Sale employees, use the closest configured start to the punch;
+  // without a punch, keep the existing role fallback.
+  if (employeeIsSale(employee, log)) {
+    const nearestShift = nearestConfiguredShift(firstValue(log.vao, log.checkIn), settings)
+    if (nearestShift) return nearestShift
+    return configuredShiftFromName('Ca Sáng Sale', settings) || SALE_ATTENDANCE_SHIFT
+  }
+
   const employeeConfiguredShift = configuredShiftFromName(
     firstValue(...employeeShiftFields(employee)),
     settings
   )
-  const logConfiguredShift = configuredShiftFromName(
-    firstValue(log.shiftName, log.tenCa),
-    settings
-  )
-
-  // Dữ liệu cũ thường gán "Ca full/Ca ngày" cho mọi người; bộ phận Sale vẫn phải
-  // dùng ca Sale. Tên ca Sale rõ ràng trong hồ sơ hoặc log luôn được nhận diện.
-  if (employeeIsSale(employee, log)) {
-    return configuredShiftFromName('Ca Sáng Sale', settings) || SALE_ATTENDANCE_SHIFT
-  }
   if (employeeConfiguredShift) return employeeConfiguredShift
-  if (logConfiguredShift) return logConfiguredShift
 
   return shiftFromConfiguration(ATTENDANCE_SHIFT_IDS.ADMINISTRATIVE, settings) || DEFAULT_ATTENDANCE_SHIFT
 }
@@ -401,7 +420,10 @@ export const calculateAttendanceTiming = ({
   checkOut,
   attendanceSettings = {}
 } = {}) => {
-  const shift = resolveAttendanceShift(employee, log, attendanceSettings)
+  const shift = resolveAttendanceShift(employee, {
+    ...log,
+    vao: firstValue(checkIn, log.vao, log.checkIn)
+  }, attendanceSettings)
   const actualCheckIn = firstValue(checkIn, log.vao, log.checkIn)
   const actualCheckOut = firstValue(checkOut, log.ra, log.checkOut)
   const checkInMinutes = attendanceTimeToMinutes(actualCheckIn)

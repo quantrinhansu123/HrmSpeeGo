@@ -188,7 +188,7 @@ button, input, select, textarea {
   .container--approvals .main {
     padding: 0;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: auto;
   }
 
   .container--employee {
@@ -198,7 +198,7 @@ button, input, select, textarea {
   .container--employee .main {
     padding: 12px 12px 24px;
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: auto;
   }
 }
 
@@ -514,9 +514,19 @@ button, input, select, textarea {
 /* Main Content */
 .main {
   flex: 1;
+  min-width: 0;
   padding: 24px 28px;
+  overflow-x: auto;
   overflow-y: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
 }
+
+.main::-webkit-scrollbar { height: 10px; }
+.main::-webkit-scrollbar-track { background: #e2e8f0; }
+.main::-webkit-scrollbar-thumb { border-radius: 999px; background: #94a3b8; }
+.main::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
 .page-header {
   display: flex;
@@ -2199,7 +2209,7 @@ tr:hover {
     max-width: 100%;
     min-width: 0;
     padding: 12px 12px 28px;
-    overflow-x: hidden;
+    overflow-x: auto;
   }
 
   .app-shell:has(.employees-page) .header {

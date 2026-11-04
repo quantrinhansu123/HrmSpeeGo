@@ -98,6 +98,42 @@ test('prefers an explicit time range stored in the employee shift', () => {
   )
 })
 
+test('assigns Sale punches to the closest configured shift at 05:55 and 08:18', () => {
+  const attendanceSettings = normalizeAttendanceShiftSettings({
+    shifts: {
+      administrative: {
+        name: 'Ca 6h',
+        standardCheckIn: '06:00',
+        standardCheckOut: '14:00'
+      },
+      saleMorning: {
+        name: 'Ca 4h',
+        standardCheckIn: '04:00',
+        standardCheckOut: '13:30'
+      }
+    }
+  })
+  const employee = { position: 'Sale', shift: 'Ca ngày' }
+  const early = calculateAttendanceTiming({ employee, checkIn: '05:55', attendanceSettings })
+  const later = calculateAttendanceTiming({ employee, checkIn: '08:18', attendanceSettings })
+
+  assert.equal(early.shift.start, '06:00')
+  assert.equal(early.lateMinutes, 0)
+  assert.equal(later.shift.start, '06:00')
+  assert.equal(later.lateMinutes, 138)
+})
+
+test('uses the shift id stored on the attendance row before the employee fallback', () => {
+  const result = calculateAttendanceTiming({
+    employee: { shift: 'Ca Hành chính', position: 'HR' },
+    log: { shiftId: 'saleMorning' },
+    checkIn: '08:18'
+  })
+
+  assert.equal(result.shift.start, '04:00')
+  assert.equal(result.lateMinutes, 258)
+})
+
 test('keeps actual punch strings while replacing incorrect source penalties', () => {
   const log = applyCalculatedAttendanceTiming({
     vao: '04:02',
