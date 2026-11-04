@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceByEmployee } from '../services/firebase'
+import { loadAttendanceCorrectionRequests, submitAttendanceCorrection } from '../services/attendanceCorrections'
 import { buildAttendanceSummary } from '../utils/attendanceSummary'
 import {
   applyCalculatedAttendanceTiming,
@@ -16,6 +17,8 @@ const decimalValue = value => value === null || value === undefined || value ===
 const timeValue = value => {
   return formatAttendanceTime(value) || '—'
 }
+const requestStatusLabels = { pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Đã từ chối' }
+const requestTimeLabel = value => value === '' ? 'Xóa mốc chấm công' : timeValue(value)
 
 function MyAttendance() {
   const { user } = useAuth()
@@ -25,6 +28,12 @@ function MyAttendance() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [correctionRequests, setCorrectionRequests] = useState([])
+  const [correctionError, setCorrectionError] = useState('')
+  const [selectedCorrection, setSelectedCorrection] = useState(null)
+  const [correctionForm, setCorrectionForm] = useState({ checkIn: '', checkOut: '', reason: '' })
+  const [correctionNotice, setCorrectionNotice] = useState('')
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -45,6 +54,16 @@ function MyAttendance() {
     }).finally(() => {
       if (active) setLoading(false)
     })
+    loadAttendanceCorrectionRequests()
+      .then(requests => {
+        if (active) {
+          setCorrectionRequests(requests)
+          setCorrectionError('')
+        }
+      })
+      .catch(requestError => {
+        if (active) setCorrectionError(requestError?.message || 'Không thể tải yêu cầu điều chỉnh công.')
+      })
     return () => { active = false }
   }, [employeeId])
 
@@ -60,11 +79,63 @@ function MyAttendance() {
     .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [attendanceSettings, logs, month, user])
   const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, employeeId, logs, month, user])
 
+  const openCorrectionForm = log => {
+    setSelectedCorrection(log)
+    setCorrectionForm({
+      checkIn: formatAttendanceTime(log?.vao || log?.checkIn) || '',
+      checkOut: formatAttendanceTime(log?.ra || log?.checkOut) || '',
+      reason: ''
+    })
+    setCorrectionNotice('')
+  }
+
+  const submitCorrection = async event => {
+    event.preventDefault()
+    if (!selectedCorrection || correctionSubmitting) return
+    const originalCheckIn = formatAttendanceTime(selectedCorrection.vao || selectedCorrection.checkIn) || ''
+    const originalCheckOut = formatAttendanceTime(selectedCorrection.ra || selectedCorrection.checkOut) || ''
+    const requestedCheckIn = correctionForm.checkIn === originalCheckIn ? null : correctionForm.checkIn
+    const requestedCheckOut = correctionForm.checkOut === originalCheckOut ? null : correctionForm.checkOut
+    if (requestedCheckIn === null && requestedCheckOut === null) {
+      setCorrectionNotice('Hãy thay đổi giờ vào hoặc giờ ra trước khi gửi yêu cầu.')
+      return
+    }
+
+    setCorrectionSubmitting(true)
+    setCorrectionNotice('')
+    try {
+      await submitAttendanceCorrection({
+        date: dateValue(selectedCorrection),
+        attendanceLogId: selectedCorrection.id,
+        checkIn: requestedCheckIn,
+        checkOut: requestedCheckOut,
+        reason: correctionForm.reason
+      })
+      setSelectedCorrection(null)
+      setCorrectionNotice('Yêu cầu đã gửi. Bảng công sẽ cập nhật sau khi được HR hoặc quản lý duyệt.')
+      try {
+        setCorrectionRequests(await loadAttendanceCorrectionRequests())
+        setCorrectionError('')
+      } catch (loadError) {
+        setCorrectionError(loadError?.message || 'Yêu cầu đã gửi nhưng không tải lại được trạng thái.')
+      }
+    } catch (requestError) {
+      setCorrectionNotice(requestError?.message || 'Không gửi được yêu cầu điều chỉnh công.')
+    } finally {
+      setCorrectionSubmitting(false)
+    }
+  }
+
+  const hasPendingCorrection = logId => correctionRequests.some(request =>
+    request.attendanceLogId === logId && request.status === 'pending'
+  )
+  const reviewRole = ['admin', 'hr', 'manager'].includes(String(user?.role || '').toLowerCase())
+
   return (
     <div className="my-attendance">
       <div className="page-header my-attendance__header">
         <div><h1 className="page-title"><i className="fas fa-calendar-check"></i>Bảng công</h1><p>Thông tin chấm công của {user.ho_va_ten || user.email}</p></div>
-        <div className="my-attendance__header-actions"><Link className="btn" to="/cham-cong-online">Chấm công online</Link><label><span>Tháng</span><select value={month} onChange={event => setMonth(event.target.value)}>{months.length === 0 && <option>{month}</option>}{months.map(value => <option key={value}>{value}</option>)}</select></label></div>
+        <div className="my-attendance__header-actions"><Link className="btn" to="/cham-cong-online">Chấm công online</Link>{reviewRole && <Link className="btn my-attendance__review-link" to="/yeu-cau-dieu-chinh-cong">Duyệt điều chỉnh công</Link>}<label><span>Tháng</span><select value={month} onChange={event => setMonth(event.target.value)}>{months.length === 0 && <option>{month}</option>}{months.map(value => <option key={value}>{value}</option>)}</select></label></div>
       </div>
       <section className="my-attendance__identity card">
         <div><span>Mã nhân viên</span><strong>{user.employeeId || '—'}</strong></div><div><span>Họ tên</span><strong>{user.ho_va_ten || '—'}</strong></div><div><span>Phòng ban</span><strong>{user.bo_phan || '—'}</strong></div><div><span>Chức vụ</span><strong>{user.vi_tri || '—'}</strong></div>
@@ -94,11 +165,12 @@ function MyAttendance() {
             </table>
           </div>
         </section>
-        <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Time (Check-in)</th><th>TimeCheckout</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th></tr></thead><tbody>
+        <section className="card my-attendance__table-card"><h3>Chi tiết chấm công</h3><div className="my-attendance__table-wrap"><table><thead><tr><th>Ngày</th><th>Thứ</th><th>Time (Check-in)</th><th>TimeCheckout</th><th>Công</th><th>Giờ</th><th>Đi muộn</th><th>Về sớm</th><th>Ký hiệu</th><th>Điều chỉnh</th></tr></thead><tbody>
           {monthLogs.length ? monthLogs.map(log => {
             const date = dateValue(log), hours = numberValue(log.tongGio ?? (numberValue(log.hours ?? log.soGio ?? log.gio) + numberValue(log.gioPlus)))
-            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{decimalValue(log.cong)}</td><td>{decimalValue(hours)}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td></tr>
-          }) : <tr><td colSpan="9" className="my-attendance__empty">Không có dữ liệu trong tháng này.</td></tr>}
+            const pending = hasPendingCorrection(log.id)
+            return <tr key={log.id}><td>{date ? new Date(`${date}T00:00:00`).toLocaleDateString('vi-VN') : '—'}</td><td>{log.dayOfWeek || log.thu || '—'}</td><td>{timeValue(log.vao || log.checkIn)}</td><td>{timeValue(log.ra || log.checkOut)}</td><td>{decimalValue(log.cong)}</td><td>{decimalValue(hours)}</td><td className={numberValue(log.lateMinutes ?? log.vaoTre) > 0 ? 'is-warning' : ''}>{numberValue(log.lateMinutes ?? log.vaoTre) || '—'}</td><td className={numberValue(log.earlyMinutes ?? log.raSom) > 0 ? 'is-warning' : ''}>{numberValue(log.earlyMinutes ?? log.raSom) || '—'}</td><td>{log.kyHieu || log.status || '—'}</td><td><button type="button" className="my-attendance__request-button" disabled={pending} onClick={() => openCorrectionForm(log)}>{pending ? 'Đang chờ duyệt' : 'Yêu cầu sửa'}</button></td></tr>
+          }) : <tr><td colSpan="10" className="my-attendance__empty">Không có dữ liệu trong tháng này.</td></tr>}
         </tbody></table></div>
         <div className="my-attendance__mobile-list">
           {monthLogs.length ? monthLogs.map(log => {
@@ -112,6 +184,7 @@ function MyAttendance() {
                 <div><span>Công</span><strong>{decimalValue(log.cong)}</strong></div>
                 <div><span>Giờ</span><strong>{decimalValue(hours)}</strong></div>
               </div>
+              <button type="button" className="my-attendance__request-button" disabled={hasPendingCorrection(log.id)} onClick={() => openCorrectionForm(log)}>{hasPendingCorrection(log.id) ? 'Yêu cầu đang chờ duyệt' : 'Báo chấm công sai hoặc quên chấm ra'}</button>
               {(numberValue(log.lateMinutes ?? log.vaoTre) > 0 || numberValue(log.earlyMinutes ?? log.raSom) > 0) && (
                 <p className="my-attendance__mobile-day-warning">
                   {numberValue(log.lateMinutes ?? log.vaoTre) > 0 && `Đi muộn ${numberValue(log.lateMinutes ?? log.vaoTre)} phút`}
@@ -122,7 +195,32 @@ function MyAttendance() {
             </article>
           }) : <p className="my-attendance__mobile-empty">Không có dữ liệu trong tháng này.</p>}
         </div></section>
+        <section className="card my-attendance__requests-card">
+          <div className="my-attendance__requests-heading"><div><h3>Yêu cầu điều chỉnh công</h3><p>HR hoặc quản lý sẽ xem xét trước khi cập nhật bảng công.</p></div>{reviewRole && <Link to="/yeu-cau-dieu-chinh-cong">Mở hàng chờ duyệt</Link>}</div>
+          {correctionError && <p className="my-attendance__correction-error" role="alert">{correctionError}</p>}
+          {correctionNotice && !selectedCorrection && <p className="my-attendance__correction-notice" role="status">{correctionNotice}</p>}
+          {correctionRequests.length ? <div className="my-attendance__requests-list">{correctionRequests.slice(0, 8).map(request => (
+            <article key={request.id} className="my-attendance__request-row">
+              <div><strong>{new Date(`${request.date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span>Vào: {request.requestedCheckIn !== null && request.requestedCheckIn !== undefined ? requestTimeLabel(request.requestedCheckIn) : timeValue(request.originalCheckIn)} · Ra: {request.requestedCheckOut !== null && request.requestedCheckOut !== undefined ? requestTimeLabel(request.requestedCheckOut) : timeValue(request.originalCheckOut)}</span></div>
+              <span className={`my-attendance__request-status is-${request.status}`}>{requestStatusLabels[request.status] || request.status}</span>
+              {request.comment && <small>Phản hồi: {request.comment}</small>}
+            </article>
+          ))}</div> : !correctionError ? <p className="my-attendance__requests-empty">Bạn chưa gửi yêu cầu điều chỉnh nào.</p> : null}
+        </section>
       </>}
+      {selectedCorrection && <div className="my-attendance__modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !correctionSubmitting) setSelectedCorrection(null) }}>
+        <section className="my-attendance__correction-modal" role="dialog" aria-modal="true" aria-labelledby="my-attendance-correction-title">
+          <div className="my-attendance__correction-modal-head"><div><h2 id="my-attendance-correction-title">Yêu cầu điều chỉnh chấm công</h2><p>{new Date(`${dateValue(selectedCorrection)}T00:00:00`).toLocaleDateString('vi-VN')}</p></div><button type="button" aria-label="Đóng" disabled={correctionSubmitting} onClick={() => setSelectedCorrection(null)}>×</button></div>
+          <form onSubmit={submitCorrection}>
+            <p className="my-attendance__correction-help">Nhập giờ chấm công đúng. Để xóa một mốc bị ghi nhầm, hãy xóa nội dung ô tương ứng.</p>
+            <label>Giờ vào<input type="time" value={correctionForm.checkIn} onChange={event => setCorrectionForm(current => ({ ...current, checkIn: event.target.value }))} /></label>
+            <label>Giờ ra<input type="time" value={correctionForm.checkOut} onChange={event => setCorrectionForm(current => ({ ...current, checkOut: event.target.value }))} /><small>Nếu quên chấm công khi kết thúc ca, nhập giờ ra thực tế tại đây.</small></label>
+            <label>Lý do<textarea required minLength="5" maxLength="1000" rows="3" value={correctionForm.reason} onChange={event => setCorrectionForm(current => ({ ...current, reason: event.target.value }))} placeholder="Ví dụ: Tôi đã kết thúc ca lúc 17:35 nhưng quên bấm chấm công ra." /></label>
+            {correctionNotice && <p className="my-attendance__correction-error" role="alert">{correctionNotice}</p>}
+            <div className="my-attendance__correction-actions"><button type="button" disabled={correctionSubmitting} onClick={() => setSelectedCorrection(null)}>Hủy</button><button type="submit" disabled={correctionSubmitting}>{correctionSubmitting ? 'Đang gửi…' : 'Gửi yêu cầu duyệt'}</button></div>
+          </form>
+        </section>
+      </div>}
     </div>
   )
 }

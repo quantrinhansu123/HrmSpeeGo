@@ -7,6 +7,7 @@ import { CORE_STAFF_ROLES } from './utils/staffAccess'
 
 const AttendancePreview = lazy(() => import('./pages/AttendancePreview'))
 const AttendancePenalties = lazy(() => import('./pages/AttendancePenalties'))
+const AttendanceCorrections = lazy(() => import('./pages/AttendanceCorrections'))
 const Approvals = lazy(() => import('./pages/Approvals'))
 const EmployeeLogin = lazy(() => import('./pages/EmployeeLogin'))
 const Employees = lazy(() => import('./pages/Employees'))
@@ -60,6 +61,7 @@ function App() {
               <Route path="/" element={<Navigate to="/employees" replace />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/bang-phep" element={<ProtectedRoute allowedRoles={['admin', 'hr']}><LeaveBoard /></ProtectedRoute>} />
+              <Route path="/yeu-cau-dieu-chinh-cong" element={<ProtectedRoute allowedRoles={['admin', 'hr', 'manager']}><AttendanceCorrections /></ProtectedRoute>} />
               <Route path="/bang-phat" element={<AttendancePenalties />} />
               <Route path="/recruitment" element={<Recruitment />} />
               <Route path="/giay-to-cong-ty" element={<CompanyDocuments />} />

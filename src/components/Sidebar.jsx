@@ -12,6 +12,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
 
   const primaryStaffItems = [
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
+    ...(['admin', 'hr', 'manager'].includes(String(user?.role || '').toLowerCase()) ? [{ path: '/yeu-cau-dieu-chinh-cong', icon: 'fas fa-clock-rotate-left', label: 'Duyệt điều chỉnh công' }] : []),
     { path: '/employees', icon: 'fas fa-users', label: 'Hồ sơ nhân sự' },
     { path: '/giay-to-cong-ty', icon: 'fas fa-folder-open', label: 'Giấy tờ công ty' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },

@@ -69,6 +69,8 @@ Chạy [`migrations/20261004082000_team_leader_title_match.sql`](./migrations/20
 
 Chạy [`migrations/20261003130000_approval_monthly_leave_limit.sql`](./migrations/20261003130000_approval_monthly_leave_limit.sql) để hiển thị số lượt sử dụng phép năm trong tháng và giới hạn tối đa 2 lần/tháng cho đề xuất nghỉ phép.
 
+Chạy [`migrations/20261104100000_attendance_punch_corrections.sql`](./migrations/20261104100000_attendance_punch_corrections.sql) để bật yêu cầu điều chỉnh giờ vào/ra: nhân viên gửi yêu cầu từ **Bảng công cá nhân**, HR/quản lý duyệt tại **Duyệt điều chỉnh công**. Giờ chấm công chỉ được cập nhật sau khi duyệt.
+
 ## Tài khoản mặc định
 - Email: `admin@company.local`
 - Password: `123456`
