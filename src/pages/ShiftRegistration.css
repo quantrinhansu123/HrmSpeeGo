@@ -9,6 +9,12 @@
 .shift-reg-message.is-success { color: #166534; background: #dcfce7; }
 .shift-reg-card { display: grid; gap: 16px; min-width: 0; padding: 20px; border: 1px solid #dbe5f0; border-radius: 12px; background: #fff; }
 .shift-reg-card h2 { margin: 0; color: #0f3f78; font-size: 20px; }
+.shift-reg-assignment p { margin: 6px 0 0; color: #64748b; }
+.shift-reg-assignment__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.shift-reg-assignment__fields label { display: grid; gap: 6px; min-width: 0; color: #334155; font-weight: 600; }
+.shift-reg-assignment__fields input, .shift-reg-assignment__fields select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font: inherit; }
+.shift-reg-assignment__options { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.shift-reg-assignment__options .shift-reg-option { min-height: 36px; }
 .shift-reg-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; }
 .shift-reg-table-wrap table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .shift-reg-table-wrap th,
@@ -37,6 +43,7 @@
 .shift-reg-status.is-approved { color: #166534; background: #dcfce7; }
 .shift-reg-status.is-rejected { color: #991b1b; background: #fee2e2; }
 @media (max-width: 760px) {
+  .shift-reg-assignment__fields { grid-template-columns: 1fr; }
   .shift-reg-week { width: 100%; justify-content: space-between; }
   .shift-reg-week strong { min-width: 0; }
   .shift-reg-card { padding: 14px; }

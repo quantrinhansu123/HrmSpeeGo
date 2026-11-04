@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet } from '../services/firebase'
-import { decideShiftRegistrations, loadShiftRegistrations, saveShiftRegistrations } from '../services/shiftRegistrations'
+import { fetchUsersDirectory } from '../services/employeeDirectory'
+import { assignEmployeeShifts, decideShiftRegistrations, loadShiftRegistrations, saveShiftRegistrations } from '../services/shiftRegistrations'
 import { getCompanyIdForUser } from '../utils/companyContext'
 import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
 import {
@@ -22,6 +23,7 @@ function ShiftRegistration() {
   const { user } = useAuth()
   const companyId = user?.company_id || user?.companyId || getCompanyIdForUser(user)
   const canApprove = user?.role === 'admin' || user?.role === 'hr'
+  const canAssign = user?.role === 'admin'
   const [weekStart, setWeekStart] = useState(() => weekStartKey(toDateKey(new Date())))
   const [options, setOptions] = useState(() => buildShiftOptions(normalizeAttendanceShiftSettings()))
   const [records, setRecords] = useState([])
@@ -31,10 +33,30 @@ function ShiftRegistration() {
   const [saving, setSaving] = useState(false)
   const [deciding, setDeciding] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [employees, setEmployees] = useState([])
+  const [employeeSearch, setEmployeeSearch] = useState('')
+  const [assignmentEmployeeId, setAssignmentEmployeeId] = useState('')
+  const [assignmentDate, setAssignmentDate] = useState('')
+  const [assignmentShiftIds, setAssignmentShiftIds] = useState([])
+  const [assigning, setAssigning] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
   const days = useMemo(() => weekDays(weekStart), [weekStart])
+
+  useEffect(() => {
+    if (!canAssign) return
+    fetchUsersDirectory()
+      .then(rows => setEmployees((rows || []).filter(row => row.id && row.name)
+        .sort((left, right) => left.name.localeCompare(right.name, 'vi'))))
+      .catch(requestError => setError(requestError.message || 'Không tải được danh sách nhân viên.'))
+  }, [canAssign])
+
+  useEffect(() => {
+    const today = toDateKey(new Date())
+    setAssignmentDate(current => days.some(day => day.date === current)
+      ? current : days.find(day => day.date === today)?.date || days[0]?.date || '')
+  }, [days])
 
   useEffect(() => {
     fbGet('hr/attendanceSettings/default')
@@ -142,6 +164,42 @@ function ShiftRegistration() {
   )
   const selectedPending = pendingIds.filter(id => selectedIds.has(id))
 
+  const assignmentRecords = useMemo(() => records.filter(record =>
+    record.employee_id === assignmentEmployeeId && record.work_date === assignmentDate
+  ), [records, assignmentEmployeeId, assignmentDate])
+  const approvedShiftIds = useMemo(() => assignmentRecords
+    .filter(record => record.status === 'approved')
+    .map(record => record.shift_id), [assignmentRecords])
+  useEffect(() => { setAssignmentShiftIds(approvedShiftIds) }, [approvedShiftIds])
+  const visibleEmployees = useMemo(() => {
+    const query = employeeSearch.trim().toLocaleLowerCase('vi')
+    return query ? employees.filter(employee =>
+      `${employee.name} ${employee.employee_id || ''}`.toLocaleLowerCase('vi').includes(query)
+    ) : employees
+  }, [employees, employeeSearch])
+  const newAssignmentShiftIds = assignmentShiftIds.filter(id => !approvedShiftIds.includes(id))
+
+  const assign = async event => {
+    event.preventDefault()
+    if (assigning || !newAssignmentShiftIds.length) return
+    setAssigning(true)
+    setError('')
+    setNotice('')
+    try {
+      await assignEmployeeShifts({
+        employeeId: assignmentEmployeeId,
+        workDate: assignmentDate,
+        shiftIds: newAssignmentShiftIds
+      })
+      setNotice(`Đã gán và duyệt ${newAssignmentShiftIds.length} ca cho ${employees.find(employee => employee.id === assignmentEmployeeId)?.name || 'nhân viên'}.`)
+      await reload()
+    } catch (requestError) {
+      setError(requestError.message || 'Không gán được ca cho nhân viên.')
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   const toggleId = id => setSelectedIds(current => {
     const next = new Set(current)
     if (next.has(id)) next.delete(id)
@@ -218,6 +276,56 @@ function ShiftRegistration() {
         </button>
       </div>
     </form>
+
+    {canAssign && <form className="shift-reg-card shift-reg-assignment" onSubmit={assign}>
+      <div><h2>Admin gán ca cho nhân viên</h2><p>Ca được duyệt ngay sau khi gán.</p></div>
+      <div className="shift-reg-assignment__fields">
+        <label>Tìm nhân viên
+          <input type="search" value={employeeSearch} onChange={event => setEmployeeSearch(event.target.value)} placeholder="Tên hoặc mã nhân viên" />
+        </label>
+        <label>Nhân viên
+          <select required value={assignmentEmployeeId} onChange={event => setAssignmentEmployeeId(event.target.value)}>
+            <option value="">Chọn nhân viên</option>
+            {visibleEmployees.map(employee => <option key={employee.id} value={employee.id}>{employee.name}{employee.employee_id ? ` · ${employee.employee_id}` : ''}</option>)}
+            {assignmentEmployeeId && !visibleEmployees.some(employee => employee.id === assignmentEmployeeId) &&
+              <option value={assignmentEmployeeId}>{employees.find(employee => employee.id === assignmentEmployeeId)?.name || 'Nhân viên đã chọn'}</option>}
+          </select>
+        </label>
+        <label>Ngày trong tuần đang xem
+          <select required value={assignmentDate} onChange={event => setAssignmentDate(event.target.value)}>
+            {days.map(day => <option key={day.date} value={day.date}>{day.label} · {formatShortDate(day.date)}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="shift-reg-assignment__options">
+        {options.map(option => {
+          const approved = approvedShiftIds.includes(option.id)
+          const hasApprovedWork = approvedShiftIds.some(id => id !== 'off')
+          const hasApprovedOff = approvedShiftIds.includes('off')
+          return <label key={option.id} className="shift-reg-option">
+            <input type="checkbox" checked={assignmentShiftIds.includes(option.id)}
+              disabled={!assignmentEmployeeId || approved || (option.id === 'off' && hasApprovedWork) || (option.id !== 'off' && hasApprovedOff)}
+              onChange={event => setAssignmentShiftIds(current => {
+                const next = new Set(current)
+                if (event.target.checked) {
+                  if (option.id === 'off') next.clear()
+                  else next.delete('off')
+                  next.add(option.id)
+                } else next.delete(option.id)
+                return [...next]
+              })} />
+            <span>{describeShift(option)}</span>
+            {approved && <span className="shift-reg-status is-approved">Đã duyệt</span>}
+            {!approved && assignmentRecords.some(record => record.shift_id === option.id && record.status === 'pending') &&
+              <span className="shift-reg-status is-pending">Chờ duyệt</span>}
+          </label>
+        })}
+      </div>
+      <div className="shift-reg-actions"><button type="submit" className="btn btn-primary"
+        disabled={assigning || loading || !assignmentEmployeeId || !assignmentDate || !newAssignmentShiftIds.length}>
+        {assigning ? 'Đang gán...' : 'Gán và duyệt ca'}
+      </button></div>
+    </form>}
 
     {canApprove && <section className="shift-reg-card">
       <div className="shift-reg-list-head">

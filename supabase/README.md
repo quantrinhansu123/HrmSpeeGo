@@ -77,6 +77,8 @@ Sau đó chạy [`migrations/20261104130000_multi_punch_correction_support.sql`]
 
 Chạy tiếp [`migrations/20261104140000_online_attendance_account_login.sql`](./migrations/20261104140000_online_attendance_account_login.sql) để chấm công online hoạt động với tài khoản đăng nhập nội bộ và liên kết bản ghi với hồ sơ nhân viên. Sau đó chạy [`migrations/20261104150000_attendance_pair_corrections.sql`](./migrations/20261104150000_attendance_pair_corrections.sql) để sửa đúng từng lượt chấm trong ca sau khi HR duyệt.
 
+Chạy [`migrations/20261104160000_admin_assign_employee_shifts.sql`](./migrations/20261104160000_admin_assign_employee_shifts.sql) để admin gán một hoặc nhiều ca trực tiếp cho nhân viên trên trang **Đăng ký ca**; ca được duyệt ngay.
+
 ## Tài khoản mặc định
 - Email: `admin@company.local`
 - Password: `123456`

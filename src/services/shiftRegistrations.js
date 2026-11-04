@@ -59,3 +59,19 @@ export const decideShiftRegistrations = async ({ companyId, ids, status }) => {
   throwShiftError(error)
   return data || []
 }
+
+export const assignEmployeeShifts = async ({ employeeId, workDate, shiftIds }) => {
+  if (!employeeId || !workDate || !shiftIds?.length) {
+    throw new Error('Hãy chọn nhân viên, ngày và ít nhất một ca.')
+  }
+  const { data, error } = await supabase.rpc('admin_assign_employee_shifts', {
+    p_employee_id: employeeId,
+    p_work_date: workDate,
+    p_shift_ids: shiftIds
+  })
+  if (error?.code === 'PGRST202' || error?.code === '42883') {
+    throw new Error('Chưa bật chức năng admin gán ca. Hãy chạy migration 20261104160000_admin_assign_employee_shifts.sql.')
+  }
+  throwShiftError(error)
+  return data || []
+}
