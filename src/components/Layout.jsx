@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { isAccountingUser, isCoreStaffUser } from '../utils/staffAccess'
 import Header from './Header'
 import Sidebar from './Sidebar'
+import TopHorizontalScrollbar from './TopHorizontalScrollbar'
 
 function Layout({ children }) {
   const location = useLocation()
@@ -13,6 +14,7 @@ function Layout({ children }) {
   const isImmersive = location.pathname.startsWith('/approvals')
   const isEmployee = ['/bang-cong', '/cham-cong-online', '/lich-su-cham-cong', '/ngay-nghi-phep'].includes(location.pathname)
   const [menuOpen, setMenuOpen] = useState(false)
+  const mainRef = useRef(null)
   const navigate = useNavigate()
   const isStaff = isCoreStaffUser(user)
   const isPersonalAttendance = String(user?.role || '').toLowerCase() === 'user' && !isAccountingUser(user)
@@ -70,7 +72,8 @@ function Layout({ children }) {
       />
       <div className={`container${isImmersive ? ' container--immersive container--approvals' : ''}${isEmployee ? ' container--employee' : ''}`}>
         <Sidebar open={menuOpen} onNavigate={() => setMenuOpen(false)} />
-        <main className="main">
+        <main className="main" ref={mainRef}>
+          <TopHorizontalScrollbar containerRef={mainRef} />
           {children}
         </main>
       </div>
