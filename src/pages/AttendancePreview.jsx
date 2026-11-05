@@ -1156,7 +1156,12 @@ function AttendancePreview() {
     }
   }
 
-  const departmentRowSpans = useMemo(() => getConsecutiveDepartmentRowSpans(rows), [rows])
+  const filteredRows = useMemo(() => {
+    const term = normalizeSearch(excelSearch)
+    return term ? rows.filter(row => [row.employeeName, row.displayEmployeeCode || row.employeeCode, row.displayDepartment || row.department]
+      .some(value => normalizeSearch(value).includes(term))) : rows
+  }, [rows, excelSearch])
+  const departmentRowSpans = useMemo(() => getConsecutiveDepartmentRowSpans(filteredRows), [filteredRows])
   const calendar = useMemo(() => {
     const [year, monthNumber] = String(month || '').split('-').map(Number)
     const daysInMonth = year && monthNumber ? new Date(year, monthNumber, 0).getDate() : 31
@@ -1282,6 +1287,7 @@ function AttendancePreview() {
         </p>
       </div>
       <div className="attendance-preview-actions">
+        <input type="search" aria-label="Tìm nhân viên trong bảng công" placeholder="Tìm tên, mã NV, phòng ban..." value={excelSearch} onChange={event => setExcelSearch(event.target.value)} />
         <label>
           Tháng
           <input
@@ -1407,7 +1413,7 @@ function AttendancePreview() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {filteredRows.map((row, index) => (
               <tr key={row.employeeId} className={confirmations[String(row.employeeId)] ? 'is-confirmed' : ''}>
                 <td>{index + 1}</td>
                 {canEditWorkdays && <td>
@@ -1463,9 +1469,9 @@ function AttendancePreview() {
           </tbody>
         </table></div>
         <section className="attendance-preview-mobile" aria-label="Bảng công theo nhân viên">
-          {rows.length === 0 ? (
+          {filteredRows.length === 0 ? (
             <p className="attendance-preview-mobile__empty">Tháng này chưa có nhân viên trong bảng công.</p>
-          ) : rows.map(row => (
+          ) : filteredRows.map(row => (
             <article className="attendance-preview-mobile-card" key={row.employeeId}>
               <div className="attendance-preview-mobile-card__head">
                 <button type="button" onClick={() => openDetailRow(row)}>

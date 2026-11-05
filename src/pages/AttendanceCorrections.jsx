@@ -52,7 +52,7 @@ function AttendanceCorrections() {
     setWorkingId(request.id)
     setNotice('')
     try {
-      await decideAttendanceCorrection({ id: request.id, decision, comment, pairIndex: request.pairIndex ?? null })
+      await decideAttendanceCorrection({ id: request.id, decision, comment, pairIndex: request.pairIndex ?? null, missingDay: Boolean(request.missingDay) })
       let summaryError = ''
       if (decision === 'approved') {
         try {
@@ -103,6 +103,7 @@ function AttendanceCorrections() {
               <div><span>Giờ ra</span><strong>{displayTime(request.originalCheckOut)}</strong><i aria-hidden="true">→</i><strong>{proposedTime(request, 'requestedCheckOut')}</strong></div>
             </div>
             <div className="attendance-corrections__reason"><strong>Lý do nhân viên</strong><p>{request.reason || '—'}</p></div>
+            {request.evidenceUrl && <div className="attendance-corrections__reason"><strong>Ảnh minh chứng</strong><p><a href={request.evidenceUrl} target="_blank" rel="noopener noreferrer">Xem ảnh</a></p></div>}
             {request.comment && !pending && <div className="attendance-corrections__reason"><strong>Phản hồi duyệt</strong><p>{request.comment}</p></div>}
             {pending && <>
               <label className="attendance-corrections__comment">Ghi chú {"(bắt buộc nếu từ chối)"}<textarea rows="2" value={comments[request.id] || ''} onChange={event => setComments(current => ({ ...current, [request.id]: event.target.value }))} placeholder="Ghi chú cho nhân viên…" /></label>

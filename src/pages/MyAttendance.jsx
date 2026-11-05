@@ -4,6 +4,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceByEmployee } from '../services/firebase'
 import { loadAttendanceCorrectionRequests, submitAttendanceCorrection } from '../services/attendanceCorrections'
 import { buildAttendanceSummary } from '../utils/attendanceSummary'
+import { uploadToCloudinary } from '../utils/cloudinary'
+import { todayLocalDate } from '../utils/leaveDays'
 import {
   applyCalculatedAttendanceTiming,
   formatAttendanceTime,
@@ -48,6 +50,8 @@ function MyAttendance() {
   const [selectedCorrection, setSelectedCorrection] = useState(null)
   const [correctionPairIndex, setCorrectionPairIndex] = useState(0)
   const [correctionForm, setCorrectionForm] = useState({ checkIn: '', checkOut: '', reason: '' })
+  const [correctionDate, setCorrectionDate] = useState('')
+  const [correctionEvidence, setCorrectionEvidence] = useState(null)
   const [correctionNotice, setCorrectionNotice] = useState('')
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
 
@@ -101,12 +105,30 @@ function MyAttendance() {
     const pairIndex = openIndex >= 0 ? openIndex : pairs.length - 1
     const pair = pairs[pairIndex] || {}
     setSelectedCorrection(log)
+    setCorrectionEvidence(null)
     setCorrectionPairIndex(pairIndex)
     setCorrectionForm({
       checkIn: formatAttendanceTime(pair.checkIn) || '',
       checkOut: formatAttendanceTime(pair.checkOut) || '',
       reason: ''
     })
+    setCorrectionNotice('')
+  }
+
+  const openMissingDayForm = () => {
+    if (!correctionDate) return
+    if (logs.some(log => dateValue(log) === correctionDate)) {
+      setCorrectionNotice('Ngày này đã có chấm công. Hãy chọn yêu cầu sửa ở dòng tương ứng.')
+      return
+    }
+    if (correctionDate > todayLocalDate()) {
+      setCorrectionNotice('Không thể yêu cầu cho ngày trong tương lai.')
+      return
+    }
+    setSelectedCorrection({ date: correctionDate, id: null })
+    setCorrectionPairIndex(0)
+    setCorrectionForm({ checkIn: '', checkOut: '', reason: '' })
+    setCorrectionEvidence(null)
     setCorrectionNotice('')
   }
 
@@ -118,6 +140,10 @@ function MyAttendance() {
     const originalCheckOut = formatAttendanceTime(selectedPair.checkOut) || ''
     const requestedCheckIn = correctionForm.checkIn === originalCheckIn ? null : correctionForm.checkIn
     const requestedCheckOut = correctionForm.checkOut === originalCheckOut ? null : correctionForm.checkOut
+    if (!selectedCorrection.id && (!requestedCheckIn || !requestedCheckOut)) {
+      setCorrectionNotice('Hãy nhập cả giờ vào và giờ ra cho ngày chưa chấm công.')
+      return
+    }
     if (requestedCheckIn === null && requestedCheckOut === null) {
       setCorrectionNotice('Hãy thay đổi giờ vào hoặc giờ ra trước khi gửi yêu cầu.')
       return
@@ -126,6 +152,11 @@ function MyAttendance() {
     setCorrectionSubmitting(true)
     setCorrectionNotice('')
     try {
+      let evidenceUrl = ''
+      if (correctionEvidence) {
+        evidenceUrl = await uploadToCloudinary(correctionEvidence)
+        if (!evidenceUrl.startsWith('https://')) throw new Error('Không tải được ảnh minh chứng. Hãy thử lại.')
+      }
       await submitAttendanceCorrection({
         date: dateValue(selectedCorrection),
         attendanceLogId: selectedCorrection.id,
@@ -133,7 +164,8 @@ function MyAttendance() {
           ? correctionPairIndex : null,
         checkIn: requestedCheckIn,
         checkOut: requestedCheckOut,
-        reason: correctionForm.reason
+        reason: correctionForm.reason,
+        evidenceUrl
       })
       setSelectedCorrection(null)
       setCorrectionNotice('Yêu cầu đã gửi. Bảng công sẽ cập nhật sau khi được HR hoặc quản lý duyệt.')
@@ -220,6 +252,7 @@ function MyAttendance() {
           }) : <p className="my-attendance__mobile-empty">Không có dữ liệu trong tháng này.</p>}
         </div></section>
         <section className="card my-attendance__requests-card">
+          <div className="my-attendance__requests-heading"><label>Ngày chưa chấm công <input type="date" value={correctionDate} max={todayLocalDate()} onChange={event => setCorrectionDate(event.target.value)} /></label><button type="button" onClick={openMissingDayForm}>Yêu cầu điều chỉnh</button></div>
           <div className="my-attendance__requests-heading"><div><h3>Yêu cầu điều chỉnh công</h3><p>HR hoặc quản lý sẽ xem xét trước khi cập nhật bảng công.</p></div>{reviewRole && <Link to="/yeu-cau-dieu-chinh-cong">Mở hàng chờ duyệt</Link>}</div>
           {correctionError && <p className="my-attendance__correction-error" role="alert">{correctionError}</p>}
           {correctionNotice && !selectedCorrection && <p className="my-attendance__correction-notice" role="status">{correctionNotice}</p>}
@@ -253,6 +286,13 @@ function MyAttendance() {
             <label>Giờ vào<input type="time" value={correctionForm.checkIn} onChange={event => setCorrectionForm(current => ({ ...current, checkIn: event.target.value }))} /></label>
             <label>Giờ ra<input type="time" value={correctionForm.checkOut} onChange={event => setCorrectionForm(current => ({ ...current, checkOut: event.target.value }))} /><small>Nếu quên chấm công khi kết thúc ca, nhập giờ ra thực tế tại đây.</small></label>
             <label>Lý do<textarea required minLength="5" maxLength="1000" rows="3" value={correctionForm.reason} onChange={event => setCorrectionForm(current => ({ ...current, reason: event.target.value }))} placeholder="Ví dụ: Tôi đã kết thúc ca lúc 17:35 nhưng quên bấm chấm công ra." /></label>
+            <label>Ảnh minh chứng (tùy chọn)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {
+              const file = event.target.files?.[0] || null
+              if (file && (file.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(file.type))) {
+                setCorrectionEvidence(null)
+                setCorrectionNotice('Chỉ nhận ảnh JPG, PNG hoặc WebP tối đa 5 MB.')
+              } else { setCorrectionEvidence(file); setCorrectionNotice('') }
+            }} /></label>
             {correctionNotice && <p className="my-attendance__correction-error" role="alert">{correctionNotice}</p>}
             <div className="my-attendance__correction-actions"><button type="button" disabled={correctionSubmitting} onClick={() => setSelectedCorrection(null)}>Hủy</button><button type="submit" disabled={correctionSubmitting}>{correctionSubmitting ? 'Đang gửi…' : 'Gửi yêu cầu duyệt'}</button></div>
           </form>
