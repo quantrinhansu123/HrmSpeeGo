@@ -553,7 +553,12 @@ button, input, select, textarea {
   margin-bottom: 0;
 }
 
-.top-horizontal-scrollbar__spacer { height: 1px; }
+.top-horizontal-scrollbar__spacer {
+  height: 1px;
+  /* The generic `.main [class*="-scroll"]` rule above otherwise clamps this
+     spacer to the rail width, leaving the custom scrollbar with no thumb. */
+  max-width: none;
+}
 
 .top-horizontal-scrollbar--top {
   position: fixed;
