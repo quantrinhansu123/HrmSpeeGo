@@ -9,6 +9,24 @@ import {
   resolveAttendanceShift
 } from './attendanceShift.js'
 
+test('re-detects a shift from check-in despite a previously saved shift name', () => {
+  const log = applyCalculatedAttendanceTiming({
+    vao: '08:18', ra: '17:30', shiftName: 'Ca Sáng Sale', tenCa: 'Ca Sáng Sale'
+  }, { position: 'Sale' })
+  assert.equal(resolveAttendanceShift({}, log).name, 'Ca Hành chính')
+  assert.equal(log.shiftName, 'Ca Sáng Sale', 'keep the source name used in import record keys')
+  assert.equal(log.lateMinutes, 0)
+  assert.equal(log.earlyMinutes, 0)
+  assert.equal(resolveAttendanceShift({}, { ...log, shiftId: 'saleMorning' }).start, '04:00')
+})
+
+test('finds the nearest shift across midnight', () => {
+  const settings = { shifts: { night: {
+    name: 'Ca đêm', standardCheckIn: '00:30', standardCheckOut: '08:30'
+  } } }
+  assert.equal(resolveAttendanceShift({}, { vao: '23:55' }, settings).name, 'Ca đêm')
+})
+
 test('uses the normal morning shift for a non-Sale employee', () => {
   const result = calculateAttendanceTiming({
     employee: { position: 'HR', shift: 'Ca ngày' },

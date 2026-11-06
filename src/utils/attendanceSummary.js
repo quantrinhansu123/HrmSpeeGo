@@ -19,7 +19,8 @@ const numberValue = (value) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const attendancePunchPairs = log => {
+export const attendancePunchPairs = log => {
+  if (log?.syntheticPunch || log?.isDerivedFromCode) return []
   if (Array.isArray(log?.punchPairs) && log.punchPairs.length) {
     return log.punchPairs
       .map(pair => ({
@@ -91,7 +92,10 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   let calculationMode = 'full-day'
   let splitShiftBreakdown = []
   const sampleLog = logs[0] || {}
-  const resolvedShift = resolveAttendanceShift(employee, sampleLog, attendanceSettings)
+  const resolvedShift = resolveAttendanceShift(employee, {
+    ...sampleLog,
+    vao: attendancePunchPairs(sampleLog).find(pair => pair.checkIn)?.checkIn || sampleLog.vao || sampleLog.checkIn
+  }, attendanceSettings)
   const standardCheckIn = formatAttendanceTime(resolvedShift?.start || resolvedShift?.standardCheckIn)
   const standardCheckOut = formatAttendanceTime(resolvedShift?.end || resolvedShift?.standardCheckOut)
 
@@ -106,7 +110,21 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     ))
     sourceHours += Math.max(0, logHours)
     const isSyntheticPunch = Boolean(log.syntheticPunch || log.isDerivedFromCode)
-    const logPairs = isSyntheticPunch ? [] : attendancePunchPairs(log)
+    const rawPairs = isSyntheticPunch ? [] : attendancePunchPairs(log)
+    const logPairs = rawPairs.map(pair => {
+      const shift = resolveAttendanceShift(employee, {
+        ...log,
+        ...pair,
+        // Split sessions share the shift detected from the first check-in.
+        vao: rawPairs.find(item => item.checkIn)?.checkIn || log.vao || log.checkIn
+      }, attendanceSettings)
+      return {
+        ...pair,
+        shiftName: shift.name,
+        standardCheckIn: shift.start,
+        standardCheckOut: shift.end
+      }
+    })
     const logCheckIn = logPairs.find(pair => pair.checkIn)?.checkIn || formatAttendanceTime(log.checkIn || log.vao)
     const logCheckOut = [...logPairs].reverse().find(pair => pair.checkOut)?.checkOut || formatAttendanceTime(log.checkOut || log.ra)
     const hasCheckIn = Boolean(logCheckIn)
@@ -125,6 +143,8 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
             employee,
             log: {
               ...log,
+              standardCheckIn: pair.standardCheckIn,
+              standardCheckOut: pair.standardCheckOut,
               shiftId: pair.shiftId || log.shiftId,
               shiftName: pair.shiftName || log.shiftName || log.tenCa
             },
@@ -132,10 +152,11 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
             checkOut: pair.checkOut,
             attendanceSettings
           })
-          lateMinutes += index === firstCheckInIndex && pair.lateMinutes !== null && pair.lateMinutes !== undefined && pair.lateMinutes !== ''
+          const hasAssignedShift = Boolean(pair.shiftId || log.shiftId)
+          lateMinutes += hasAssignedShift && index === firstCheckInIndex && pair.lateMinutes !== null && pair.lateMinutes !== undefined && pair.lateMinutes !== ''
             ? numberValue(pair.lateMinutes)
             : index === firstCheckInIndex && pair.checkIn ? numberValue(timing().lateMinutes) : 0
-          earlyMinutes += index === lastCheckOutIndex && pair.earlyMinutes !== null && pair.earlyMinutes !== undefined && pair.earlyMinutes !== ''
+          earlyMinutes += hasAssignedShift && index === lastCheckOutIndex && pair.earlyMinutes !== null && pair.earlyMinutes !== undefined && pair.earlyMinutes !== ''
             ? numberValue(pair.earlyMinutes)
             : index === lastCheckOutIndex && pair.checkOut ? numberValue(timing().earlyMinutes) : 0
         })
@@ -171,7 +192,8 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
       })
     }
     if (!isSyntheticPunch && logPairs.some(pair => Boolean(pair.checkIn) !== Boolean(pair.checkOut))) missingPunch = true
-    const logShiftName = String(log.shiftName || log.tenCa || resolvedShift?.name || '').trim()
+    const logShiftName = String(logPairs[0]?.shiftName || log.shiftName || log.tenCa || resolvedShift?.name || '').trim()
+    logPairs.forEach(pair => { if (pair.shiftName) shiftNames.add(pair.shiftName) })
     if (logShiftName) shiftNames.add(logShiftName)
     if (!shiftName) shiftName = logShiftName
     const status = String(log.kyHieu || log.status || '').trim().toUpperCase()
@@ -717,6 +739,7 @@ const slimDayLogs = (logs = []) =>
     ra: log.ra || log.checkOut || '',
     shiftName: log.shiftName || log.tenCa || '',
     tenCa: log.tenCa || log.shiftName || '',
+    syntheticPunch: Boolean(log.syntheticPunch || log.isDerivedFromCode),
     punches: Array.isArray(log.punches) ? log.punches : [],
     punchPairs: Array.isArray(log.punchPairs) ? log.punchPairs : []
   }))

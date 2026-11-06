@@ -187,7 +187,10 @@ const nearestConfiguredShift = (checkIn, settings) => {
       const startMinutes = attendanceTimeToMinutes(shift.standardCheckIn)
       return {
         shift,
-        distance: startMinutes === null ? Infinity : Math.abs(checkInMinutes - startMinutes)
+        distance: startMinutes === null ? Infinity : Math.min(
+          Math.abs(checkInMinutes - startMinutes),
+          24 * 60 - Math.abs(checkInMinutes - startMinutes)
+        )
       }
     })
     .filter(item => Number.isFinite(item.distance))
@@ -358,15 +361,14 @@ export const resolveAttendanceShift = (employee = {}, log = {}, settings = {}) =
     }, name, settings)
   }
 
+  // Names may be cached from an earlier import; only ids/ranges pin a shift.
+  const nearestShift = nearestConfiguredShift(firstValue(log.vao, log.checkIn), settings)
+  if (nearestShift) return nearestShift
+
   const logConfiguredShift = [log.shiftName, log.tenCa]
     .map(value => configuredShiftFromName(value, settings))
     .find(Boolean)
   if (logConfiguredShift) return logConfiguredShift
-
-  // When a punch has no row-specific shift, choose the closest configured start.
-  // Profile role/name fallbacks are only used when no punch time is available.
-  const nearestShift = nearestConfiguredShift(firstValue(log.vao, log.checkIn), settings)
-  if (nearestShift) return nearestShift
 
   if (employeeIsSale(employee, log)) {
     return configuredShiftFromName('Ca Sáng Sale', settings) || SALE_ATTENDANCE_SHIFT

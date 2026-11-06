@@ -204,7 +204,7 @@ function AttendanceImportModal({
       }
     }
 
-    const shift = resolveAttendanceShift(employee, log, attendanceSettings)
+    const shift = resolveAttendanceShift(employee, { ...log, vao: checkInStr }, attendanceSettings)
     const [startHour, startMinute] = shift.start.split(':').map(Number)
     const [endHour, endMinute] = shift.end.split(':').map(Number)
     const STANDARD_START = startHour * 60 + startMinute
@@ -332,7 +332,7 @@ function AttendanceImportModal({
     const calculationMode = extra.calculationMode || 'punches'
     const useSourceValues = calculationMode === 'source-value' || calculationMode === 'matrix-value'
     const hasActualPunchPair = Boolean(checkInStr && checkOutStr && !extra.syntheticPunch)
-    const resolvedShift = resolveAttendanceShift(sysEmp, extra, attendanceSettings)
+    const resolvedShift = resolveAttendanceShift(sysEmp, { ...extra, vao: checkInStr }, attendanceSettings)
     const punchPairs = stats.punchPairs || extra.punchPairs || []
     const metrics = calculateAttendanceMetrics({
       log: extra,

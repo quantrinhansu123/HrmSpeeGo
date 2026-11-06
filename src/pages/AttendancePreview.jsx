@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceLogsByMonth, fbGetEmployeesDirectory, fbListCollectionIds, fbSet } from '../services/firebase'
 import {
+  attendancePunchPairs,
   hydrateAttendanceSummaryRows
 } from '../utils/attendanceSummary'
 import { rebuildAttendanceMonthSummary } from '../services/attendanceMonthSummary'
@@ -1234,6 +1235,7 @@ function AttendancePreview() {
       const date = `${month}-${String(day).padStart(2, '0')}`
       const dayData = detailRow.days?.get?.(date) || null
       const log = dayData?.logs?.[0] || {}
+      const punchPairs = (dayData?.logs || []).flatMap(attendancePunchPairs)
       const checkIn = formatAttendanceTime(
         dayData?.checkIn || log.checkIn || log.vao || ''
       )
@@ -1257,6 +1259,7 @@ function AttendancePreview() {
         overtimeHours: dayData?.overtimeHours || '',
         checkIn,
         checkOut,
+        punchPairs,
         standardCheckIn,
         standardCheckOut,
         notes: dayNotes(dayData),
@@ -1285,6 +1288,7 @@ function AttendancePreview() {
             ? `Đã lưu lúc ${formatGeneratedAt(generatedAt)}${sourceLogCount ? ` · ${sourceLogCount} bản ghi chấm công` : ''}`
             : 'Chưa có bảng công tháng này · Tải Excel để đồng bộ và lưu'}
         </p>
+        {hasSnapshot && canEditWorkdays && <p>Đổi cấu hình ca: bấm “Tổng hợp lại” để cập nhật bảng công tháng đã lưu.</p>}
       </div>
       <div className="attendance-preview-actions">
         <input type="search" aria-label="Tìm nhân viên trong bảng công" placeholder="Tìm tên, mã NV, phòng ban..." value={excelSearch} onChange={event => setExcelSearch(event.target.value)} />
@@ -1645,10 +1649,18 @@ function AttendancePreview() {
                     <td data-label="Thứ">{item.weekday}</td>
                     <td data-label="Ký hiệu">{item.code || '—'}</td>
                     <td data-label="Giờ vào" className={item.checkIn && item.standardCheckIn && item.checkIn > item.standardCheckIn ? 'is-late' : ''}>
-                      {item.checkIn || '—'}
+                      {item.punchPairs.length > 1
+                        ? item.punchPairs.map((pair, index) => (
+                          <div key={index}>Ca {index + 1}: {pair.checkIn || 'Thiếu vào'}</div>
+                        ))
+                        : item.checkIn || '—'}
                     </td>
                     <td data-label="Giờ ra" className={item.checkOut && item.standardCheckOut && item.checkOut < item.standardCheckOut ? 'is-early' : ''}>
-                      {item.checkOut || '—'}
+                      {item.punchPairs.length > 1
+                        ? item.punchPairs.map((pair, index) => (
+                          <div key={index}>Ca {index + 1}: {pair.checkOut || 'Thiếu ra'}</div>
+                        ))
+                        : item.checkOut || '—'}
                     </td>
                     <td data-label="Tiêu chuẩn" className="standard">
                       {item.standardCheckIn && item.standardCheckOut

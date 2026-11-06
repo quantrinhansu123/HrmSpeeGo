@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAttendanceSummary, summarizeAttendanceDay } from './attendanceSummary.js'
+import { attendancePunchPairs, buildAttendanceSummary, hydrateAttendanceSummaryRows, serializeAttendanceSummaryRows, summarizeAttendanceDay } from './attendanceSummary.js'
+
+test('saved details preserve all pairs from multiple logs, including an incomplete pair', () => {
+  const rows = buildAttendanceSummary({
+    attendanceLogs: [
+      { employeeId: 'worker', date: '2026-08-01', punches: ['08:30', '12:00', '13:00', '17:30'] },
+      { employeeId: 'worker', date: '2026-08-01', punchPairs: [{ checkIn: '18:00', checkOut: '' }] }
+    ],
+    employees: [{ id: 'worker', name: 'Worker' }], month: '2026-08'
+  })
+  const saved = JSON.parse(JSON.stringify(serializeAttendanceSummaryRows(rows)))
+  const day = hydrateAttendanceSummaryRows(saved)[0].days.get('2026-08-01')
+  const pairs = day.logs.flatMap(attendancePunchPairs)
+  assert.deepEqual(pairs.map(pair => [pair.checkIn, pair.checkOut]), [
+    ['08:30', '12:00'], ['13:00', '17:30'], ['18:00', '']
+  ])
+  assert.deepEqual(attendancePunchPairs({ syntheticPunch: true, vao: '08:30', ra: '17:30' }), [])
+  assert.deepEqual(attendancePunchPairs({ vao: '08:30', ra: '17:30' }), [{ checkIn: '08:30', checkOut: '17:30' }])
+})
+
+test('rebuilding resolves a saved name from actual check-in, including logs with pairs', () => {
+  for (const punches of [{ vao: '08:18', ra: '17:30' }, {
+    punchPairs: [{ checkIn: '08:18', checkOut: '17:30', shiftName: 'Ca Sáng Sale', lateMinutes: 258 }]
+  }]) {
+    const day = summarizeAttendanceDay([{ ...punches, shiftName: 'Ca Sáng Sale' }], { position: 'Sale' })
+    assert.equal(day.standardCheckIn, '08:30')
+    assert.equal(day.shiftName, 'Ca Hành chính')
+    assert.equal(day.lateMinutes, 0)
+    assert.equal(day.earlyMinutes, 0)
+  }
+})
+
+test('keeps the registered shift and its saved pair penalties', () => {
+  const day = summarizeAttendanceDay([{
+    punchPairs: [{ checkIn: '08:18', checkOut: '13:30', shiftId: 'saleMorning', lateMinutes: 7 }]
+  }])
+  assert.equal(day.shiftName, 'Ca Sáng Sale')
+  assert.equal(day.lateMinutes, 7)
+})
 
 test('tổng hợp giữ bộ phận chi tiết của Excel dù hồ sơ HR thuộc nhóm rộng', () => {
   const rows = buildAttendanceSummary({
@@ -296,6 +334,8 @@ test('bảng công áp dụng hai khung buổi cho cả một hoặc hai cặp c
   assert.equal(saleSplitDay.calculationMode, 'split-shift')
   assert.equal(saleSplitDay.hours, 8)
   assert.equal(saleSplitDay.workdays, 1)
+  assert.equal(saleSplitDay.lateMinutes, 0)
+  assert.equal(saleSplitDay.earlyMinutes, 0)
 })
 
 test('bảng công tính từng buổi theo phút và tự bỏ giờ nghỉ trưa', () => {

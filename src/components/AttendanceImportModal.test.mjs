@@ -292,7 +292,7 @@ test('daily-detail preview uses the configured morning and afternoon windows', a
   assert.equal(harness.writes.length, 0)
 })
 
-test('daily-detail preview recalculates workdays after matching the employee shift', async () => {
+test('daily-detail preview detects the shift from check-in despite a Sale profile name', async () => {
   const settings = {
     shifts: {
       administrative: {
@@ -320,8 +320,9 @@ test('daily-detail preview recalculates workdays after matching the employee shi
   await upload(harness, makeDetailWorkbook())
   const complete = harness.detailPreview().logs.find(log => log.date === '2026-08-08')
   assert.equal(complete.employeeId, 'profile-26')
-  assert.equal(complete.hours, 230 / 60)
-  assert.equal(complete.cong, 230 / 240 * 0.5)
+  assert.equal(complete.hours, 410 / 60)
+  assert.equal(complete.cong, 140 / 210 * 0.5 + 0.5)
+  assert.equal(complete.lateMinutes, 70)
 })
 
 test('daily-detail workbook previews 34 employees and zeros no-punch days without writes', {
