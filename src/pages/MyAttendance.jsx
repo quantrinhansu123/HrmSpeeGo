@@ -3,9 +3,13 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceByEmployee } from '../services/firebase'
 import { loadAttendanceCorrectionRequests, submitAttendanceCorrection } from '../services/attendanceCorrections'
+import { loadLeaveDays } from '../services/leaveDays'
+import { loadShiftRegistrations } from '../services/shiftRegistrations'
 import { buildAttendanceSummary } from '../utils/attendanceSummary'
 import { uploadToCloudinary } from '../utils/cloudinary'
+import { getCompanyIdForUser } from '../utils/companyContext'
 import { todayLocalDate } from '../utils/leaveDays'
+import { monthCalendarDays } from '../utils/personalCalendar'
 import {
   applyCalculatedAttendanceTiming,
   formatAttendanceTime,
@@ -36,13 +40,21 @@ const timingForLog = (log, employee, settings) => {
 }
 const requestStatusLabels = { pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Đã từ chối' }
 const requestTimeLabel = value => value === '' ? 'Xóa mốc chấm công' : timeValue(value)
+const changeMonth = (month, offset) => {
+  const [year, value] = month.split('-').map(Number)
+  const next = new Date(year, value - 1 + offset, 1)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+}
 
 function MyAttendance() {
   const { user } = useAuth()
   const employeeId = String(user.id)
   const [logs, setLogs] = useState([])
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [month, setMonth] = useState(() => todayLocalDate().slice(0, 7))
+  const [leaves, setLeaves] = useState([])
+  const [shifts, setShifts] = useState([])
+  const [calendarError, setCalendarError] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [correctionRequests, setCorrectionRequests] = useState([])
@@ -66,8 +78,6 @@ function MyAttendance() {
       setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
       const nextLogs = data ? Object.entries(data).map(([id, value]) => ({ ...value, id })) : []
       setLogs(nextLogs)
-      const latest = [...new Set(nextLogs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().at(-1)
-      if (latest) setMonth(latest)
     }).catch(requestError => {
       console.error('Không tải được Bảng công cá nhân:', requestError)
       if (active) setError('Không thể tải dữ liệu chấm công.')
@@ -87,6 +97,28 @@ function MyAttendance() {
     return () => { active = false }
   }, [employeeId])
 
+  useEffect(() => {
+    let active = true
+    const companyId = user?.company_id || user?.companyId || getCompanyIdForUser(user)
+    const end = `${month}-${String(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()).padStart(2, '0')}`
+    Promise.all([
+      loadLeaveDays({ companyId, employeeId: user.id }),
+      loadShiftRegistrations({ companyId, employeeId: user.id, from: `${month}-01`, to: end })
+    ]).then(([leaveRows, shiftRows]) => {
+      if (!active) return
+      setLeaves(leaveRows)
+      setShifts(shiftRows)
+      setCalendarError('')
+    }).catch(requestError => {
+      if (active) {
+        setLeaves([])
+        setShifts([])
+        setCalendarError(requestError.message || 'Không tải được lịch nghỉ và ca làm.')
+      }
+    })
+    return () => { active = false }
+  }, [month, user.id, user.company_id, user.companyId])
+
   const months = useMemo(() => [...new Set(logs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().reverse(), [logs])
   const monthSummaries = useMemo(() => months.map(value => ({
     month: value,
@@ -98,6 +130,7 @@ function MyAttendance() {
     .map(log => timingForLog(log, user, attendanceSettings))
     .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [attendanceSettings, logs, month, user])
   const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, employeeId, logs, month, user])
+  const calendarDays = useMemo(() => monthCalendarDays({ month, logs: monthLogs, leaves, shifts, holidays: attendanceSettings.holidays, today: todayLocalDate() }), [month, monthLogs, leaves, shifts, attendanceSettings.holidays])
 
   const openCorrectionForm = log => {
     const pairs = punchesForLog(log)
@@ -191,12 +224,22 @@ function MyAttendance() {
     <div className="my-attendance">
       <div className="page-header my-attendance__header">
         <div><h1 className="page-title"><i className="fas fa-calendar-check"></i>Bảng công</h1><p>Thông tin chấm công của {user.ho_va_ten || user.email}</p></div>
-        <div className="my-attendance__header-actions"><Link className="btn" to="/cham-cong-online">Chấm công online</Link>{reviewRole && <Link className="btn my-attendance__review-link" to="/yeu-cau-dieu-chinh-cong">Duyệt điều chỉnh công</Link>}<label><span>Tháng</span><select value={month} onChange={event => setMonth(event.target.value)}>{months.length === 0 && <option>{month}</option>}{months.map(value => <option key={value}>{value}</option>)}</select></label></div>
+        <div className="my-attendance__header-actions"><Link className="btn" to="/cham-cong-online">Chấm công online</Link>{reviewRole && <Link className="btn my-attendance__review-link" to="/yeu-cau-dieu-chinh-cong">Duyệt điều chỉnh công</Link>}<label><span>Tháng</span><select value={month} onChange={event => setMonth(event.target.value)}>{[...new Set([month, ...months])].sort().reverse().map(value => <option key={value}>{value}</option>)}</select></label></div>
       </div>
       <section className="my-attendance__identity card">
         <div><span>Mã nhân viên</span><strong>{user.employeeId || '—'}</strong></div><div><span>Họ tên</span><strong>{user.ho_va_ten || '—'}</strong></div><div><span>Phòng ban</span><strong>{user.bo_phan || '—'}</strong></div><div><span>Chức vụ</span><strong>{user.vi_tri || '—'}</strong></div>
       </section>
       {loading ? <div className="card my-attendance__state">Đang tải dữ liệu...</div> : error ? <div className="card my-attendance__state is-error">{error}</div> : <>
+        <section className="card my-attendance__calendar" aria-label={`Lịch làm việc tháng ${month}`}>
+          <div className="my-attendance__calendar-head"><h2>Lịch làm việc · {month}</h2><div><button type="button" onClick={() => setMonth(current => changeMonth(current, -1))} aria-label="Tháng trước">‹</button><button type="button" onClick={() => setMonth(todayLocalDate().slice(0, 7))}>Tháng này</button><button type="button" onClick={() => setMonth(current => changeMonth(current, 1))} aria-label="Tháng sau">›</button></div></div>
+          {calendarError && <p className="my-attendance__calendar-error" role="alert">{calendarError} Lịch nghỉ và ca làm có thể chưa đầy đủ.</p>}
+          <div className="my-attendance__calendar-grid">
+            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => <strong className="my-attendance__calendar-weekday" key={day}>{day}</strong>)}
+            {calendarDays.map(({ date, day, weekday, status, label, notes }) => <div key={date} className={`my-attendance__calendar-day is-${status}${date === todayLocalDate() ? ' is-today' : ''}`} style={day === 1 ? { gridColumn: weekday + 1 } : undefined} aria-label={`${date}: ${label}${notes.length ? `, ${notes.join(', ')}` : ''}`}>
+              <strong>{day}</strong><span>{label}</span>{notes.map((note, index) => <small key={index}>{note}</small>)}
+            </div>)}
+          </div>
+        </section>
         <section className="my-attendance__stats">
           <div className="card"><span>Ngày có dữ liệu</span><strong>{summary?.attendanceDays || 0}</strong></div><div className="card"><span>Tổng công</span><strong>{decimalValue(summary?.workdays ?? 0)}</strong></div><div className="card"><span>Tổng giờ</span><strong>{decimalValue(summary?.totalHours ?? 0)}</strong></div><div className="card"><span>Đi muộn</span><strong>{summary?.lateCount || 0} lần</strong><small>{summary?.lateMinutes || 0} phút</small></div><div className="card"><span>Về sớm</span><strong>{summary?.earlyCount || 0} lần</strong><small>{summary?.earlyMinutes || 0} phút</small></div><div className="card"><span>Quên chấm</span><strong>{summary?.missingPunchCount || 0}</strong></div>
         </section>
