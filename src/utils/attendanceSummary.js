@@ -258,13 +258,23 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   const autoCalculateOvertime = attendanceSettings?.overtime?.autoCalculate !== false
   if (actualPunchGroups.size > 0) {
     actualPunchGroups.forEach(group => {
+      const sortShift = resolveAttendanceShift(employee, {
+        ...group.log,
+        vao: group.pairs[0]?.checkIn,
+        shiftName: group.shiftName || logs[0]?.shiftName,
+        shiftId: group.pairs[0]?.shiftId
+      }, attendanceSettings)
+      const shiftStart = attendanceTimeToMinutes(sortShift.start)
+      const shiftEnd = attendanceTimeToMinutes(sortShift.end)
+      const overnight = shiftStart !== null && shiftEnd !== null && shiftEnd <= shiftStart
       const orderedPairs = group.pairs.slice().sort((left, right) => {
         const leftAt = Date.parse(left.checkInTimestamp || left.checkOutTimestamp || '')
         const rightAt = Date.parse(right.checkInTimestamp || right.checkOutTimestamp || '')
         if (Number.isFinite(leftAt) && Number.isFinite(rightAt)) return leftAt - rightAt
         const leftTime = attendanceTimeToMinutes(left.checkIn || left.checkOut) ?? 0
         const rightTime = attendanceTimeToMinutes(right.checkIn || right.checkOut) ?? 0
-        return leftTime - rightTime
+        return (leftTime + (overnight && leftTime < shiftStart ? 1440 : 0)) -
+          (rightTime + (overnight && rightTime < shiftStart ? 1440 : 0))
       })
       const firstPunch = orderedPairs.find(pair => pair.checkIn) || orderedPairs[0]
       const lastPunch = [...orderedPairs].reverse().find(pair => pair.checkOut) || orderedPairs[orderedPairs.length - 1]

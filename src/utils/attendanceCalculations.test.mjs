@@ -8,6 +8,36 @@ import {
   getAttendanceHoliday
 } from './attendanceCalculations.js'
 
+test('chia buổi qua nửa đêm cộng các cặp và loại thời gian nghỉ', () => {
+  for (const [morning, afternoon, punchPairs, minutes] of [
+    ['20:00', '00:30', [{ checkIn: '20:00', checkOut: '00:00' }, { checkIn: '00:30', checkOut: '04:30' }], 480],
+    ['20:00', '00:30', [{ checkIn: '20:00', checkOut: '04:30' }], 480],
+    ['22:00', '03:00', [{ checkIn: '22:00', checkOut: '00:00' }, { checkIn: '00:30', checkOut: '02:00' }, { checkIn: '03:00', checkOut: '07:00' }], 450],
+    ['22:00', '03:00', [{ checkIn: '00:30', checkOut: '02:00' }], 90]
+  ]) {
+    const result = calculateAttendanceMetrics({
+      punchPairs,
+      splitShift: {
+        enabled: true,
+        morning: { start: morning, end: morning === '20:00' ? '00:00' : '02:00', workdays: 0.5 },
+        afternoon: { start: afternoon, end: afternoon === '00:30' ? '04:30' : '07:00', workdays: 0.5 }
+      }
+    })
+    assert.equal(result.workedMinutes, minutes)
+    assert.equal(result.regularWorkdays, minutes / 480)
+  }
+})
+
+test('nhiều cặp qua đêm không tính giờ nghỉ hoặc lượt chưa check-out', () => {
+  const result = calculateAttendanceMetrics({ punchPairs: [
+    { checkIn: '22:00', checkOut: '01:00' },
+    { checkIn: '01:30', checkOut: '06:30' },
+    { checkIn: '07:00', checkOut: '' }
+  ] })
+  assert.equal(result.workedMinutes, 480)
+  assert.equal(result.regularWorkdays, 1)
+})
+
 test('tính Công từ phút thực tế và tách phần vượt 480 phút', () => {
   const result = calculateAttendanceMetrics({ checkIn: '08:30', checkOut: '15:24' })
   assert.equal(calculateWorkedMinutes({ checkIn: '08:30', checkOut: '15:24' }), 414)

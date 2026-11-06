@@ -27,6 +27,15 @@ test('finds the nearest shift across midnight', () => {
   assert.equal(resolveAttendanceShift({}, { vao: '23:55' }, settings).name, 'Ca đêm')
 })
 
+test('ca đêm đi vào sau nửa đêm vẫn tính muộn từ đầu ca tối hôm trước', () => {
+  const result = calculateAttendanceTiming({
+    log: { standardCheckIn: '22:00', standardCheckOut: '06:00' },
+    checkIn: '01:00', checkOut: '05:30'
+  })
+  assert.equal(result.lateMinutes, 180)
+  assert.equal(result.earlyMinutes, 30)
+})
+
 test('uses the normal morning shift for a non-Sale employee', () => {
   const result = calculateAttendanceTiming({
     employee: { position: 'HR', shift: 'Ca ngày' },

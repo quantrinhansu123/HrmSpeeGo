@@ -182,6 +182,11 @@ function OnlineAttendance() {
     loadToday()
   }, [loadToday])
 
+  const currentDate = currentTime.toLocaleDateString('en-CA', { timeZone: today?.timezone || 'Asia/Ho_Chi_Minh' })
+  useEffect(() => {
+    if (today?.date && today.date !== currentDate) loadToday()
+  }, [currentDate, today?.date, loadToday])
+
   const shifts = useMemo(() => {
     if (Array.isArray(today?.shifts)) return today.shifts
     if (!today) return []
@@ -201,8 +206,9 @@ function OnlineAttendance() {
     const activeShift = shifts.find(shift =>
       (shift.record?.punchPairs || []).some(pair => pair.checkIn && !pair.checkOut)
     )
-    setSelectedShiftKey(shiftKey(activeShift || shifts[0]))
-  }, [selectedShiftKey, shifts])
+    const previousShift = shifts.find(shift => shift.workDate < today?.date)
+    setSelectedShiftKey(shiftKey(activeShift || previousShift || shifts[0]))
+  }, [selectedShiftKey, shifts, today?.date])
   const selectedShift = shifts.find(shift => shiftKey(shift) === selectedShiftKey) || shifts[0] || null
   const record = selectedShift?.record || null
   const punchPairs = Array.isArray(record?.punchPairs) && record.punchPairs.length
@@ -335,7 +341,7 @@ function OnlineAttendance() {
         const nextShifts = [...(current?.shifts || shifts)]
         const index = nextShifts.findIndex(shift => shiftKey(shift) === shiftKey(selectedShift))
         if (index >= 0) nextShifts[index] = { ...nextShifts[index], record: data?.record || null }
-        return { ...current, ...data, shifts: nextShifts, record: data?.record || null }
+        return { ...current, shifts: nextShifts, record: data?.record || null }
       })
 
       setPhotoPreview(null)
