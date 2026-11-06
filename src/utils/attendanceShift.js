@@ -443,6 +443,10 @@ export const calculateAttendanceTiming = ({
   const adjustedShiftEndMinutes = overnightShift
     ? shiftEndMinutes + 24 * 60
     : shiftEndMinutes
+  const adjustedCheckInMinutes =
+    overnightShift && checkInMinutes !== null && checkInMinutes <= shiftEndMinutes
+      ? checkInMinutes + 24 * 60
+      : checkInMinutes
   const adjustedCheckOutMinutes =
     overnightShift && checkOutMinutes !== null && checkOutMinutes < shiftStartMinutes
       ? checkOutMinutes + 24 * 60
@@ -490,7 +494,7 @@ export const calculateAttendanceTiming = ({
     hasCheckOut: checkOutMinutes !== null,
     lateMinutes: checkInMinutes === null
       ? null
-      : Math.max(0, checkInMinutes - effectiveStartMinutes),
+      : Math.max(0, adjustedCheckInMinutes - effectiveStartMinutes),
     earlyMinutes: adjustedCheckOutMinutes === null
       ? null
       : Math.max(0, effectiveEndMinutes - adjustedCheckOutMinutes)

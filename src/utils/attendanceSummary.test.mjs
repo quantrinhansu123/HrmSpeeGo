@@ -2,6 +2,35 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildAttendanceSummary, summarizeAttendanceDay } from './attendanceSummary.js'
 
+test('tổng hợp ca đêm chia buổi giữ ngày bắt đầu ca và cộng các cặp qua nửa đêm', () => {
+  const rows = buildAttendanceSummary({
+    month: '2026-10',
+    employees: [{ id: 'night', name: 'Ca đêm' }],
+    attendanceSettings: { shifts: { night: {
+      name: 'Ca đêm', standardCheckIn: '20:00', standardCheckOut: '04:30',
+      splitShift: {
+        enabled: true,
+        morning: { start: '20:00', end: '00:00', workdays: 0.5 },
+        afternoon: { start: '00:30', end: '04:30', workdays: 0.5 }
+      }
+    } } },
+    attendanceLogs: [{
+      employeeId: 'night', date: '2026-10-31', shiftId: 'night', shiftName: 'Ca đêm',
+      standardCheckIn: '20:00', standardCheckOut: '04:30',
+      punchPairs: [
+        { checkIn: '20:00', checkOut: '00:00', lateMinutes: 0, earlyMinutes: 0 },
+        { checkIn: '00:30', checkOut: '04:30', lateMinutes: 0, earlyMinutes: 0 }
+      ]
+    }]
+  })
+  const day = rows[0].days.get('2026-10-31')
+  assert.equal(day.hours, 8)
+  assert.equal(day.workdays, 1)
+  assert.equal(day.checkIn, '20:00')
+  assert.equal(day.checkOut, '04:30')
+  assert.equal(rows[0].days.has('2026-11-01'), false)
+})
+
 test('tổng hợp giữ bộ phận chi tiết của Excel dù hồ sơ HR thuộc nhóm rộng', () => {
   const rows = buildAttendanceSummary({
     attendanceLogs: [{

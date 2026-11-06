@@ -144,8 +144,21 @@ export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) =>
   const sessions = buildSplitSessions(splitShift)
   if (sessions.some(session => !session.interval)) return null
 
+  // Keep both sessions and punches on the work day's timeline across midnight.
+  if (sessions[1].interval.start < sessions[0].interval.start) {
+    sessions[1].interval.start += 24 * 60
+    sessions[1].interval.end += 24 * 60
+  }
   const pairs = rawPairs.map(punchInterval).filter(Boolean)
   if (!pairs.length) return null
+  if (sessions.some(session => session.interval.end > 24 * 60)) {
+    pairs.forEach(pair => {
+      if (pair.end <= sessions[0].interval.start) {
+        pair.start += 24 * 60
+        pair.end += 24 * 60
+      }
+    })
+  }
   const breakdown = sessions.map(session => {
     const creditedMinutes = coveredMinutes(pairs, session.interval)
     return {
