@@ -96,6 +96,17 @@ test('buildPenaltyDetailRows tạo 1 dòng phạt muộn/sớm theo tháng', () 
   assert.equal(lateEarly[0].amount, 100000)
 })
 
+test('buildPenaltyDetailRows uses the actual late date instead of the first of the month', () => {
+  const [penalty] = buildPenaltyDetailRows([{
+    employeeId: 'e1',
+    month: '2026-08',
+    days: {
+      '2026-08-05': { late: true, lateMinutes: 20 }
+    }
+  }])
+  assert.equal(penalty.date, '2026-08-05')
+})
+
 test('applyPenaltyAmountsToSummaryRows dùng cơ chế phạt tháng', () => {
   const [row] = applyPenaltyAmountsToSummaryRows([{
     employeeName: 'A',

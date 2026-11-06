@@ -190,12 +190,6 @@ export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PE
     const employeeName = row.employeeName || row.employeeCode || row.employeeId || ''
     const employeeId = row.employeeId || ''
     const employeeCode = row.employeeCode || ''
-    const month = String(row.month || '').slice(0, 7) ||
-      (() => {
-        const days = row.days instanceof Map ? [...row.days.keys()] : Object.keys(row.days || {})
-        return String(days[0] || '').slice(0, 7)
-      })()
-
     const lateEarlyEvents = collectLateEarlyOccurrences(row)
     const lateEarlyPenalty = evaluateMonthlyLateEarlyPenalty(lateEarlyEvents, categories)
     if (lateEarlyPenalty.applies && lateEarlyPenalty.category) {
@@ -203,7 +197,7 @@ export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PE
         employeeId,
         employeeCode,
         employeeName,
-        date: month ? `${month}-01` : (lateEarlyEvents[0]?.date || ''),
+        date: lateEarlyEvents[0].date,
         suffix: 'late-early-month',
         category: lateEarlyPenalty.category,
         content: lateEarlyPenalty.content
