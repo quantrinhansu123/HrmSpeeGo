@@ -15,6 +15,23 @@
 .my-attendance__stats small { color: #64748b; }
 .my-attendance__state { padding: 28px; text-align: center; }
 .my-attendance__state.is-error { color: #b42318; background: #fef2f2; }
+.my-attendance__calendar { margin-bottom: 16px; padding: 0; overflow: hidden; }
+.my-attendance__calendar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; }
+.my-attendance__calendar-head h2 { margin: 0; font-size: 1.1rem; color: #0b3d73; }
+.my-attendance__calendar-head > div { display: flex; gap: 6px; }
+.my-attendance__calendar-head button { min-height: 34px; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #0b3d73; font: inherit; cursor: pointer; }
+.my-attendance__calendar-error { margin: 0 18px 12px; color: #b42318; }
+.my-attendance__calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: #dbe4ee; border-top: 1px solid #dbe4ee; }
+.my-attendance__calendar-weekday { padding: 8px; background: #eff6ff; color: #0b3d73; text-align: center; }
+.my-attendance__calendar-day { display: flex; flex-direction: column; gap: 4px; min-height: 98px; padding: 8px; background: #fff; overflow-wrap: anywhere; }
+.my-attendance__calendar-day > strong { font-size: 1rem; }
+.my-attendance__calendar-day > span { width: fit-content; padding: 3px 6px; border-radius: 5px; font-size: .76rem; font-weight: 700; }
+.my-attendance__calendar-day small { color: #475569; line-height: 1.25; }
+.my-attendance__calendar-day.is-today { outline: 2px solid #0b3d73; outline-offset: -2px; }
+.my-attendance__calendar-day.is-worked > span, .my-attendance__calendar-day.is-scheduled > span { color: #166534; background: #dcfce7; }
+.my-attendance__calendar-day.is-leave > span, .my-attendance__calendar-day.is-pending > span { color: #92400e; background: #fef3c7; }
+.my-attendance__calendar-day.is-holiday > span { color: #9f1239; background: #ffe4e6; }
+.my-attendance__calendar-day.is-off > span, .my-attendance__calendar-day.is-empty > span { color: #475569; background: #f1f5f9; }
 .my-attendance__table-card { padding: 0; overflow: hidden; }
 .my-attendance__table-card h3 { margin: 0; padding: 16px 18px; border-bottom: 1px solid #e2e8f0; }
 .my-attendance__summary-card { padding: 0; overflow: hidden; margin-bottom: 16px; }
@@ -72,6 +89,10 @@
 .my-attendance__correction-actions button:disabled { opacity: .6; cursor: default; }
 @media (max-width: 1050px) { .my-attendance__stats { grid-template-columns: repeat(3, 1fr); } .my-attendance__identity { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px) {
+  .my-attendance__calendar-head { padding: 12px; }
+  .my-attendance__calendar-day { min-height: 82px; padding: 5px 3px; font-size: .72rem; }
+  .my-attendance__calendar-day > span { padding: 3px; font-size: .65rem; }
+  .my-attendance__calendar-day small { font-size: .63rem; }
   .my-attendance__header { align-items: stretch; flex-direction: column; gap: 14px; }
   .my-attendance__header-actions { align-items: stretch; flex-direction: column; }
   .my-attendance__header-actions > .btn { width: fit-content; }
