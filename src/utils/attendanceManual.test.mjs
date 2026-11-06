@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseManualWorkdayInput, updateManualWorkdays } from './attendanceManual.js'
+import {
+  parseManualWorkdayInput,
+  shouldCommitManualWorkday,
+  updateManualWorkdays
+} from './attendanceManual.js'
 
 test('chuẩn hóa số công chỉnh tay và cho phép xóa để dùng lại tự động', () => {
   assert.deepEqual(parseManualWorkdayInput('0,5'), { valid: true, value: 0.5 })
@@ -13,4 +17,10 @@ test('lưu và gỡ giá trị công theo nhân viên, ngày', () => {
   const saved = updateManualWorkdays({}, 'emp-1', 2, 0.5)
   assert.deepEqual(saved, { 'emp-1': { 2: 0.5 } })
   assert.deepEqual(updateManualWorkdays(saved, 'emp-1', 2, null), {})
+})
+
+test('lưu giá trị admin đã nhập kể cả khi bằng công tự động đang hiển thị', () => {
+  assert.equal(shouldCommitManualWorkday({ dirty: true, isManual: false, draft: '1', displayedValue: '1' }), true)
+  assert.equal(shouldCommitManualWorkday({ dirty: false, isManual: false, draft: '1', displayedValue: '1' }), false)
+  assert.equal(shouldCommitManualWorkday({ dirty: true, isManual: true, draft: '1', displayedValue: '1' }), false)
 })

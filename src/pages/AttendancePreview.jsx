@@ -19,7 +19,11 @@ import {
   resolveAttendanceShift
 } from '../utils/attendanceShift'
 import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
-import { parseManualWorkdayInput, updateManualWorkdays } from '../utils/attendanceManual'
+import {
+  parseManualWorkdayInput,
+  shouldCommitManualWorkday,
+  updateManualWorkdays
+} from '../utils/attendanceManual'
 import {
   describeDayWorkFormula,
   getAttendanceHoliday,
@@ -66,19 +70,23 @@ const ensureXlsx = async () => {
 function ManualWorkdayInput({ value, isManual, disabled, onSave, employeeName, date }) {
   const normalizedValue = value === null || value === undefined ? '' : String(value)
   const [draft, setDraft] = useState(normalizedValue)
+  const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     setDraft(normalizedValue)
+    setDirty(false)
   }, [normalizedValue])
 
   const commit = () => {
-    if (draft === normalizedValue) return
+    if (!shouldCommitManualWorkday({ dirty, isManual, draft, displayedValue: normalizedValue })) return
     const parsed = parseManualWorkdayInput(draft)
     if (!parsed.valid) {
       alert(parsed.error)
       setDraft(normalizedValue)
+      setDirty(false)
       return
     }
+    setDirty(false)
     onSave(draft)
   }
 
@@ -92,12 +100,16 @@ function ManualWorkdayInput({ value, isManual, disabled, onSave, employeeName, d
       className={`manual-workday-input ${isManual ? 'is-manual' : ''}`}
       value={draft}
       disabled={disabled}
-      onChange={event => setDraft(event.target.value)}
+      onChange={event => {
+        setDraft(event.target.value)
+        setDirty(true)
+      }}
       onBlur={commit}
       onKeyDown={event => {
         if (event.key === 'Enter') event.currentTarget.blur()
         if (event.key === 'Escape') {
           setDraft(normalizedValue)
+          setDirty(false)
           event.currentTarget.blur()
         }
       }}

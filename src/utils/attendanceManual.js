@@ -9,6 +9,9 @@ export const parseManualWorkdayInput = rawValue => {
   return { valid: true, value: Math.round(value * 100) / 100 }
 }
 
+export const shouldCommitManualWorkday = ({ dirty, isManual, draft, displayedValue }) =>
+  dirty && (!isManual || draft !== displayedValue)
+
 export const updateManualWorkdays = (current, employeeId, day, value) => {
   const employeeKey = String(employeeId || '')
   const dayKey = String(Number(day))
