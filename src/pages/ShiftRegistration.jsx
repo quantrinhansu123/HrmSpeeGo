@@ -224,7 +224,7 @@ function ShiftRegistration() {
     {error && <div className="shift-reg-message is-error" role="alert">{error}</div>}
     {notice && <div className="shift-reg-message is-success" role="status">{notice}</div>}
 
-    <form className="shift-reg-card" onSubmit={save}>
+    {!canAssign && <form className="shift-reg-card" onSubmit={save}>
       <h2>Ca của tôi</h2>
       <div className="shift-reg-table-wrap">
         <table>
@@ -275,7 +275,7 @@ function ShiftRegistration() {
           {saving ? 'Đang gửi...' : 'Gửi đăng ký'}
         </button>
       </div>
-    </form>
+    </form>}
 
     {canAssign && <form className="shift-reg-card shift-reg-assignment" onSubmit={assign}>
       <div><h2>Admin gán ca cho nhân viên</h2><p>Ca được duyệt ngay sau khi gán.</p></div>
