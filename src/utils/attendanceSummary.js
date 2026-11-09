@@ -1,3 +1,4 @@
+import { hasApprovedLateEarlyRequest, LATE_EARLY_WORKDAY_THRESHOLD } from './attendanceLateEarly.js'
 import { buildSourceEmployeeKey } from './attendanceMatching.js'
 import { departmentForAttendanceSummary } from './attendanceDepartment.js'
 import {
@@ -67,7 +68,7 @@ const hasNumericValue = (value) =>
   value !== undefined &&
   Number.isFinite(Number(value))
 
-export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings = {}, date = '') => {
+export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings = {}, date = '', lateEarlyApproved = false) => {
   let hours = 0
   let workdays = 0
   let extraWorkdays = 0
@@ -310,12 +311,11 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   // Muộn/sớm < 60 phút: chỉ ghi phút để phạt, không trừ công.
   // ≥ 60 phút: giữ công theo giờ thực tế (đã bị giảm do đi muộn/về sớm).
   const lateEarlyTotal = Math.max(0, lateMinutes) + Math.max(0, earlyMinutes)
-  const LATE_EARLY_WORKDAY_THRESHOLD = 60
   let regularWorkdaysExact = Math.max(0, workdays)
   if (
     hasPunch &&
     lateEarlyTotal > 0 &&
-    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD &&
+    (lateEarlyApproved || lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD) &&
     !['source-value', 'matrix-value'].includes(calculationMode)
   ) {
     const standardMinutes = Number(attendanceSettings.standardWorkMinutes) > 0
@@ -354,6 +354,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     paidLeaveWorkdays: roundDecimal(paidLeaveWorkdays),
     lateMinutes,
     earlyMinutes,
+    lateEarlyApproved,
     late: lateMinutes > 0,
     early: earlyMinutes > 0,
     missingPunch,
@@ -379,7 +380,8 @@ export const buildDailyAttendanceMap = (
   attendanceLogs,
   month = '',
   employees = [],
-  attendanceSettings = {}
+  attendanceSettings = {},
+  approvalRequests = []
 ) => {
   const grouped = new Map()
   const employeesById = new Map(
@@ -443,7 +445,12 @@ export const buildDailyAttendanceMap = (
         logs,
         employeesById.get(String(logs[0]?.employeeId || key.slice(0, key.lastIndexOf('::')))) || {},
         attendanceSettings,
-        key.slice(key.lastIndexOf('::') + 2)
+        key.slice(key.lastIndexOf('::') + 2),
+        hasApprovedLateEarlyRequest(
+          approvalRequests,
+          employeesById.get(key.slice(0, key.lastIndexOf('::'))) || {},
+          key.slice(key.lastIndexOf('::') + 2)
+        )
       )
     ])
   )
@@ -455,7 +462,8 @@ export const buildAttendanceSummary = ({
   month,
   attendanceAdjustments = {},
   manualWorkdays = {},
-  attendanceSettings = {}
+  attendanceSettings = {},
+  approvalRequests = []
 }) => {
   if (!month) return []
 
@@ -466,7 +474,8 @@ export const buildAttendanceSummary = ({
     attendanceLogs,
     month,
     employees,
-    attendanceSettings
+    attendanceSettings,
+    approvalRequests
   )
   const summaryByEmployee = new Map()
 
@@ -767,6 +776,7 @@ export const serializeAttendanceSummaryRows = (rows = []) =>
           extraWorkdays: day.extraWorkdays,
           overtimeHours: day.overtimeHours,
           paidLeaveWorkdays: day.paidLeaveWorkdays,
+          lateEarlyApproved: Boolean(day.lateEarlyApproved),
           lateMinutes: day.lateMinutes,
           earlyMinutes: day.earlyMinutes,
           late: Boolean(day.late),

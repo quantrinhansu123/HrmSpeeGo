@@ -41,6 +41,7 @@ function MyAttendance() {
   const { user } = useAuth()
   const employeeId = String(user.id)
   const [logs, setLogs] = useState([])
+  const [approvalRequests, setApprovalRequests] = useState([])
   const [attendanceSettings, setAttendanceSettings] = useState(() => normalizeAttendanceShiftSettings())
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [loading, setLoading] = useState(true)
@@ -60,9 +61,11 @@ function MyAttendance() {
     setLoading(true)
     Promise.all([
       fbGetAttendanceByEmployee(user),
-      fbGet('hr/attendanceSettings/default')
-    ]).then(([data, storedSettings]) => {
+      fbGet('hr/attendanceSettings/default'),
+      fbGet('hr/approvalRequests')
+    ]).then(([data, storedSettings, approvalData]) => {
       if (!active) return
+      setApprovalRequests(Object.values(approvalData || {}))
       setAttendanceSettings(normalizeAttendanceShiftSettings(storedSettings))
       const nextLogs = data ? Object.entries(data).map(([id, value]) => ({ ...value, id })) : []
       setLogs(nextLogs)
@@ -90,14 +93,14 @@ function MyAttendance() {
   const months = useMemo(() => [...new Set(logs.map(dateValue).map(value => value.slice(0, 7)))].filter(value => /^\d{4}-\d{2}$/.test(value)).sort().reverse(), [logs])
   const monthSummaries = useMemo(() => months.map(value => ({
     month: value,
-    summary: buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month: value, attendanceSettings })
+    summary: buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month: value, attendanceSettings, approvalRequests })
       .find(row => String(row.employeeId) === employeeId)
-  })), [attendanceSettings, employeeId, logs, months, user])
+  })), [attendanceSettings, approvalRequests, employeeId, logs, months, user])
   const monthLogs = useMemo(() => logs
     .filter(log => dateValue(log).startsWith(month))
     .map(log => timingForLog(log, user, attendanceSettings))
     .sort((a, b) => dateValue(a).localeCompare(dateValue(b))), [attendanceSettings, logs, month, user])
-  const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, employeeId, logs, month, user])
+  const summary = useMemo(() => buildAttendanceSummary({ attendanceLogs: logs, employees: [user], month, attendanceSettings, approvalRequests }).find(row => String(row.employeeId) === employeeId), [attendanceSettings, approvalRequests, employeeId, logs, month, user])
 
   const openCorrectionForm = log => {
     const pairs = punchesForLog(log)

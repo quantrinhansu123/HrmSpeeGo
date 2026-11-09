@@ -839,10 +839,11 @@ function Attendance() {
         attendanceLogs,
         filterAttendanceMonth,
         employees,
-        attendanceSettings
+        attendanceSettings,
+        approvalRequests
       )
     },
-    [attendanceLogs, attendanceSettings, employees, filterAttendanceMonth, needsWorkdaySummary]
+    [attendanceLogs, attendanceSettings, approvalRequests, employees, filterAttendanceMonth, needsWorkdaySummary]
   )
 
   const paidLeaveStatsByEmployee = useMemo(() => {
@@ -896,7 +897,8 @@ function Attendance() {
       month: filterAttendanceMonth,
       attendanceAdjustments,
       manualWorkdays,
-      attendanceSettings
+      attendanceSettings,
+      approvalRequests
       })
       const rowsByEmployee = new Map(
         baseRows.map((row) => [String(row.employeeId), row])
@@ -945,6 +947,7 @@ function Attendance() {
       attendanceAdjustments,
       manualWorkdays,
       attendanceSettings,
+      approvalRequests,
       paidLeaveStatsByEmployee,
       needsWorkdaySummary
     ]
@@ -1071,7 +1074,7 @@ function Attendance() {
     ) {
       loadTabCollection(activeTab)
     }
-    if (activeTab === 'workday_summary') {
+    if (activeTab === 'workday_summary' || activeTab === 'attendance') {
       loadApprovals()
     }
   }, [activeTab, loadApprovals, loadTabCollection])
@@ -1545,7 +1548,8 @@ function Attendance() {
       month: filterAttendanceMonth,
       attendanceAdjustments,
       manualWorkdays,
-      attendanceSettings
+      attendanceSettings,
+      approvalRequests
     })
     const searchTerm = normalizeString(filterAttendanceEmployee)
     return baseRows.filter(row =>
@@ -1561,6 +1565,7 @@ function Attendance() {
     attendanceAdjustments,
     attendanceLogs,
     attendanceSettings,
+    approvalRequests,
     employees,
     filterAttendanceEmployee,
     filterAttendanceEmployeeKey,
@@ -1639,7 +1644,8 @@ function Attendance() {
         month: period,
         attendanceAdjustments,
         manualWorkdays,
-        attendanceSettings
+        attendanceSettings,
+        approvalRequests
       })
       const empWorkdays = Object.fromEntries(
         periodSummary.map(row => [row.employeeId, row.workdays])

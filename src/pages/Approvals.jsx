@@ -1,3 +1,4 @@
+import { isLateEarlyRequest } from '../utils/attendanceLateEarly'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -313,6 +314,7 @@ function Approvals() {
   const [subject, setSubject] = useState('')
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState([])
+  const [attendanceDate, setAttendanceDate] = useState('')
   const [leaveStartDate, setLeaveStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [leaveEndDate, setLeaveEndDate] = useState(new Date().toISOString().slice(0, 10))
   const [leaveDuration, setLeaveDuration] = useState('full')
@@ -1002,6 +1004,7 @@ function Approvals() {
     setSubject(tpl?.defaultSubject || tpl?.title || '')
     setContent(tpl?.defaultContent || '')
     setAttachments([])
+    setAttendanceDate(today)
     setLeaveStartDate(today)
     setLeaveEndDate(today)
     setLeaveDuration('full')
@@ -1326,6 +1329,12 @@ function Approvals() {
     if (selectedTemplateIsRecruit && !recruitPosition.trim()) {
       errs.recruitPosition = 'Vui lòng nhập vị trí cần tuyển'
     }
+    if (isLateEarlyRequest({ templateId: selectedTemplate?.id, templateBaseId: selectedTemplate?.baseId }) &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(attendanceDate) ||
+        !Number.isFinite(Date.parse(`${attendanceDate}T00:00:00Z`)) ||
+        new Date(`${attendanceDate}T00:00:00Z`).toISOString().slice(0, 10) !== attendanceDate)) {
+      errs.attendanceDate = 'Vui lòng chọn ngày đi muộn/về sớm hợp lệ'
+    }
     if (selectedTemplateUsesLeaveDates) {
       const dates = listRequestLeaveDates({ leaveStartDate, leaveEndDate })
       if (!leaveStartDate || !leaveEndDate || dates.length === 0) {
@@ -1393,6 +1402,8 @@ function Approvals() {
         code: genCode(),
         templateType: selectedTemplate?.title || 'ĐỀ XUẤT',
         templateId: selectedTemplate?.id || 'proposal',
+        templateBaseId: selectedTemplate?.baseId || selectedTemplate?.id || 'proposal',
+        ...(isLateEarlyRequest({ templateId: selectedTemplate?.id, templateBaseId: selectedTemplate?.baseId }) ? { attendanceDate } : {}),
         subject: subject.trim(),
         content: content.trim(),
         attachments,
@@ -2081,6 +2092,14 @@ function Approvals() {
                   </div>
                 )}
 
+                {isLateEarlyRequest({ templateId: selectedTemplate?.id, templateBaseId: selectedTemplate?.baseId }) && (
+                  <div className="apv-field">
+                    <label htmlFor="late-early-date">Ngày đi muộn/về sớm <span className="req">*</span></label>
+                    <input id="late-early-date" type="date" value={attendanceDate} onChange={e => setAttendanceDate(e.target.value)} required />
+                    <small>Khi được duyệt: miễn trừ công và phạt muộn/sớm trong ngày này. Vẫn ghi nhận số phút thực tế.</small>
+                    {errors.attendanceDate && <div className="apv-field-error">{errors.attendanceDate}</div>}
+                  </div>
+                )}
                 {selectedTemplateUsesLeaveDates && (
                   <div className="apv-leave-fields">
                     <div className="apv-card-block__title">Thông tin đề xuất xin nghỉ</div>
@@ -2479,6 +2498,12 @@ function Approvals() {
                       </div>
                     )}
                   </div>
+                )}
+                {isLateEarlyRequest(selectedRequest) && (
+                  <div className="apv-detail-leave"><div>
+                    <span>Ngày đi muộn/về sớm</span>
+                    <strong>{selectedRequest.attendanceDate ? formatDateShort(selectedRequest.attendanceDate) : 'Chưa có ngày áp dụng — chưa thể miễn công/phạt tự động'}</strong>
+                  </div></div>
                 )}
                 {listRequestLeaveDates(selectedRequest).length > 0 && (
                   <div className="apv-detail-leave">
