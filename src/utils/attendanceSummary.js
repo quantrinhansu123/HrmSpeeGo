@@ -409,8 +409,6 @@ export const buildDailyAttendanceMap = (
   )
 
   attendanceLogs.forEach(log => {
-    const date = attendanceDateString(log)
-    if (!date || (month && !date.startsWith(month))) return
     const rawEmployeeId = String(log.employeeId || '')
     const employeeId = rawEmployeeId.startsWith('external:')
       ? `external:${buildSourceEmployeeKey(
@@ -419,7 +417,26 @@ export const buildDailyAttendanceMap = (
         )}`
       : rawEmployeeId
     if (!employeeId) return
-    const key = `${employeeId}::${date}`
+    const date = attendanceDateString(log)
+    if (!date) return
+    const shift = resolveAttendanceShift(employeesById.get(employeeId) || {}, log, attendanceSettings)
+    const shiftStart = attendanceTimeToMinutes(shift.start)
+    const shiftEnd = attendanceTimeToMinutes(shift.end)
+    const overnight = shiftStart !== null && shiftEnd !== null && shiftEnd <= shiftStart
+    let workDate = date
+    if (overnight) {
+      const dateParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+      if (dateParts) {
+        const [year, monthNumber, day] = dateParts.slice(1).map(Number)
+        const nextDate = new Date(Date.UTC(year, monthNumber - 1, day))
+        if (nextDate.toISOString().slice(0, 10) === date) {
+          nextDate.setUTCDate(nextDate.getUTCDate() + 1)
+          workDate = nextDate.toISOString().slice(0, 10)
+        }
+      }
+    }
+    if (month && !workDate.startsWith(month)) return
+    const key = `${employeeId}::${workDate}`
     if (!grouped.has(key)) grouped.set(key, [])
     grouped.get(key).push(log)
   })

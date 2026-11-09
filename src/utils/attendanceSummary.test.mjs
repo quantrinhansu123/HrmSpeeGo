@@ -40,9 +40,9 @@ test('keeps the registered shift and its saved pair penalties', () => {
   assert.equal(day.lateMinutes, 7)
 })
 
-test('tổng hợp ca đêm chia buổi giữ ngày bắt đầu ca và cộng các cặp qua nửa đêm', () => {
+test('tổng hợp ca đêm vào ngày hôm sau, kể cả qua cuối tháng', () => {
   const rows = buildAttendanceSummary({
-    month: '2026-10',
+    month: '2026-11',
     employees: [{ id: 'night', name: 'Ca đêm' }],
     attendanceSettings: { shifts: { night: {
       name: 'Ca đêm', standardCheckIn: '20:00', standardCheckOut: '04:30',
@@ -61,12 +61,12 @@ test('tổng hợp ca đêm chia buổi giữ ngày bắt đầu ca và cộng c
       ]
     }]
   })
-  const day = rows[0].days.get('2026-10-31')
+  const day = rows[0].days.get('2026-11-01')
   assert.equal(day.hours, 8)
   assert.equal(day.workdays, 1)
   assert.equal(day.checkIn, '20:00')
   assert.equal(day.checkOut, '04:30')
-  assert.equal(rows[0].days.has('2026-11-01'), false)
+  assert.equal(rows[0].days.has('2026-10-31'), false)
 })
 
 test('tổng hợp giữ bộ phận chi tiết của Excel dù hồ sơ HR thuộc nhóm rộng', () => {

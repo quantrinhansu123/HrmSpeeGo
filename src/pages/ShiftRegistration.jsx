@@ -211,7 +211,7 @@ function ShiftRegistration() {
     <header className="shift-reg-header">
       <div>
         <h1>Đăng ký ca làm việc</h1>
-        <p>Chọn một hoặc nhiều ca cho từng ngày trong tuần; ca đêm được tính theo ngày bắt đầu.</p>
+        <p>Chọn một hoặc nhiều ca cho từng ngày trong tuần; ca đêm được tính công vào ngày hôm sau.</p>
       </div>
       <div className="shift-reg-week" role="group" aria-label="Chọn tuần">
         <button type="button" className="btn" onClick={() => changeWeek(-1)} aria-label="Tuần trước"><i className="fas fa-chevron-left" aria-hidden="true" /></button>
