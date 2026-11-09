@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import { applyPenaltyAmountsToSummaryRows } from './attendancePenalties.js'
 
 const TEMPLATE_URL = '/templates/attendance-report-template.xlsx'
 const SHEET_NAME = 'THÁNG 7'
@@ -127,6 +128,7 @@ const setFormula = (cell, formula, result = 0) => {
 
 const populateEmployee = (worksheet, rowNumber, row, index, month, daysInMonth) => {
   clearEmployeeRow(worksheet, rowNumber)
+  const [calculatedPenalties] = applyPenaltyAmountsToSummaryRows([row])
   const note = row.lateCount
     ? `${row.lateCount} lần (${row.lateMinutes || 0}p)`
     : ''
@@ -150,10 +152,10 @@ const populateEmployee = (worksheet, rowNumber, row, index, month, daysInMonth) 
   const unapprovedAbsenceCount = Number(row.unapprovedAbsenceCount || 0)
   const under30Fine = Number(row.lateUnder30Fine != null
     ? row.lateUnder30Fine
-    : under30Count * 50000)
+    : calculatedPenalties.lateUnder30Fine)
   const over30Fine = Number(row.lateOver30Fine != null
     ? row.lateOver30Fine
-    : over30Count * 100000)
+    : calculatedPenalties.lateOver30Fine)
   const missingPunchFine = Number(row.missingPunchFine != null
     ? row.missingPunchFine
     : missingPunchCount * 50000)
@@ -162,9 +164,9 @@ const populateEmployee = (worksheet, rowNumber, row, index, month, daysInMonth) 
     : unapprovedAbsenceCount * 200000)
 
   worksheet.getCell(rowNumber, 12).value = under30Count
-  setFormula(worksheet.getCell(rowNumber, 13), `50000*IF(L${rowNumber}>=1,L${rowNumber})`, under30Fine)
+  worksheet.getCell(rowNumber, 13).value = under30Fine
   worksheet.getCell(rowNumber, 14).value = over30Count
-  setFormula(worksheet.getCell(rowNumber, 15), `100000*IF(N${rowNumber}>=1,N${rowNumber})`, over30Fine)
+  worksheet.getCell(rowNumber, 15).value = over30Fine
   worksheet.getCell(rowNumber, 16).value = missingPunchCount
   setFormula(worksheet.getCell(rowNumber, 17), `50000*IF(P${rowNumber}>=1,P${rowNumber})`, missingPunchFine)
   worksheet.getCell(rowNumber, 18).value = null // FIELD_NOT_AVAILABLE: không trực nhật

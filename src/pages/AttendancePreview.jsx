@@ -837,7 +837,9 @@ function AttendancePreview() {
     if (!silent) {
       alert(
         `Đã lưu bảng công tháng ${targetMonth} (${snapshot.employeeCount || 0} nhân viên). ` +
-        'Bảng phạt đã đồng bộ các lỗi muộn/sớm/quên chấm từ bảng công (giữ dòng nhập tay).'
+        (snapshot.penaltySyncError
+          ? `Chưa đồng bộ được Bảng phạt: ${snapshot.penaltySyncError}. Hãy tổng hợp lại để thử lại.`
+          : 'Bảng phạt đã đồng bộ các lỗi muộn/sớm/quên chấm từ bảng công (giữ dòng nhập tay).')
       )
     }
     return snapshot

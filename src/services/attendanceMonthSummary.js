@@ -29,12 +29,13 @@ export const rebuildAttendanceMonthSummary = async (
     throw new Error('Tháng không hợp lệ. Dùng định dạng YYYY-MM.')
   }
 
-  const [employeeData, logData, nextAdjustments, nextManuals, storedSettings] = await Promise.all([
+  const [employeeData, logData, nextAdjustments, nextManuals, storedSettings, approvalData] = await Promise.all([
     fbGetEmployeesDirectory(companyId),
     fbGetAttendanceLogsForWorkMonth(period),
     fbGet(`hr/attendanceAdjustments/${period}`, companyId),
     fbGet(`hr/manualWorkdays/${period}`, companyId),
-    fbGet('hr/attendanceSettings/default', companyId)
+    fbGet('hr/attendanceSettings/default', companyId),
+    fbGet('hr/approvalRequests', companyId)
   ])
 
   const attendanceSettings = normalizeAttendanceShiftSettings(storedSettings)
@@ -50,7 +51,8 @@ export const rebuildAttendanceMonthSummary = async (
     month: period,
     attendanceAdjustments: nextAdjustments || {},
     manualWorkdays: nextManuals || {},
-    attendanceSettings
+    attendanceSettings,
+    approvalRequests: Object.values(approvalData || {})
   })
   const validEmpIds = new Set(employeeList.map(employee => String(employee.id)))
   const filteredSummaryRows = summaryRows.filter(row => validEmpIds.has(String(row.employeeId)))
@@ -75,6 +77,7 @@ export const rebuildAttendanceMonthSummary = async (
     )
   } catch (penaltyError) {
     console.warn('Đã lưu bảng công nhưng chưa đồng bộ được Bảng phạt:', penaltyError)
+    snapshot.penaltySyncError = penaltyError.message || String(penaltyError)
   }
 
   return snapshot
