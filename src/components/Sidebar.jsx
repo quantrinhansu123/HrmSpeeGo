@@ -54,6 +54,13 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
   ]
 
   const accountingOnly = isAccountingUser(user) && !isCoreStaffUser(user)
+  const staffGroups = [
+    { label: 'Nhân sự', paths: ['/employees', '/giay-to-cong-ty'] },
+    { label: 'Chấm công', paths: ['/cham-cong-online', '/lich-su-cham-cong', '/bang-cong-preview', '/bang-cong', '/bang-phep', '/ngay-nghi-phep', '/dang-ky-ca', '/bang-phat'] },
+    { label: 'Phê duyệt', paths: ['/approvals', '/yeu-cau-dieu-chinh-cong'] },
+    { label: 'Cài đặt', paths: ['/holiday-settings'] }
+  ]
+  const upcomingPaths = ['/dashboard', '/salary', '/competency', '/kpi', '/tasks']
 
   const isActive = (path) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`)
@@ -73,10 +80,12 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
         key={item.path}
         to={item.path}
         className={`nav-item ${isActive(item.path) ? 'active' : ''}`}
+        aria-current={isActive(item.path) ? 'page' : undefined}
         onClick={handleNavClick}
       >
         <i className={item.icon}></i>
         <span>{item.label}</span>
+        {upcomingPaths.includes(item.path) && <small className="nav-coming-soon">Sắp ra mắt</small>}
       </Link>
     ))
 
@@ -94,12 +103,19 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
           renderItems(employeeItems)
         ) : (
           <>
-            <div className="nav-group nav-group--primary">
-              {renderItems(primaryStaffItems)}
-            </div>
+            {staffGroups.map(group => (
+              <section className="nav-group nav-group--primary" key={group.label} aria-label={group.label}>
+                <h2 className="nav-group-title">{group.label}</h2>
+                {renderItems(group.paths.map(path => primaryStaffItems.find(item => item.path === path)).filter(Boolean))}
+              </section>
+            ))}
+            <section className="nav-group" aria-label="Tuyển dụng">
+              {renderItems(secondaryStaffItems.filter(item => !upcomingPaths.includes(item.path)))}
+            </section>
             <div className="nav-group-divider" aria-hidden="true" />
             <div className="nav-group nav-group--secondary">
-              {renderItems(secondaryStaffItems)}
+              <h2 className="nav-group-title">Sắp ra mắt</h2>
+              {renderItems(secondaryStaffItems.filter(item => upcomingPaths.includes(item.path)))}
             </div>
           </>
         )}

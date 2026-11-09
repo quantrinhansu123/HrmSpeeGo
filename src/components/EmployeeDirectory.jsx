@@ -96,6 +96,16 @@ function EmployeeDirectory({
     }))
     const selectedStat = stats.find(card => card.key === statFilter)
     const activeFilterCount = [filterBranch, filterDept, filterContract, filterShift, filterStatus].filter(Boolean).length
+    const activeFilters = [
+        { label: 'Tìm kiếm', value: searchTerm, clear: () => setSearchTerm('') },
+        { label: 'Chi nhánh', value: filterBranch === '__none__' ? 'Chưa có chi nhánh' : filterBranch, clear: () => setFilterBranch('') },
+        { label: 'Phòng ban', value: filterDept === '__none__' ? 'Chưa có phòng ban' : filterDept, clear: () => setFilterDept('') },
+        { label: 'Hợp đồng', value: filterContract, clear: () => setFilterContract('') },
+        { label: 'Ca làm việc', value: filterShift === '__none__' ? 'Chưa gán ca' : filterShift, clear: () => setFilterShift('') },
+        { label: 'Trạng thái', value: filterStatus, clear: () => setFilterStatus('') },
+        { label: 'Thống kê', value: selectedStat?.label, clear: () => { setActiveTab('list'); onClearStat?.() } }
+    ].filter(filter => filter.value)
+    const clearFilters = () => activeFilters.forEach(filter => filter.clear())
 
     const openEmployee = async (employee, readOnly = true) => {
         if (openingEmployee) return
@@ -420,6 +430,22 @@ function EmployeeDirectory({
                     </button>
                 </section>
 
+                {activeFilters.length > 0 && (
+                    <section className="employees-active-filters" aria-label="Bộ lọc đang áp dụng">
+                        <p role="status">Tìm thấy <strong>{filteredEmployees.length}</strong> nhân viên</p>
+                        <div className="employees-filter-chips">
+                            {activeFilters.map(filter => (
+                                <button type="button" key={filter.label} onClick={filter.clear}
+                                    aria-label={`Xóa lọc ${filter.label}: ${filter.value}`}>
+                                    <span>{filter.label}: <strong>{filter.value}</strong></span>
+                                    <i className="fas fa-xmark" aria-hidden="true"></i>
+                                </button>
+                            ))}
+                            <button type="button" className="employees-clear-filters" onClick={clearFilters}>Xóa bộ lọc</button>
+                        </div>
+                    </section>
+                )}
+
                 {/* Mobile Filter Sheet Drawer */}
                 {mobileFiltersOpen && (
                     <>
@@ -479,7 +505,7 @@ function EmployeeDirectory({
                                     type="button"
                                     className="btn btn-outline"
                                     onClick={() => {
-                                        onResetFilters?.() || onReload?.();
+                                        clearFilters();
                                         setMobileFiltersOpen(false);
                                     }}
                                 >
