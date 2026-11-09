@@ -433,6 +433,22 @@ export const fbGetAttendanceLogsByMonth = async (month) => {
   return out
 }
 
+export const fbGetAttendanceLogsForWorkMonth = async (month) => {
+  const period = String(month || '').trim()
+  if (!/^\d{4}-\d{2}$/.test(period)) return null
+
+  const [year, monthNumber] = period.split('-').map(Number)
+  const previousDate = new Date(Date.UTC(year, monthNumber - 1, 0)).toISOString().slice(0, 10)
+  const [monthLogs, previousMonthLogs] = await Promise.all([
+    fbGetAttendanceLogsByMonth(period),
+    fbGetAttendanceLogsByMonth(previousDate.slice(0, 7))
+  ])
+  const previousDayLogs = Object.fromEntries(
+    Object.entries(previousMonthLogs || {}).filter(([, log]) => String(log.date || '').slice(0, 10) === previousDate)
+  )
+  return { ...previousDayLogs, ...(monthLogs || {}) }
+}
+
 /** List logical ids in a collection without loading full JSON payloads. */
 export const fbListCollectionIds = async (collection) => {
   const name = String(collection || '').trim()

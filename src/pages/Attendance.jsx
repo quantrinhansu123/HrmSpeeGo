@@ -12,7 +12,7 @@ import TaxModal from '../components/TaxModal'
 import {
   fbDelete,
   fbGet,
-  fbGetAttendanceLogsByMonth,
+  fbGetAttendanceLogsForWorkMonth,
   fbGetEmployeesDirectory,
   fbPush,
   fbUpdate
@@ -972,7 +972,7 @@ function Attendance() {
     setLogsLoading(true)
     try {
       const [attendanceLogsData, adjustments, manuals] = await Promise.all([
-        fbGetAttendanceLogsByMonth(month),
+        fbGetAttendanceLogsForWorkMonth(month),
         fbGet(`hr/attendanceAdjustments/${month}`),
         fbGet(`hr/manualWorkdays/${month}`)
       ])
@@ -1099,7 +1099,7 @@ function Attendance() {
       initialLoadDoneRef.current = true
 
       const [attendanceLogsData, adjustments, manuals] = await Promise.all([
-        fbGetAttendanceLogsByMonth(month),
+        fbGetAttendanceLogsForWorkMonth(month),
         fbGet(`hr/attendanceAdjustments/${month}`),
         fbGet(`hr/manualWorkdays/${month}`)
       ])

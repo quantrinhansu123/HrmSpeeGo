@@ -1,6 +1,6 @@
 import {
   fbGet,
-  fbGetAttendanceLogsByMonth,
+  fbGetAttendanceLogsForWorkMonth,
   fbGetEmployeesDirectory,
   fbSet
 } from './firebase'
@@ -31,7 +31,7 @@ export const rebuildAttendanceMonthSummary = async (
 
   const [employeeData, logData, nextAdjustments, nextManuals, storedSettings] = await Promise.all([
     fbGetEmployeesDirectory(companyId),
-    fbGetAttendanceLogsByMonth(period, companyId),
+    fbGetAttendanceLogsForWorkMonth(period),
     fbGet(`hr/attendanceAdjustments/${period}`, companyId),
     fbGet(`hr/manualWorkdays/${period}`, companyId),
     fbGet('hr/attendanceSettings/default', companyId)
@@ -81,7 +81,18 @@ export const rebuildAttendanceMonthSummary = async (
 }
 
 export const rebuildAttendanceMonthSummaryForDate = async (dateValue, options = {}) => {
-  const period = String(dateValue || '').slice(0, 7)
+  const date = String(dateValue || '').slice(0, 10)
+  const period = date.slice(0, 7)
   if (!/^\d{4}-\d{2}$/.test(period)) return null
-  return rebuildAttendanceMonthSummary(period, options)
+  const snapshot = await rebuildAttendanceMonthSummary(period, options)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return snapshot
+  const nextDate = new Date(`${date}T00:00:00.000Z`)
+  if (Number.isNaN(nextDate.getTime()) || nextDate.toISOString().slice(0, 10) !== date) return snapshot
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1)
+  const nextPeriod = nextDate.toISOString().slice(0, 7)
+  if (nextPeriod !== period) {
+    // Ca bắt đầu ngày cuối tháng được chuyển sang bảng công tháng kế tiếp.
+    await rebuildAttendanceMonthSummary(nextPeriod, options)
+  }
+  return snapshot
 }
