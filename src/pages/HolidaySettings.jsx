@@ -478,7 +478,7 @@ function HolidaySettings() {
                       ))}
                     </div>
                     <p className="holiday-settings-split-note">
-                      Tổng muộn/sớm trong ngày dưới 60 phút: giữ công; từ 60 phút: trừ toàn bộ thời gian thiếu, không phạt tiền muộn/sớm. Đơn muộn/sớm đã duyệt: miễn trừ công và phạt. Thiếu lượt chấm: dùng giờ vào đầu và ra cuối.
+                      Tổng muộn/sớm trong ngày dưới 60 phút: giữ công; từ 60 phút: trừ công theo thời gian vi phạm. Cả hai trường hợp đều xét phạt tiền theo quy định. Đơn muộn/sớm đã duyệt: chỉ miễn tiền phạt, vẫn trừ công nếu đủ ngưỡng. Thiếu lượt chấm: dùng giờ vào đầu và ra cuối.
                     </p>
                   </>
                 )}

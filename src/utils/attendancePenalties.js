@@ -1,4 +1,3 @@
-import { LATE_EARLY_WORKDAY_THRESHOLD } from './attendanceLateEarly.js'
 export const DEFAULT_PENALTY_CATEGORIES = [
   { key: 'late_under_30', label: 'Muộn/sớm tổng <30p', amount: 50000 },
   { key: 'late_over_30', label: 'Muộn/sớm tổng ≥30p', amount: 100000 },
@@ -125,7 +124,6 @@ export const collectLateEarlyOccurrences = (summaryRow = {}) => {
     if (!day || day.lateEarlyApproved) return
     const lateMinutes = Number(day.lateMinutes || 0)
     const earlyMinutes = Number(day.earlyMinutes || 0)
-    if (Math.max(0, lateMinutes) + Math.max(0, earlyMinutes) >= LATE_EARLY_WORKDAY_THRESHOLD) return
     if (day.late && lateMinutes > 0) {
       events.push({ date, type: 'late', minutes: lateMinutes })
     }

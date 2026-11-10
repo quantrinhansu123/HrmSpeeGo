@@ -337,7 +337,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   if (
     hasPunch &&
     lateEarlyTotal > 0 &&
-    (lateEarlyApproved || lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD) &&
+    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD &&
     !['source-value', 'matrix-value'].includes(calculationMode)
   ) {
     const standardMinutes = Number(attendanceSettings.standardWorkMinutes) > 0

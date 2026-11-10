@@ -17,28 +17,32 @@ const summarize = (times, approvalRequests = [], extra = {}) => buildAttendanceS
   ...extra
 })
 
-test('59 phút giữ công; đúng 60 và 65 phút cộng muộn/sớm trừ toàn bộ, không phạt', () => {
+test('59 phút giữ công; đúng 60 và 65 phút trừ công; cả ba trường hợp đều phạt', () => {
   for (const [vao, ra, minutes] of [['09:00', '17:01', 59], ['09:00', '17:00', 60], ['09:05', '17:00', 65]]) {
     const rows = summarize([[vao, ra]])
     const day = rows[0].days.get('2026-08-01')
     assert.equal(day.lateMinutes + day.earlyMinutes, minutes)
     assert.ok(Math.abs(day.workdaysExact - (minutes < 60 ? 1 : (480 - minutes) / 480)) < 1e-9)
-    assert.equal(applyPenaltyAmountsToSummaryRows(rows)[0].lateFine, minutes < 60 ? 100000 : 0)
+    assert.equal(applyPenaltyAmountsToSummaryRows(rows)[0].lateFine, 100000)
+    assert.equal(buildPenaltyDetailRows(rows)[0].amount, 100000)
   }
 })
 
-test('ngày từ 60 phút không dùng lượt miễn và không cộng tổng phút phạt tháng', () => {
+test('ngày từ 60 phút được tính vào lượt và tổng phút phạt tháng', () => {
   const rows = summarize([['09:40', '17:30'], ['08:40', '17:30'], ['08:40', '17:30']])
-  assert.equal(applyPenaltyAmountsToSummaryRows(rows)[0].lateFine, 0)
+  const [penalty] = buildPenaltyDetailRows(rows)
+  assert.equal(penalty.amount, 100000)
+  assert.match(penalty.content, /3 lần, tổng 90 phút/)
+  assert.equal(applyPenaltyAmountsToSummaryRows(rows)[0].lateFine, 100000)
   const withThird = summarize([['09:40', '17:30'], ['08:40', '17:30'], ['08:40', '17:30'], ['08:35', '17:30']])
-  assert.equal(applyPenaltyAmountsToSummaryRows(withThird)[0].lateFine, 50000)
+  assert.equal(applyPenaltyAmountsToSummaryRows(withThird)[0].lateFine, 100000)
 })
 
-test('đơn đã duyệt miễn công/phạt đúng người và ngày, vẫn lưu số phút trong snapshot', () => {
+test('đơn đã duyệt chỉ miễn phạt đúng người và ngày, vẫn trừ công và lưu số phút', () => {
   const approved = { templateId: 'late-early', requesterId: 'e1', status: 'approved', attendanceDate: '2026-08-01' }
   const rows = summarize([['09:40', '17:30'], ['08:50', '17:30']], [approved])
   const day = rows[0].days.get('2026-08-01')
-  assert.equal(day.workdaysExact, 1)
+  assert.ok(Math.abs(day.workdaysExact - 410 / 480) < 1e-9)
   assert.equal(day.lateMinutes, 70)
   assert.equal(day.hoursExact, 410 / 60)
   assert.equal(day.lateEarlyApproved, true)
@@ -51,9 +55,25 @@ test('đơn đã duyệt miễn công/phạt đúng người và ngày, vẫn l�
     const [row] = summarize([['09:40', '17:30']], [{ ...approved, ...patch }])
     assert.equal(row.days.get('2026-08-01').lateEarlyApproved, false)
     assert.ok(row.workdays < 1)
+    assert.equal(applyPenaltyAmountsToSummaryRows([row])[0].lateFine, 100000)
   }
   const [manual] = summarize([['09:40', '17:30']], [approved], { manualWorkdays: { e1: { 1: 0.5 } } })
   assert.equal(manual.workdays, 0.5)
+})
+
+test('đơn đã duyệt giữ công dưới 60 phút và vẫn trừ công từ 60 phút cho cả muộn lẫn sớm', () => {
+  const approved = { templateId: 'late-early', requesterId: 'e1', status: 'approved', attendanceDate: '2026-08-01' }
+  for (const [vao, ra, minutes] of [
+    ['09:29', '17:30', 59], ['09:30', '17:30', 60], ['09:40', '17:30', 70],
+    ['08:30', '16:31', 59], ['08:30', '16:30', 60], ['08:30', '16:20', 70]
+  ]) {
+    const rows = summarize([[vao, ra]], [approved])
+    const day = rows[0].days.get('2026-08-01')
+    assert.equal(day.lateMinutes + day.earlyMinutes, minutes)
+    assert.ok(Math.abs(day.workdaysExact - (minutes < 60 ? 1 : (480 - minutes) / 480)) < 1e-9)
+    assert.equal(applyPenaltyAmountsToSummaryRows(rows)[0].lateFine, 0)
+    assert.deepEqual(buildPenaltyDetailRows(rows), [])
+  }
 })
 
 test('hai lần 20 phút phạt 100k; muộn và sớm dùng chung hai lượt dưới 15 phút', () => {
@@ -69,7 +89,7 @@ test('Excel giữ tiền phạt tháng, không nhân theo số lần khi mở l�
   for (const [times, amount] of [
     [[['08:40', '17:20']], 0],
     [[['08:50', '17:30'], ['08:50', '17:30']], 100000],
-    [[['09:40', '17:30']], 0]
+    [[['09:40', '17:30']], 100000]
   ]) {
     const workbook = await buildAttendanceWorkbook(template, summarize(times), '2026-08')
     const sheet = workbook.worksheets[0]
