@@ -401,10 +401,10 @@
   width: 100%;
   max-height: calc(100vh - 205px);
   overflow: auto;
-  border: 1px solid #8d98a7;
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 5px 18px rgba(15, 45, 80, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 .attendance-preview-table {
@@ -452,7 +452,8 @@
 .attendance-preview-table.is-compact .groups th {
   top: 0;
   height: 42px;
-  background: #fff0c8;
+  background: #dceaf7;
+  color: var(--primary-dark);
 }
 
 .attendance-preview-table.is-compact th,
