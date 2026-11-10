@@ -94,7 +94,7 @@ function Dashboard() {
 
         <div className="stat-card">
           <div className="stat-icon orange">
-            <span>🏙️</span>
+            <i className="fas fa-building" aria-hidden="true"></i>
           </div>
           <div className="stat-info">
             <h3 id="total-sg">{stats.hcmCount}</h3>
@@ -104,7 +104,7 @@ function Dashboard() {
 
         <div className="stat-card">
           <div className="stat-icon blue">
-            <span>🏛️</span>
+            <i className="fas fa-building" aria-hidden="true"></i>
           </div>
           <div className="stat-info">
             <h3 id="total-hn">{stats.hanoiCount}</h3>

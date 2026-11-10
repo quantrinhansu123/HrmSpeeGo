@@ -9,11 +9,16 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  flex-wrap: wrap;
 }
 
 .company-docs-header h1 {
   margin: 0 0 6px;
-  color: #0f3f78;
+  color: var(--primary-dark);
 }
 
 .company-docs-header p {
@@ -48,7 +53,7 @@
 }
 
 .company-docs-stat.is-active {
-  border-color: #0f3f78;
+  border-color: var(--primary-dark);
   background: linear-gradient(180deg, #f5f9ff 0%, #eef5ff 100%);
   box-shadow: 0 6px 18px rgb(15 63 120 / 10%);
 }
@@ -61,12 +66,12 @@
   height: 40px;
   border-radius: 10px;
   background: #eef5ff;
-  color: #0f3f78;
+  color: var(--primary-dark);
   flex-shrink: 0;
 }
 
 .company-docs-stat.is-active .company-docs-stat__icon {
-  background: #0f3f78;
+  background: var(--primary-dark);
   color: #fff;
 }
 
@@ -85,7 +90,7 @@
 
 .company-docs-stat strong {
   font-size: 1.35rem;
-  color: #0f3f78;
+  color: var(--primary-dark);
   line-height: 1.1;
 }
 
@@ -135,7 +140,7 @@
 
 .company-docs-search input:focus {
   outline: 2px solid rgb(15 63 120 / 18%);
-  border-color: #0f3f78;
+  border-color: var(--primary-dark);
 }
 
 .company-docs-toolbar__meta {
@@ -158,7 +163,7 @@
 
 .company-docs-state h2 {
   margin: 0;
-  color: #0f3f78;
+  color: var(--primary-dark);
   font-size: 1.15rem;
 }
 
@@ -176,7 +181,7 @@
   height: 64px;
   border-radius: 16px;
   background: #eef5ff;
-  color: #0f3f78;
+  color: var(--primary-dark);
   font-size: 1.5rem;
 }
 
@@ -215,12 +220,12 @@
 }
 
 .company-docs-group__head i {
-  color: #0f3f78;
+  color: var(--primary-dark);
 }
 
 .company-docs-group__head h2 {
   margin: 0;
-  color: #0f3f78;
+  color: var(--primary-dark);
   font-size: 1rem;
 }
 
@@ -294,7 +299,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #0f3f78;
+  color: var(--primary-dark);
   font-weight: 700;
   text-decoration: none;
 }
@@ -344,7 +349,7 @@
 }
 
 .company-docs-row-actions .edit:hover {
-  color: #0f3f78;
+  color: var(--primary-dark);
   border-color: #93c5fd;
   background: #eff6ff;
 }
@@ -430,4 +435,8 @@
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .company-docs-header { padding: 16px; }
 }

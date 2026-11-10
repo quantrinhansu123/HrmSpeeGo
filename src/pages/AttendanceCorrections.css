@@ -1,5 +1,10 @@
 .attendance-corrections { display: grid; gap: 16px; max-width: 1020px; margin: 0 auto; }
-.attendance-corrections__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.attendance-corrections__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;   padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  flex-wrap: wrap;
+}
 .attendance-corrections__header h1 { margin: 7px 0 5px; color: #0b2d4d; font-size: clamp(1.45rem, 2.5vw, 2rem); }
 .attendance-corrections__header p { max-width: 680px; margin: 0; color: #64748b; }
 .attendance-corrections__back { color: #2563a6; font-size: .86rem; font-weight: 700; text-decoration: none; }
@@ -43,4 +48,8 @@
   .attendance-corrections__times { grid-template-columns: 1fr; }
   .attendance-corrections__actions { flex-direction: column-reverse; }
   .attendance-corrections__actions button { width: 100%; min-height: 44px; }
+}
+
+@media (max-width: 768px) {
+  .attendance-corrections__header { padding: 16px; }
 }

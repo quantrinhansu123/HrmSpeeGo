@@ -6,5 +6,8 @@ dist/
 env.download
 .vercel
 
+# Project-local agent skills are installed for this workspace and kept out of Git.
+/.agents/skills/
+
 .vercel
 .env*

@@ -214,7 +214,7 @@ function EmployeeDirectory({
                             <i className="fas fa-users"></i>
                         </div>
                         <div className="employees-hero__titles">
-                            <h1><i className="fas fa-users desktop-icon"></i> Quản lý nhân sự</h1>
+                            <h1>Quản lý nhân sự</h1>
                             <p>
                                 <span className="employees-hero__description-desktop">Quản lý tập trung hồ sơ, hợp đồng và tình trạng nhân viên</span>
                                 <span className="employees-hero__description-mobile">Quản lý tập trung hồ sơ và tình trạng nhân viên</span>
@@ -260,13 +260,18 @@ function EmployeeDirectory({
                     </div>
                 </div>
                 <div className="employees-hero__actions">
-                    <button className="btn" onClick={onDownloadTemplate}><i className="fas fa-download"></i> Tải mẫu Excel</button>
-                    <button className="btn" onClick={onExport}><i className="fas fa-file-excel"></i> Xuất Excel</button>
-                    <button className="btn" onClick={() => importInputRef.current?.click()}><i className="fas fa-file-import"></i> Nhập Excel</button>
+                    <details className="employees-tools">
+                        <summary className="btn">Tác vụ <i className="fas fa-chevron-down" aria-hidden="true"></i></summary>
+                        <div className="employees-tools__panel">
+                            <button type="button" onClick={onDownloadTemplate}><i className="fas fa-download" aria-hidden="true"></i> Tải mẫu Excel</button>
+                            <button type="button" onClick={onExport}><i className="fas fa-file-excel" aria-hidden="true"></i> Xuất Excel</button>
+                            <button type="button" onClick={() => importInputRef.current?.click()}><i className="fas fa-file-import" aria-hidden="true"></i> Nhập Excel</button>
+                            <button type="button" className="danger" onClick={() => setIsResetModalOpen(true)} title="Xóa dữ liệu nhân sự đã dùng/thử nghiệm">
+                                <i className="fas fa-trash-can" aria-hidden="true"></i> Reset dữ liệu
+                            </button>
+                        </div>
+                    </details>
                     <input ref={importInputRef} className="employees-file-input" type="file" accept=".xlsx,.xls,.csv" onChange={onImport} />
-                    <button className="btn btn-outline-danger" onClick={() => setIsResetModalOpen(true)} title="Xóa dữ liệu nhân sự đã dùng/thử nghiệm">
-                        <i className="fas fa-trash-can"></i> Reset dữ liệu
-                    </button>
                     <button className="btn btn-primary" onClick={() => openEmployee(null, false)}><i className="fas fa-plus"></i> Thêm nhân viên</button>
                 </div>
             </header>

@@ -1,9 +1,9 @@
 .attendance-penalties-page {
   min-height: 100%;
-  padding: 24px;
+  padding: 0;
   color: #172033;
-  background: #eef3f9;
-  font-family: Arial, Helvetica, sans-serif;
+  background: transparent;
+  font-family: var(--font-sans);
 }
 
 .attendance-penalties-page > header {
@@ -11,13 +11,13 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
   padding: 20px 24px;
-  border-top: 4px solid var(--secondary);
-  border-radius: 10px;
-  background: #0d427a;
-  color: #fff;
-  box-shadow: 0 5px 18px rgba(15, 45, 80, 0.14);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--primary-soft);
+  color: var(--text);
+  box-shadow: none;
 }
 
 .attendance-penalties-page h1 {
@@ -28,7 +28,7 @@
 
 .attendance-penalties-page header p {
   margin: 0;
-  color: #dceafa;
+  color: #456080;
   font-size: 13px;
 }
 
@@ -82,10 +82,10 @@
 
 .attendance-penalties-actions button {
   padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--card);
+  color: var(--primary-dark);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -93,7 +93,8 @@
 }
 
 .attendance-penalties-actions button.is-primary {
-  background: var(--secondary);
+  background: var(--primary);
+  color: #fff;
   border-color: var(--secondary);
 }
 
@@ -103,10 +104,10 @@
 }
 
 .attendance-penalties-card {
-  border: 1px solid #8d98a7;
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 5px 18px rgba(15, 45, 80, 0.1);
+  box-shadow: none;
   overflow: hidden;
 }
 

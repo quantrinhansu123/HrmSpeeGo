@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { fbGet, fbGetAttendanceLogsByMonth, fbGetEmployeesDirectory, fbListCollectionIds, fbSet } from '../services/firebase'
 import {
-  attendancePunchPairs,
   hydrateAttendanceSummaryRows
 } from '../utils/attendanceSummary'
 import { rebuildAttendanceMonthSummary } from '../services/attendanceMonthSummary'
@@ -19,11 +18,7 @@ import {
   resolveAttendanceShift
 } from '../utils/attendanceShift'
 import { getCompanyIdForUser, getCompanyNameForContext } from '../utils/companyContext'
-import {
-  parseManualWorkdayInput,
-  shouldCommitManualWorkday,
-  updateManualWorkdays
-} from '../utils/attendanceManual'
+import { parseManualWorkdayInput, updateManualWorkdays } from '../utils/attendanceManual'
 import {
   describeDayWorkFormula,
   getAttendanceHoliday,
@@ -70,23 +65,19 @@ const ensureXlsx = async () => {
 function ManualWorkdayInput({ value, isManual, disabled, onSave, employeeName, date }) {
   const normalizedValue = value === null || value === undefined ? '' : String(value)
   const [draft, setDraft] = useState(normalizedValue)
-  const [dirty, setDirty] = useState(false)
 
   useEffect(() => {
     setDraft(normalizedValue)
-    setDirty(false)
   }, [normalizedValue])
 
   const commit = () => {
-    if (!shouldCommitManualWorkday({ dirty, isManual, draft, displayedValue: normalizedValue })) return
+    if (draft === normalizedValue) return
     const parsed = parseManualWorkdayInput(draft)
     if (!parsed.valid) {
       alert(parsed.error)
       setDraft(normalizedValue)
-      setDirty(false)
       return
     }
-    setDirty(false)
     onSave(draft)
   }
 
@@ -100,16 +91,12 @@ function ManualWorkdayInput({ value, isManual, disabled, onSave, employeeName, d
       className={`manual-workday-input ${isManual ? 'is-manual' : ''}`}
       value={draft}
       disabled={disabled}
-      onChange={event => {
-        setDraft(event.target.value)
-        setDirty(true)
-      }}
+      onChange={event => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={event => {
         if (event.key === 'Enter') event.currentTarget.blur()
         if (event.key === 'Escape') {
           setDraft(normalizedValue)
-          setDirty(false)
           event.currentTarget.blur()
         }
       }}
@@ -1249,7 +1236,6 @@ function AttendancePreview() {
       const date = `${month}-${String(day).padStart(2, '0')}`
       const dayData = detailRow.days?.get?.(date) || null
       const log = dayData?.logs?.[0] || {}
-      const punchPairs = (dayData?.logs || []).flatMap(attendancePunchPairs)
       const checkIn = formatAttendanceTime(
         dayData?.checkIn || log.checkIn || log.vao || ''
       )
@@ -1273,7 +1259,6 @@ function AttendancePreview() {
         overtimeHours: dayData?.overtimeHours || '',
         checkIn,
         checkOut,
-        punchPairs,
         standardCheckIn,
         standardCheckOut,
         notes: dayNotes(dayData),
@@ -1294,18 +1279,22 @@ function AttendancePreview() {
 
   return <div className="attendance-preview-page">
     <header>
-      <div>
+      <div className="attendance-preview-heading">
         <h1>Bảng công {month}</h1>
         <p className="attendance-company-context">Công ty: <strong>{companyName}</strong></p>
-        <p>
+        <p className="attendance-preview-save-status">
           {hasSnapshot
             ? `Đã lưu lúc ${formatGeneratedAt(generatedAt)}${sourceLogCount ? ` · ${sourceLogCount} bản ghi chấm công` : ''}`
             : 'Chưa có bảng công tháng này · Tải Excel để đồng bộ và lưu'}
         </p>
-        {hasSnapshot && canEditWorkdays && <p>Đổi cấu hình ca: bấm “Tổng hợp lại” để cập nhật bảng công tháng đã lưu.</p>}
       </div>
+    </header>
+    <section className="attendance-preview-toolbar" aria-label="Bộ lọc và thao tác bảng công">
       <div className="attendance-preview-actions">
-        <input type="search" aria-label="Tìm nhân viên trong bảng công" placeholder="Tìm tên, mã NV, phòng ban..." value={excelSearch} onChange={event => setExcelSearch(event.target.value)} />
+        <label className="attendance-preview-search">
+          <span>Tìm nhân viên</span>
+          <span className="attendance-preview-search-field"><i className="fas fa-search" aria-hidden="true" /><input type="search" placeholder="Tên, mã NV, phòng ban..." value={excelSearch} onChange={event => setExcelSearch(event.target.value)} /></span>
+        </label>
         <label>
           Tháng
           <input
@@ -1317,7 +1306,7 @@ function AttendancePreview() {
         </label>
         {summaryMonths.length > 0 && (
           <label>
-            Đã lưu
+            Kỳ công đã lưu
             <select
               value={summaryMonths.includes(month) ? month : ''}
               onChange={event => event.target.value && handleMonthChange(event.target.value)}
@@ -1328,6 +1317,8 @@ function AttendancePreview() {
             </select>
           </label>
         )}
+      </div>
+      <div className="attendance-preview-commands">
         {canEditWorkdays && (
           <button
             type="button"
@@ -1335,7 +1326,7 @@ function AttendancePreview() {
             onClick={handleOpenImport}
             disabled={summarizing}
           >
-            Tải Excel & Lưu bảng công
+            <i className="fas fa-arrow-up-from-bracket" aria-hidden="true" /> Tải Excel & Lưu bảng công
           </button>
         )}
         <MobileActions>
@@ -1377,7 +1368,7 @@ function AttendancePreview() {
         )}
         </MobileActions>
       </div>
-    </header>
+    </section>
 
     {!hasSnapshot ? (
       <div className="attendance-preview-empty">
@@ -1386,9 +1377,12 @@ function AttendancePreview() {
       </div>
     ) : (
       <>
-        <div className="attendance-preview-views" role="tablist" aria-label="Loại bảng">
-          <button type="button" className={sheet === 'attendance' ? 'is-active' : ''} onClick={() => setSheet('attendance')}>Bảng công</button>
-          {canEditWorkdays && <button type="button" className={sheet === 'payroll' ? 'is-active' : ''} onClick={() => setSheet('payroll')}>Bảng lương</button>}
+        <div className="attendance-preview-data-heading">
+          <div><h2>{sheet === 'payroll' ? 'Bảng lương tháng' : 'Tổng hợp chấm công'}</h2><p>{sheet === 'payroll' ? rows.length : filteredRows.length} nhân viên{sheet === 'attendance' && excelSearch.trim() ? ' phù hợp với tìm kiếm' : ` · Kỳ công ${month}`}</p></div>
+          <div className="attendance-preview-views" role="group" aria-label="Loại bảng">
+          <button type="button" aria-pressed={sheet === 'attendance'} className={sheet === 'attendance' ? 'is-active' : ''} onClick={() => setSheet('attendance')}>Bảng công</button>
+          {canEditWorkdays && <button type="button" aria-pressed={sheet === 'payroll'} className={sheet === 'payroll' ? 'is-active' : ''} onClick={() => setSheet('payroll')}>Bảng lương</button>}
+          </div>
         </div>
         {sheet === 'payroll' ? (
           <PayrollTable
@@ -1663,18 +1657,10 @@ function AttendancePreview() {
                     <td data-label="Thứ">{item.weekday}</td>
                     <td data-label="Ký hiệu">{item.code || '—'}</td>
                     <td data-label="Giờ vào" className={item.checkIn && item.standardCheckIn && item.checkIn > item.standardCheckIn ? 'is-late' : ''}>
-                      {item.punchPairs.length > 1
-                        ? item.punchPairs.map((pair, index) => (
-                          <div key={index}>Ca {index + 1}: {pair.checkIn || 'Thiếu vào'}</div>
-                        ))
-                        : item.checkIn || '—'}
+                      {item.checkIn || '—'}
                     </td>
                     <td data-label="Giờ ra" className={item.checkOut && item.standardCheckOut && item.checkOut < item.standardCheckOut ? 'is-early' : ''}>
-                      {item.punchPairs.length > 1
-                        ? item.punchPairs.map((pair, index) => (
-                          <div key={index}>Ca {index + 1}: {pair.checkOut || 'Thiếu ra'}</div>
-                        ))
-                        : item.checkOut || '—'}
+                      {item.checkOut || '—'}
                     </td>
                     <td data-label="Tiêu chuẩn" className="standard">
                       {item.standardCheckIn && item.standardCheckOut

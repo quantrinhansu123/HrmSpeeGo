@@ -91,7 +91,7 @@
   .app-shell:not(:has(.employees-page)) :is(.card,.holiday-settings-card,.leave-settings-panel,.penalty-card,.attendance-preview-mobile-card,.my-attendance__mobile-day,.apv-card,.apv-card-block,.apv-stats-mobile__card) {
     border: 1px solid var(--mobile-border); border-radius: var(--mobile-radius); box-shadow: var(--mobile-shadow); background: #fff;
   }
-  .app-shell:not(:has(.employees-page)) :is(.oa-header,.leave-days-header,.leave-board-header,.holiday-settings-head,.my-attendance__header,.attendance-preview-page > header,.attendance-penalties-page > header) {
+  .app-shell:not(:has(.employees-page)) :is(.oa-header,.leave-days-header,.leave-board-header,.holiday-settings-head,.my-attendance__header,.attendance-penalties-page > header) {
     display: flex; flex-direction: column; align-items: stretch; gap: 12px;
     margin: 0 0 12px; padding: 14px; border: 1px solid var(--mobile-border);
     border-radius: var(--mobile-radius); background: #fff; box-shadow: var(--mobile-shadow);

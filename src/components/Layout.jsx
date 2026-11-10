@@ -12,6 +12,7 @@ function Layout({ children }) {
   // Approvals keeps a mobile-first phone layout on small screens, but on desktop
   // it expands to a full-width workspace while still using the main sidebar.
   const isImmersive = location.pathname.startsWith('/approvals')
+  const isAttendancePreview = location.pathname === '/bang-cong-preview'
   const isEmployee = ['/bang-cong', '/cham-cong-online', '/lich-su-cham-cong', '/ngay-nghi-phep'].includes(location.pathname)
   const [menuOpen, setMenuOpen] = useState(false)
   const mainRef = useRef(null)
@@ -73,9 +74,9 @@ function Layout({ children }) {
       <div className={`container${isImmersive ? ' container--immersive container--approvals' : ''}${isEmployee ? ' container--employee' : ''}`}>
         <Sidebar open={menuOpen} onNavigate={() => setMenuOpen(false)} />
         <main className="main" ref={mainRef}>
-          <TopHorizontalScrollbar containerRef={mainRef} />
+          {!isAttendancePreview && <TopHorizontalScrollbar containerRef={mainRef} />}
           {children}
-          <TopHorizontalScrollbar containerRef={mainRef} position="bottom" />
+          {!isAttendancePreview && <TopHorizontalScrollbar containerRef={mainRef} position="bottom" />}
         </main>
       </div>
       <nav className="mobile-utility-nav" aria-label="Điều hướng nhanh">

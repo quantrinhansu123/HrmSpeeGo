@@ -8,11 +8,16 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  flex-wrap: wrap;
 }
 
 .holiday-settings-head h1 {
   margin: 0 0 6px;
-  color: #0f3f78;
+  color: var(--primary-dark);
 }
 
 .holiday-settings-head p {
@@ -44,13 +49,13 @@
 }
 
 .holiday-settings-tab:hover {
-  color: #0f3f78;
+  color: var(--primary-dark);
   background: #f8fafc;
 }
 
 .holiday-settings-tab.is-active {
-  color: #0f3f78;
-  border-bottom-color: #0f3f78;
+  color: var(--primary-dark);
+  border-bottom-color: var(--primary-dark);
 }
 
 .holiday-settings-card {
@@ -112,7 +117,7 @@
 
 .holiday-settings-item strong {
   min-width: 92px;
-  color: #0f3f78;
+  color: var(--primary-dark);
 }
 
 .holiday-settings-item span,
@@ -207,7 +212,7 @@
 }
 
 .holiday-settings-split-toggle strong {
-  color: #0f3f78;
+  color: var(--primary-dark);
 }
 
 .holiday-settings-split-toggle small,
@@ -237,7 +242,7 @@
 .holiday-settings-session h3 {
   grid-column: 1 / -1;
   margin: 0;
-  color: #0f3f78;
+  color: var(--primary-dark);
   font-size: 15px;
 }
 
@@ -304,4 +309,8 @@
     flex: 1 1 160px;
     justify-content: center;
   }
+}
+
+@media (max-width: 768px) {
+  .holiday-settings-head { padding: 16px; }
 }

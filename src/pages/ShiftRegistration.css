@@ -1,14 +1,19 @@
 .shift-reg-page { display: grid; gap: 18px; min-width: 0; }
-.shift-reg-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
-.shift-reg-header h1 { margin: 0 0 6px; color: #0f3f78; }
+.shift-reg-header { display: flex; align-items: flex-start; justify-content: space-between;  gap: 16px;   padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  flex-wrap: wrap;
+}
+.shift-reg-header h1 { margin: 0 0 6px; color: var(--primary-dark); }
 .shift-reg-header p { margin: 0; color: #64748b; }
 .shift-reg-week { display: flex; align-items: center; gap: 8px; }
-.shift-reg-week strong { min-width: 150px; text-align: center; color: #0f3f78; }
+.shift-reg-week strong { min-width: 150px; text-align: center; color: var(--primary-dark); }
 .shift-reg-message { padding: 12px 14px; border-radius: 8px; }
 .shift-reg-message.is-error { color: #991b1b; background: #fee2e2; }
 .shift-reg-message.is-success { color: #166534; background: #dcfce7; }
 .shift-reg-card { display: grid; gap: 16px; min-width: 0; padding: 20px; border: 1px solid #dbe5f0; border-radius: 12px; background: #fff; }
-.shift-reg-card h2 { margin: 0; color: #0f3f78; font-size: 20px; }
+.shift-reg-card h2 { margin: 0; color: var(--primary-dark); font-size: 20px; }
 .shift-reg-assignment p { margin: 6px 0 0; color: #64748b; }
 .shift-reg-assignment__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .shift-reg-assignment__fields label { display: grid; gap: 6px; min-width: 0; color: #334155; font-weight: 600; }
@@ -51,4 +56,8 @@
   .shift-reg-tools { width: 100%; }
   .shift-reg-tools label,
   .shift-reg-tools input { width: 100%; }
+}
+
+@media (max-width: 768px) {
+  .shift-reg-header { padding: 16px; }
 }

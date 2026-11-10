@@ -23,8 +23,12 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
   margin-bottom: 20px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  flex-wrap: wrap;
 }
 
 .ah-title {
@@ -502,4 +506,8 @@
   .ah-month select {
     flex: 1;
   }
+}
+
+@media (max-width: 768px) {
+  .ah-header { padding: 16px; }
 }
