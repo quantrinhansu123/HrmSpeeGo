@@ -257,6 +257,9 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     ? Number(attendanceSettings.unpaidBreakMinutes)
     : 0
   const autoCalculateOvertime = attendanceSettings?.overtime?.autoCalculate !== false
+  const lateEarlyTotal = Math.max(0, lateMinutes) + Math.max(0, earlyMinutes)
+  const forgiveLateEarly = lateEarlyTotal > 0 &&
+    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD
   if (actualPunchGroups.size > 0) {
     actualPunchGroups.forEach(group => {
       const sortShift = resolveAttendanceShift(employee, {
@@ -293,7 +296,8 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
         breakMinutes,
         autoCalculateOvertime,
         punchPairs: orderedPairs,
-        splitShift: groupShift?.splitShift
+        splitShift: groupShift?.splitShift,
+        forgiveLateEarly
       })
       hours += metrics.hours
       workdays += metrics.regularWorkdays
@@ -332,13 +336,11 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   const hoursExact = Math.max(0, hours)
   // Muộn/sớm < 60 phút: chỉ ghi phút để phạt, không trừ công.
   // ≥ 60 phút: giữ công theo giờ thực tế (đã bị giảm do đi muộn/về sớm).
-  const lateEarlyTotal = Math.max(0, lateMinutes) + Math.max(0, earlyMinutes)
   let regularWorkdaysExact = Math.max(0, workdays)
   if (
     hasPunch &&
-    lateEarlyTotal > 0 &&
-    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD &&
-    !['source-value', 'matrix-value'].includes(calculationMode)
+    forgiveLateEarly &&
+    !['source-value', 'matrix-value', 'split-shift'].includes(calculationMode)
   ) {
     const standardMinutes = Number(attendanceSettings.standardWorkMinutes) > 0
       ? Number(attendanceSettings.standardWorkMinutes)

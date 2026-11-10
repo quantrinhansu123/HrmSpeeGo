@@ -111,7 +111,8 @@ const buildSplitSessions = splitShift => [
  */
 const calculatePartialSplitSpanWork = ({
   punchPairs = [],
-  splitShift
+  splitShift,
+  forgiveLateEarly = false
 } = {}) => {
   if (!splitShift?.enabled) return null
 
@@ -125,7 +126,8 @@ const calculatePartialSplitSpanWork = ({
 
   return calculateSplitShiftWork({
     punchPairs: [{ checkIn, checkOut }],
-    splitShift
+    splitShift,
+    forgiveLateEarly
   })
 }
 
@@ -133,7 +135,7 @@ const calculatePartialSplitSpanWork = ({
  * Chỉ tính phút thực làm nằm trong khung từng buổi đã cấu hình. Khoảng nghỉ
  * giữa hai buổi không thuộc khung nào nên không bị tính hoặc trừ lần nữa.
  */
-export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) => {
+export const calculateSplitShiftWork = ({ punchPairs = [], splitShift, forgiveLateEarly = false } = {}) => {
   if (!splitShift?.enabled) return null
   const rawPairs = normalizePunchPairs(punchPairs)
   // A missing Vào/Ra is handled by the first-to-last fallback in
@@ -159,13 +161,19 @@ export const calculateSplitShiftWork = ({ punchPairs = [], splitShift } = {}) =>
       }
     })
   }
+  const firstStart = Math.min(...pairs.map(pair => pair.start))
+  const lastEnd = Math.max(...pairs.map(pair => pair.end))
   const breakdown = sessions.map(session => {
     const creditedMinutes = coveredMinutes(pairs, session.interval)
+    // Only forgive the day's outer late/early minutes; keep gaps between punches unpaid.
+    const forgivenMinutes = forgiveLateEarly && creditedMinutes > 0
+      ? Math.max(0, firstStart - session.interval.start) + Math.max(0, session.interval.end - lastEnd)
+      : 0
     return {
       key: session.key,
       label: session.label,
       minutes: creditedMinutes,
-      workdays: creditedMinutes / session.interval.minutes * session.workdays
+      workdays: Math.min(session.interval.minutes, creditedMinutes + forgivenMinutes) / session.interval.minutes * session.workdays
     }
   })
 
@@ -196,6 +204,7 @@ export const calculateAttendanceMetrics = ({
   autoCalculateOvertime = true,
   punchPairs = log.punchPairs,
   splitShift,
+  forgiveLateEarly = false,
   fallbackHours,
   fallbackWorkdays
 } = {}) => {
@@ -206,9 +215,10 @@ export const calculateAttendanceMetrics = ({
   }
   const partialSplitMetrics = calculatePartialSplitSpanWork({
     punchPairs: resolvedPunchPairs,
-    splitShift
+    splitShift,
+    forgiveLateEarly
   })
-  const splitMetrics = calculateSplitShiftWork({ punchPairs: resolvedPunchPairs, splitShift })
+  const splitMetrics = calculateSplitShiftWork({ punchPairs: resolvedPunchPairs, splitShift, forgiveLateEarly })
   const activeSplitMetrics = partialSplitMetrics || splitMetrics
   const completePairs = resolvedPunchPairs.filter(pair => pair.checkIn && pair.checkOut)
   const pairedWorkedMinutes = completePairs.length

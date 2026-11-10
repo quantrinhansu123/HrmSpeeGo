@@ -28,6 +28,68 @@ test('59 phút giữ công; đúng 60 và 65 phút trừ công; cả ba trườn
   }
 })
 
+const splitAttendanceSettings = {
+  ...attendanceSettings,
+  shifts: {
+    administrative: {
+      ...attendanceSettings.shifts.administrative,
+      splitShift: {
+        enabled: true,
+        morning: { start: '08:30', end: '12:00', workdays: 0.5 },
+        afternoon: { start: '13:30', end: '17:30', workdays: 0.5 }
+      }
+    }
+  }
+}
+
+test('02/11 vào 08:39 ra 17:40: muộn 9 phút vẫn đủ 1 công khi ca chia buổi chỉ có 450 phút', () => {
+  const rows = summarize([], [], {
+    month: '2026-11',
+    attendanceSettings: splitAttendanceSettings,
+    attendanceLogs: [{ employeeId: 'e1', date: '2026-11-02', vao: '08:39', ra: '17:40' }]
+  })
+  const day = rows[0].days.get('2026-11-02')
+  assert.equal(day.lateMinutes, 9)
+  assert.equal(day.earlyMinutes, 0)
+  assert.equal(day.hours, 7.35)
+  assert.equal(day.workdaysExact, 1)
+  assert.equal(rows[0].workdays, 1)
+  assert.equal(serializeAttendanceSummaryRows(rows)[0].days['2026-11-02'].workdays, 1)
+})
+
+test('ca chia buổi miễn đúng công từng buổi dưới 60 phút và giữ ngưỡng trừ công', () => {
+  for (const [vao, ra, expected] of [
+    ['08:39', '12:00', 0.5],
+    ['13:39', '17:30', 0.5],
+    ['08:30', '17:21', 1],
+    ['09:00', '17:01', 1],
+    ['09:00', '17:00', 180 / 210 * 0.5 + 210 / 240 * 0.5]
+  ]) {
+    const rows = summarize([[vao, ra]], [], { attendanceSettings: splitAttendanceSettings })
+    assert.equal(rows[0].days.get('2026-08-01').workdaysExact, expected, `${vao}–${ra}`)
+  }
+  const rows = summarize([['09:40', '17:30']], [
+    { templateId: 'late-early', requesterId: 'e1', status: 'approved', attendanceDate: '2026-08-01' }
+  ], { attendanceSettings: splitAttendanceSettings })
+  assert.equal(rows[0].days.get('2026-08-01').workdaysExact, 140 / 210 * 0.5 + 0.5)
+})
+
+test('miễn muộn ca chia buổi không bù khoảng trống giữa các lượt chấm', () => {
+  const rows = summarize([], [], {
+    attendanceSettings: splitAttendanceSettings,
+    attendanceLogs: [{
+      employeeId: 'e1', date: '2026-08-01',
+      punchPairs: [
+        { checkIn: '08:39', checkOut: '10:00' },
+        { checkIn: '11:00', checkOut: '17:30' }
+      ]
+    }]
+  })
+  const day = rows[0].days.get('2026-08-01')
+  assert.equal(day.lateMinutes, 9)
+  assert.equal(day.workdaysExact, 150 / 210 * 0.5 + 0.5)
+})
+
 test('ngày từ 60 phút được tính vào lượt và tổng phút phạt tháng', () => {
   const rows = summarize([['09:40', '17:30'], ['08:40', '17:30'], ['08:40', '17:30']])
   const [penalty] = buildPenaltyDetailRows(rows)
