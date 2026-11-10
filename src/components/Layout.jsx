@@ -74,7 +74,6 @@ function Layout({ children }) {
       <div className={`container${isImmersive ? ' container--immersive container--approvals' : ''}${isEmployee ? ' container--employee' : ''}`}>
         <Sidebar open={menuOpen} onNavigate={() => setMenuOpen(false)} />
         <main className="main" ref={mainRef}>
-          {!isAttendancePreview && <TopHorizontalScrollbar containerRef={mainRef} />}
           {children}
           {!isAttendancePreview && <TopHorizontalScrollbar containerRef={mainRef} position="bottom" />}
         </main>
