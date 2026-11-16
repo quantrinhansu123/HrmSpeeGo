@@ -69,7 +69,7 @@ const hasNumericValue = (value) =>
   value !== undefined &&
   Number.isFinite(Number(value))
 
-export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings = {}, date = '', lateEarlyApproved = false) => {
+export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings = {}, date = '', lateEarlyApproved = false, options = {}) => {
   let hours = 0
   let workdays = 0
   let extraWorkdays = 0
@@ -258,8 +258,8 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     : 0
   const autoCalculateOvertime = attendanceSettings?.overtime?.autoCalculate !== false
   const lateEarlyTotal = Math.max(0, lateMinutes) + Math.max(0, earlyMinutes)
-  const forgiveLateEarly = lateEarlyTotal > 0 &&
-    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD
+  const forgiveLateEarly = options.forgiveLateEarly ?? (lateEarlyTotal > 0 &&
+    lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD)
   if (actualPunchGroups.size > 0) {
     actualPunchGroups.forEach(group => {
       const sortShift = resolveAttendanceShift(employee, {

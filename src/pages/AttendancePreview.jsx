@@ -26,6 +26,7 @@ import {
 } from '../utils/attendanceCalculations'
 import { openAttendancePrintWindow } from '../utils/attendancePdf'
 import { resolveAttendanceDepartment } from '../utils/attendanceDepartment'
+import { calculateAttendanceDetailLogs } from '../utils/attendanceDetail'
 import './AttendancePreview.css'
 import MobileActions from '../components/MobileActions'
 
@@ -37,20 +38,11 @@ const punchPairsForDisplay = log => Array.isArray(log?.punchPairs) && log.punchP
 const punchTimesForDisplay = (log, field) => punchPairsForDisplay(log)
   .map(pair => formatTimeHM(pair[field]) || '-')
   .join(' · ')
-const timingMinutesForLog = (log, field, fallback) => {
-  const pairs = log?.punchPairs
-  if (!Array.isArray(pairs) || !pairs.length) return Number(fallback) || 0
-  const targetPair = field === 'lateMinutes'
-    ? pairs.find(pair => pair.checkIn)
-    : [...pairs].reverse().find(pair => pair.checkOut)
-  return targetPair?.[field] !== null && targetPair?.[field] !== undefined && targetPair?.[field] !== ''
-    ? Number(targetPair[field]) || 0
-    : Number(fallback) || 0
-}
 const normalizeSearch = value => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
+  .replace(/đ/g, 'd')
   .trim()
 
 let XLSX = null
@@ -611,11 +603,9 @@ function AttendancePreview() {
           : []
         ).map(employee => [String(employee.id), employee])
       )
-      const list = logsData
-        ? Object.entries(logsData).map(([id, value]) =>
-            enrichExcelLog({ ...value, id }, employeesById)
-          )
-        : []
+      const logs = logsData ? Object.entries(logsData).map(([id, value]) => ({ ...value, id })) : []
+      const list = calculateAttendanceDetailLogs(logs, employeesById, attendanceSettings)
+        .map(log => enrichExcelLog(log, employeesById))
       list.sort((a, b) => {
         const nameA = String(a.employeeName || a.machineName || a.tenTheoMayChamCong || '')
         const nameB = String(b.employeeName || b.machineName || b.tenTheoMayChamCong || '')
@@ -644,8 +634,8 @@ function AttendancePreview() {
         const hours = Number(log.hours ?? log.soGio ?? log.gio ?? 0) || 0
         const gioPlus = Number(log.gioPlus ?? 0) || 0
         const tongGio = Number(log.tongGio ?? hours + gioPlus) || 0
-        const late = timingMinutesForLog(log, 'lateMinutes', log.lateMinutes ?? log.vaoTre)
-        const early = timingMinutesForLog(log, 'earlyMinutes', log.earlyMinutes ?? log.raSom)
+        const late = Number(log.lateMinutes ?? log.vaoTre) || 0
+        const early = Number(log.earlyMinutes ?? log.raSom) || 0
         return {
           STT: index + 1,
           'Mã NV': log.displayEmployeeCode || log.sourceEmployeeCode || log.employeeCode || '',
@@ -1378,7 +1368,7 @@ function AttendancePreview() {
     ) : (
       <>
         <div className="attendance-preview-data-heading">
-          <div><h2>{sheet === 'payroll' ? 'Bảng lương tháng' : 'Tổng hợp chấm công'}</h2><p>{sheet === 'payroll' ? rows.length : filteredRows.length} nhân viên{sheet === 'attendance' && excelSearch.trim() ? ' phù hợp với tìm kiếm' : ` · Kỳ công ${month}`}</p></div>
+          <div><h2>{sheet === 'payroll' ? 'Bảng lương tháng' : 'Tổng hợp chấm công'}</h2><p>{filteredRows.length} nhân viên{excelSearch.trim() ? ' phù hợp với tìm kiếm' : ` · Kỳ công ${month}`}</p></div>
           <div className="attendance-preview-views" role="group" aria-label="Loại bảng">
           <button type="button" aria-pressed={sheet === 'attendance'} className={sheet === 'attendance' ? 'is-active' : ''} onClick={() => setSheet('attendance')}>Bảng công</button>
           {canEditWorkdays && <button type="button" aria-pressed={sheet === 'payroll'} className={sheet === 'payroll' ? 'is-active' : ''} onClick={() => setSheet('payroll')}>Bảng lương</button>}
@@ -1386,7 +1376,7 @@ function AttendancePreview() {
         </div>
         {sheet === 'payroll' ? (
           <PayrollTable
-            rows={rows}
+            rows={filteredRows}
             employeesById={payrollEmployees}
             penalties={payrollBundle.penalties}
             leaveSettings={payrollBundle.leave}
@@ -1881,7 +1871,7 @@ function AttendancePreview() {
               </table>
               <div className="matrix-formula-legend">
                 <strong>Công thức công ngày:</strong>
-                <span>Có Vào/Ra → phút(Vào→Ra) ÷ 480 (tối đa 1 công)</span>
+                <span>Công tính theo ca đã cấu hình; tổng muộn/sớm dưới 60 phút không trừ công</span>
                 <span>P1 = phép 1 công</span>
                 <span>Hover ô để xem công thức chi tiết</span>
               </div>
@@ -1933,8 +1923,8 @@ function AttendancePreview() {
                         const hours = Number(log.hours ?? log.soGio ?? log.gio ?? 0) || 0
                         const gioPlus = Number(log.gioPlus ?? 0) || 0
                         const tongGio = Number(log.tongGio ?? hours + gioPlus) || 0
-                        const late = timingMinutesForLog(log, 'lateMinutes', log.lateMinutes ?? log.vaoTre)
-                        const early = timingMinutesForLog(log, 'earlyMinutes', log.earlyMinutes ?? log.raSom)
+                        const late = Number(log.lateMinutes ?? log.vaoTre) || 0
+                        const early = Number(log.earlyMinutes ?? log.raSom) || 0
                         return (
                           <tr key={log.id || `${log.employeeId}-${dateStr}-${index}`}>
                             <td data-label="STT">{excelPageStart + index}</td>

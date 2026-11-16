@@ -1,4 +1,5 @@
 import { attendanceTimeToMinutes } from './attendanceShift.js'
+import { LATE_EARLY_WORKDAY_THRESHOLD } from './attendanceLateEarly.js'
 
 /**
  * Một ngày công đủ được quy đổi từ đúng 480 phút làm việc thực tế.
@@ -351,6 +352,10 @@ export const describeDayWorkFormula = (day = {}, {
       `${checkIn}→${checkOut} = ${Math.round(workedMinutes)}p`,
       `÷ ${standard}p = ${roundDecimal(cong)} công`
     ]
+    const lateEarlyTotal = Math.max(0, finiteNumber(day.lateMinutes)) + Math.max(0, finiteNumber(day.earlyMinutes))
+    if (lateEarlyTotal > 0 && lateEarlyTotal < LATE_EARLY_WORKDAY_THRESHOLD && workdays > cong) {
+      parts.push(`Muộn/sớm ${lateEarlyTotal}p < 60p: không trừ công → ${roundDecimal(workdays)} công`)
+    }
     if (workedMinutes > standard) parts.push('(tối đa 1 công/ngày)')
     if (holidayLabel) parts.push(holidayLabel)
     return parts.join(' · ')
