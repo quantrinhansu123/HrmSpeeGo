@@ -52,6 +52,15 @@
 .leave-month-grid input { width: 100%; min-width: 0; }
 .leave-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
 .leave-actions span { color: #b45309; font-size: 13px; }
+.leave-year-body select, .leave-year-body textarea { padding: 9px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; width: 100%; min-height: 40px; background: #fff; color: #1e293b; }
+.leave-year-body textarea { min-height: 72px; resize: vertical; }
+.leave-year-body legend { color: #0f3f78; font-weight: 700; }
+.leave-month-grid small { color: #64748b; font-size: 12px; font-weight: 400; line-height: 1.4; }
+.leave-policy-note { line-height: 1.6; color: #475569; }
+.leave-audit-list { max-height: 320px; overflow-y: auto; padding-left: 24px; }
+.leave-audit-list li { padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+.leave-audit-list p { margin: 5px 0; }
+.leave-employee-content summary { cursor: pointer; color: #0f3f78; padding: 10px 0; }
 @media (max-width: 760px) {
   .leave-board-header,
   .leave-settings-toolbar { flex-direction: column; align-items: stretch; }

@@ -34,20 +34,19 @@ const lateText = row => {
   return `${count} lần`
 }
 
-const yearLeaveFor = (leaveSettings, employeeId, month, paidLeaveWorkdays) => {
+const yearLeaveFor = (leaveSettings, employeeId, month) => {
   const year = String(month || '').slice(0, 4)
   const entry = leaveSettings?.[String(employeeId)]?.[year]
   if (!entry) {
     return {
-      used: paidLeaveWorkdays > 0 ? workdaysText(paidLeaveWorkdays) : '—',
+      used: '—',
       remaining: '—'
     }
   }
-  const used = Object.values(entry.months || {}).reduce((sum, amount) => sum + Number(amount || 0), 0)
-  const total = Number(entry.total_leave || 0)
+  const used = Number(entry.used ?? 0)
   return {
     used: workdaysText(used),
-    remaining: workdaysText(Math.max(0, total - used))
+    remaining: workdaysText(entry.remaining ?? 0)
   }
 }
 
@@ -117,7 +116,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
             ) : rows.map((row, index) => {
               const employee = employeesById.get(String(row.employeeId)) || {}
               const penalty = penaltiesForEmployee(penalties, row)
-              const leave = yearLeaveFor(leaveSettings, row.employeeId, month, Number(row.paidLeaveWorkdays || 0))
+              const leave = yearLeaveFor(leaveSettings, row.employeeId, month)
               const salary = employee.tong_luong || employee.total_salary || ''
               const kpi = kpiSalaryFor(kpiByEmployee, row.employeeId, salary)
               return (
@@ -171,7 +170,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
         {rows.map(row => {
           const employee = employeesById.get(String(row.employeeId)) || {}
           const penalty = penaltiesForEmployee(penalties, row)
-          const leave = yearLeaveFor(leaveSettings, row.employeeId, month, Number(row.paidLeaveWorkdays || 0))
+          const leave = yearLeaveFor(leaveSettings, row.employeeId, month)
           const salary = employee.tong_luong || employee.total_salary || ''
           const kpi = kpiSalaryFor(kpiByEmployee, row.employeeId, salary)
           return (

@@ -45,6 +45,8 @@ App vẫn gọi `fbGet` / `fbPush`… nhưng **đã trỏ sang Supabase** (`src/
 
 ### Bật Bảng phép trên database đang dùng
 
+Phép **theo tháng**, mốc **đủ 6 tháng tròn** và điều kiện **tiếp tục hợp đồng**: chạy [`migrations/20261117100000_monthly_leave_accrual.sql`](./migrations/20261117100000_monthly_leave_accrual.sql) sau các migration dưới đây. Xem [quy tắc, đối soát dữ liệu cũ và cấu hình scheduler](../docs/monthly-leave.md). Migration mới thay giới hạn 2 lần/tháng và cách đọc số dư năm cũ; cần triển khai frontend và DB cùng phiên bản.
+
 Để liên kết **Ngày nghỉ phép** với đề xuất đã duyệt và lưu lịch sử điều chỉnh có ghi chú/tệp, chạy [`migrations/20261116100000_leave_day_links_and_adjustments.sql`](./migrations/20261116100000_leave_day_links_and_adjustments.sql) sau các migration hiện có. Xem [hướng dẫn sử dụng và kiểm tra](../docs/leave-days.md).
 
 Chạy riêng [`migrations/20260924100000_employee_leave_settings.sql`](./migrations/20260924100000_employee_leave_settings.sql) trong Supabase SQL Editor sau các migration xác thực nhân sự. Migration chỉ tạo bảng phép, hàm kiểm tra công ty và chính sách truy cập; không sửa dữ liệu nhân sự hoặc chấm công.

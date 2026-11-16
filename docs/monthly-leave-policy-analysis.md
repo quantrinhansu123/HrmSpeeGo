@@ -1,5 +1,7 @@
 # Phân tích phép theo tháng theo nội quy SpeeGo v0.4
 
+Cập nhật khi triển khai: người dùng đã chốt **đủ 6 tháng tròn từ ngày chính thức**; dừng hợp đồng tại mốc này thì không cấp phép, tiếp tục làm thì cộng bù các tháng đủ điều kiện trước đó. Xem [quy tắc và hướng dẫn triển khai đã cập nhật](monthly-leave.md). Nội dung bên dưới giữ bối cảnh phân tích ban đầu trên main.
+
 Ngày phân tích: 16/11/2026.
 Nhánh: `analysis/monthly-leave-policy`, tạo từ `origin/main` tại commit `22bf304b086889fa40e06a7eceae98aa84866d0f`.
 Nguồn: `C:\Users\admin\Downloads\[SPG] NỘI QUY CÔNG TY_v0.4.pdf`, 11 trang; trọng tâm Điều 5–6, trang PDF 2–3.
