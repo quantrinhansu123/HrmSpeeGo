@@ -1,13 +1,9 @@
 {
   "functions": {
-    "api/leave-accrual.js": {
-      "maxDuration": 60
-    },
     "api/attendance-match.js": {
       "maxDuration": 60
     }
   },
-  "crons": [{ "path": "/api/leave-accrual", "schedule": "5 17 * * *" }],
   "rewrites": [
     {
       "source": "/((?!api/|assets/).*)",

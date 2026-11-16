@@ -51,17 +51,45 @@ Thanh toán chỉ ghi giảm **số ngày phép** đã được cấp và chưa 
 ## Triển khai
 
 1. Chạy `supabase/migrations/20261117100000_monthly_leave_accrual.sql` sau `20261116100000_leave_day_links_and_adjustments.sql` và các migration hiện có. Migration tạo bảng mới, không ghi đè JSON phép năm cũ; nhập lịch sử giữ chỗ/sử dụng từ các đơn cũ. Dòng lịch sử lỗi ngày/UUID được báo warning để HR đối soát.
-2. Triển khai frontend và endpoint `api/leave-accrual.js` cùng phiên bản migration. Tài khoản cũ cần đối soát đầu kỳ và xác nhận tiếp tục trước khi xin phép năm bằng số dư mới.
-3. Cấu hình server `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL` (hoặc URL hiện có `VITE_SUPABASE_URL`). Service role key chỉ ở server, không dùng biến `VITE_*` cho khóa này.
-4. `vercel.json` chạy cron mỗi ngày lúc **17:05 UTC = 00:05 giờ Việt Nam**. Tác vụ chỉ tính tháng đã kết thúc, chạy bù/đối soát các năm đang theo dõi trong khoảng năm hiện tại và hai năm liền trước. Có thể dùng scheduler khác gọi `GET /api/leave-accrual` với `Authorization: Bearer <CRON_SECRET>`.
-5. HR/admin dùng nút **Đối soát lại các tháng đã kết thúc** để xử lý số liệu bảng công cập nhật muộn. Nút này chỉ xử lý công ty của người đăng nhập; scheduler toàn hệ thống chỉ cho `service_role` gọi.
+2. Triển khai frontend cùng phiên bản migration. Tài khoản cũ cần đối soát đầu kỳ và xác nhận tiếp tục trước khi xin phép năm bằng số dư mới.
+3. Trong **Supabase → SQL Editor**, dùng role `postgres` chạy [`20261117110000_monthly_leave_cron.sql`](../supabase/migrations/20261117110000_monthly_leave_cron.sql). Nếu migration nghiệp vụ ở bước 1 đã chạy thì chỉ cần chạy file cron này. File bật `pg_cron` và tạo job `monthly-leave-accrual`, gọi trực tiếp `public.run_monthly_leave_accrual()` trong database. Không cần quyền Vercel, `CRON_SECRET`, service role key hay Edge Function. Chạy lại file với cùng role sẽ cập nhật job hiện có, không tạo thêm job.
+4. Job chạy mỗi ngày lúc **17:05 UTC = 00:05 giờ Việt Nam ngày hôm sau**, theo múi giờ GMT mặc định của `pg_cron`. Tác vụ chỉ tính tháng đã kết thúc, chạy bù/đối soát các năm đang theo dõi trong khoảng năm hiện tại và hai năm liền trước. Cài đặt theo [hướng dẫn Supabase Cron](https://supabase.com/docs/guides/cron/quickstart).
+5. HR/admin dùng nút **Đối soát lại các tháng đã kết thúc** để xử lý số liệu bảng công cập nhật muộn. Nút này chỉ xử lý công ty của người đăng nhập; scheduler toàn hệ thống chạy bằng chủ job trong database, RPC vẫn không cho `anon`/`authenticated` gọi.
+
+Nếu chưa biết migration nghiệp vụ đã chạy hay chưa, mở **Supabase → SQL Editor → New query**, chọn role `postgres` và chạy:
+
+```sql
+select to_regprocedure('public.run_monthly_leave_accrual()') as accrual_function;
+```
+
+Nếu kết quả là `null`, cần chạy migration nghiệp vụ ở bước 1 cùng các migration phụ thuộc trước. Nếu đã có tên hàm, chỉ cần dán toàn bộ file cron ở bước 3 vào query mới và nhấn **Run**; không cần tự tạo thêm job bằng giao diện.
+
+Kiểm tra job tại **Supabase → Integrations → Cron**: phải có `monthly-leave-accrual`, lịch `5 17 * * *`, trạng thái bật. Hoặc trong SQL Editor, kiểm tra `active = true`, `username = postgres`:
+
+```sql
+select jobid, jobname, schedule, command, username, active
+from cron.job where jobname = 'monthly-leave-accrual';
+
+select status, return_message, start_time, end_time
+from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'monthly-leave-accrual')
+order by start_time desc limit 10;
+```
+
+Sau khi HR đã đối soát dữ liệu đầu kỳ, có thể chạy ngay một lần bằng role `postgres` để kiểm tra, không cần đợi đến lịch:
+
+```sql
+select public.run_monthly_leave_accrual();
+```
+
+Khi cần tạm dừng, dùng `select cron.unschedule('monthly-leave-accrual');`; chạy lại migration cron để bật lại. `vercel.json` đã bỏ cron cũ; lần triển khai frontend kế tiếp sẽ gỡ lịch Vercel. Nếu bản Vercel cũ vẫn còn lịch chạy thì hàm đối soát chạy lại không cấp trùng phép.
 
 Các bảng mới không cấp quyền ghi trực tiếp cho `anon`/`authenticated`; các RPC lấy danh tính theo cơ chế đăng nhập hiện có của ứng dụng, kiểm tra vai trò và công ty. Lưu tháng có phiên bản chống ghi đè khi người khác hoặc job vừa sửa. Scheduler chạy lại không cộng chồng lên khoản cũ hoặc số HR thay thế.
 
 ## Kiểm tra
 
 ```powershell
-node --test src/utils/employeeLeave.test.mjs src/utils/leaveDays.test.mjs src/utils/attachments.test.mjs src/services/leaveDays.test.mjs src/pages/AttendancePreview.test.mjs src/components/PayrollTable.test.mjs api/leave-accrual.test.mjs
+node --test src/utils/employeeLeave.test.mjs src/utils/leaveDays.test.mjs src/utils/attachments.test.mjs src/services/leaveDays.test.mjs src/pages/AttendancePreview.test.mjs src/components/PayrollTable.test.mjs
 npm run build
 ```
 
