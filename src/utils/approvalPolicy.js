@@ -64,8 +64,8 @@ export const getTemplatePolicy = (template = {}) => {
   const maxRequests = Number(template.maxRequests ?? automatic.maxRequests)
 
   return {
-    quotaEnabled: template.quotaEnabled ?? automatic.quotaEnabled,
-    maxRequests: Number.isFinite(maxRequests) ? Math.max(0, Math.floor(maxRequests)) : 0,
+    quotaEnabled: policyKey === 'leave' ? false : template.quotaEnabled ?? automatic.quotaEnabled,
+    maxRequests: policyKey === 'leave' ? 0 : Number.isFinite(maxRequests) ? Math.max(0, Math.floor(maxRequests)) : 0,
     quotaPeriod: ['week', 'month', 'year'].includes(template.quotaPeriod)
       ? template.quotaPeriod
       : automatic.quotaPeriod,
@@ -138,7 +138,7 @@ export const calculateTemplateUsage = ({
 }
 
 export const isPaidLeaveRequest = (request = {}) =>
-  (request.templateId === 'leave' || request.attendanceSync === 'paid-leave') &&
+  (request.templateId === 'leave' || request.templateBaseId === 'leave' || request.attendanceSync === 'paid-leave') &&
   (request.leaveType || 'paid') === 'paid'
 
 export const listRequestLeaveDates = (request = {}, maxDays = 366) => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatTenure, normalizeLeaveData, parseLeaveAmount } from './employeeLeave.js'
+import { formatTenure, leaveEligibilityDate, normalizeLeaveData, parseLeaveAmount, validateMonthlyLeaveInput } from './employeeLeave.js'
 
 test('giữ tổng phép độc lập với phân bổ tháng và không tự chia đều', () => {
   assert.deepEqual(normalizeLeaveData({
@@ -24,4 +24,19 @@ test('chấp nhận phép lẻ nhập bằng dấu phẩy hoặc dấu chấm', 
   assert.equal(parseLeaveAmount('1.5'), 1.5)
   assert.equal(parseLeaveAmount('-1'), null)
   assert.equal(parseLeaveAmount('abc'), null)
+})
+
+test('mốc dùng phép đủ sáu tháng tròn, kẹp ngày cuối tháng và năm nhuận', () => {
+  assert.equal(leaveEligibilityDate({ official_date: '2026-05-16' }), '2026-11-16')
+  assert.equal(leaveEligibilityDate({ official_date: '2026-08-31' }), '2027-02-28')
+  assert.equal(leaveEligibilityDate({ official_date: '2023-08-31' }), '2024-02-29')
+  assert.equal(leaveEligibilityDate({ ngay_lam_chinh_thuc: '2024-02-29' }), '2024-08-29')
+  assert.equal(leaveEligibilityDate({ join_date: '2020-01-01' }), '')
+})
+
+test('ô tháng trống khác 0; điều chỉnh cần lý do và không chấp nhận số âm', () => {
+  assert.equal(validateMonthlyLeaveInput({ 1: '', 2: '0', 3: '1,5' }, 'Đối soát bảng công'), '')
+  assert.match(validateMonthlyLeaveInput({ 1: '-1' }, 'Đối soát bảng công'), /không hợp lệ/)
+  assert.match(validateMonthlyLeaveInput({ 13: '1' }, 'Đối soát bảng công'), /không hợp lệ/)
+  assert.match(validateMonthlyLeaveInput({ 1: '1' }, ''), /lý do/)
 })

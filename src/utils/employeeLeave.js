@@ -12,6 +12,27 @@ export const parseLeaveAmount = value => {
   return Number.isFinite(amount) && amount >= 0 ? amount : null
 }
 
+// Clamp calendar months exactly as PostgreSQL date + interval '6 months'.
+export const leaveEligibilityDate = employee => {
+  const iso = parseFlexibleDate(employee?.ngay_lam_chinh_thuc || employee?.official_date)
+  if (!iso) return ''
+  const [year, month, day] = iso.split('-').map(Number)
+  const end = new Date(Date.UTC(year, month - 1 + 7, 0))
+  return new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), Math.min(day, end.getUTCDate()))).toISOString().slice(0, 10)
+}
+
+export const formatLeaveAmount = value => Number(value ?? 0).toLocaleString('vi-VN', { maximumFractionDigits: 3 })
+
+export const validateMonthlyLeaveInput = (months, note) => {
+  if (!note || note.trim().length < 5) return 'Nhập lý do điều chỉnh ít nhất 5 ký tự.'
+  for (const [month, amount] of Object.entries(months || {})) {
+    if (!LEAVE_MONTHS.includes(month) || (amount !== '' && parseLeaveAmount(amount) === null)) {
+      return `Số phép tháng ${month} không hợp lệ. Nhập số từ 0 trở lên.`
+    }
+  }
+  return ''
+}
+
 export const normalizeLeaveData = value => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return Object.fromEntries(Object.entries(value)

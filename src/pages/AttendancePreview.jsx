@@ -437,7 +437,7 @@ function AttendancePreview() {
     const loadPayroll = async () => {
       const [penalties, leave, employees, kpis] = await Promise.all([
         getPenaltiesByMonth(month).catch(() => []),
-        loadEmployeeLeaveSettings(companyId).catch(() => ({})),
+        loadEmployeeLeaveSettings(companyId, Number(month.slice(0, 4))).catch(() => ({})),
         fbGetEmployeesDirectory().catch(() => ({})),
         fbGet('hr/kpiResults').catch(() => ({}))
       ])

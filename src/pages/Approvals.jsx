@@ -6,6 +6,7 @@ import { fbDelete, fbGet, fbPush, fbUpdate } from '../services/firebase'
 import AttachmentLinks from '../components/AttachmentLinks'
 import { readAttachmentFiles } from '../utils/attachments'
 import { supabase } from '../services/supabase'
+import { previewLeaveRequest } from '../services/employeeLeave'
 import {
   APPROVAL_PERIOD_LABELS,
   calculateTemplateUsage,
@@ -245,12 +246,9 @@ function Approvals() {
   const [teamLeader, setTeamLeader] = useState(null)
   const [leaderError, setLeaderError] = useState('')
   const [leaderLoading, setLeaderLoading] = useState(false)
-  const [leaveBalances, setLeaveBalances] = useState({})
+  const [leavePreview, setLeavePreview] = useState(null)
   const [balanceError, setBalanceError] = useState('')
   const [balanceLoading, setBalanceLoading] = useState(false)
-  const [leaveMonthlyUsage, setLeaveMonthlyUsage] = useState({})
-  const [leaveMonthlyUsageError, setLeaveMonthlyUsageError] = useState('')
-  const [leaveMonthlyUsageLoading, setLeaveMonthlyUsageLoading] = useState(false)
   const [ownLeaveSummary, setOwnLeaveSummary] = useState(null)
   const [ownLeaveSummaryError, setOwnLeaveSummaryError] = useState('')
   const [ownLeaveSummaryLoading, setOwnLeaveSummaryLoading] = useState(false)
@@ -321,6 +319,9 @@ function Approvals() {
   const [leaveEndDate, setLeaveEndDate] = useState(new Date().toISOString().slice(0, 10))
   const [leaveDuration, setLeaveDuration] = useState('full')
   const [leaveType, setLeaveType] = useState('paid')
+  const [leaveEmergency, setLeaveEmergency] = useState(false)
+  const [leaveEmergencyReason, setLeaveEmergencyReason] = useState('')
+  const [leavePersonalReason, setLeavePersonalReason] = useState('marriage')
   const [recruitPosition, setRecruitPosition] = useState('')
   const [recruitLevel, setRecruitLevel] = useState('')
   const [recruitExperience, setRecruitExperience] = useState('')
@@ -758,21 +759,9 @@ function Approvals() {
       }] : []
     : approverSteps
 
-  const leaveDaysByYear = useMemo(() => {
-    if (!selectedTemplateUsesLeaveDates) return {}
-    const days = listRequestLeaveDates({ leaveStartDate, leaveEndDate })
-    return days.reduce((result, day) => {
-      const year = day.slice(0, 4)
-      result[year] = (result[year] || 0) + (leaveDuration === 'half' ? 0.5 : 1)
-      return result
-    }, {})
-  }, [selectedTemplateUsesLeaveDates, leaveStartDate, leaveEndDate, leaveDuration])
-  const leaveYearsKey = Object.keys(leaveDaysByYear).join(',')
-  const leaveMonths = useMemo(() => {
-    if (!selectedTemplateUsesLeaveDates) return []
-    return [...new Set(listRequestLeaveDates({ leaveStartDate, leaveEndDate }).map(day => day.slice(0, 7)))]
-  }, [selectedTemplateUsesLeaveDates, leaveStartDate, leaveEndDate])
-  const leaveMonthsKey = leaveMonths.join(',')
+  const leaveDaysByYear = leavePreview?.by_year || {}
+  const leaveBalances = leavePreview?.balances || {}
+  const leavePreviewKey = JSON.stringify([leaveStartDate, leaveEndDate, leaveDuration, leaveType])
 
   useEffect(() => {
     if (view !== 'create' || !selectedTemplateIsRecruit) return
@@ -780,48 +769,20 @@ function Approvals() {
   }, [view, selectedTemplateIsRecruit, me?.department])
 
   useEffect(() => {
-    if (view !== 'create' || !selectedTemplateUsesLeaveDates || !leaveYearsKey) return
+    if (view !== 'create' || !selectedTemplateUsesLeaveDates) return
     let active = true
     setBalanceLoading(true)
     setBalanceError('')
-    setLeaveBalances({})
-    Promise.all(leaveYearsKey.split(',').map(async (year) => {
-      const { data, error } = await supabase.rpc('my_approval_leave_balance', { p_year: Number(year) })
-      if (error) throw error
-      return [year, data]
-    })).then((entries) => {
-      if (active) setLeaveBalances(Object.fromEntries(entries))
+    setLeavePreview(null)
+    previewLeaveRequest({ leaveStartDate, leaveEndDate, leaveDuration, leaveType }).then(data => {
+      if (active) setLeavePreview({ ...data, key: leavePreviewKey })
     }).catch((error) => {
       if (active) setBalanceError(error?.message || 'Không tải được số phép còn lại.')
     }).finally(() => {
       if (active) setBalanceLoading(false)
     })
     return () => { active = false }
-  }, [view, selectedTemplateUsesLeaveDates, leaveYearsKey, authUser?.id])
-
-  useEffect(() => {
-    if (view !== 'create' || !selectedTemplateUsesLeaveDates || !leaveMonthsKey) return
-    let active = true
-    setLeaveMonthlyUsageLoading(true)
-    setLeaveMonthlyUsageError('')
-    setLeaveMonthlyUsage({})
-    Promise.all(leaveMonthsKey.split(',').map(async month => {
-      const [year, monthNumber] = month.split('-').map(Number)
-      const { data, error } = await supabase.rpc('my_approval_leave_month_usage', {
-        p_year: year,
-        p_month: monthNumber
-      })
-      if (error) throw error
-      return [month, data]
-    })).then(entries => {
-      if (active) setLeaveMonthlyUsage(Object.fromEntries(entries))
-    }).catch(error => {
-      if (active) setLeaveMonthlyUsageError(error?.message || 'Không tải được số lượt nghỉ trong tháng.')
-    }).finally(() => {
-      if (active) setLeaveMonthlyUsageLoading(false)
-    })
-    return () => { active = false }
-  }, [view, selectedTemplateUsesLeaveDates, leaveMonthsKey, authUser?.id])
+  }, [view, selectedTemplateUsesLeaveDates, leavePreviewKey, authUser?.id])
 
   useEffect(() => {
     if (view !== 'create' || !authUser?.id) return undefined
@@ -831,18 +792,14 @@ function Approvals() {
     const month = now.getMonth() + 1
     setOwnLeaveSummaryLoading(true)
     setOwnLeaveSummaryError('')
-    Promise.all([
-      supabase.rpc('my_approval_leave_balance', { p_year: year }),
-      supabase.rpc('my_approval_leave_month_usage', { p_year: year, p_month: month })
-    ]).then(([balanceRes, monthRes]) => {
+    supabase.rpc('my_approval_leave_balance', { p_year: year }).then(balanceRes => {
       if (!active) return
       if (balanceRes.error) throw balanceRes.error
-      if (monthRes.error) throw monthRes.error
       setOwnLeaveSummary({
         year,
         balance: balanceRes.data || {},
         month,
-        usage: monthRes.data || {}
+        granted: balanceRes.data?.months?.[String(month)]?.amount ?? 0
       })
     }).catch((error) => {
       if (active) setOwnLeaveSummaryError(error?.message || 'Không tải được số phép còn lại.')
@@ -1011,6 +968,9 @@ function Approvals() {
     setLeaveEndDate(today)
     setLeaveDuration('full')
     setLeaveType('paid')
+    setLeaveEmergency(false)
+    setLeaveEmergencyReason('')
+    setLeavePersonalReason('marriage')
     const defaults = Array.isArray(tpl?.defaultApprovers)
       ? tpl.defaultApprovers.filter((a) => a?.approverId)
       : []
@@ -1348,26 +1308,23 @@ function Approvals() {
       if (!leaveStartDate || !leaveEndDate || dates.length === 0) {
         errs.leaveDates = 'Ngày nghỉ không hợp lệ hoặc ngày kết thúc trước ngày bắt đầu'
       }
+      if (balanceLoading || balanceError || !leavePreview || leavePreview.key !== leavePreviewKey) {
+        errs.leaveBalance = balanceError || 'Đang kiểm tra lịch làm việc và phép khả dụng. Vui lòng thử lại.'
+      }
+      if (leaveEmergency && leaveEmergencyReason.trim().length < 5) errs.leaveDates = 'Nhập lý do nghỉ khẩn cấp ít nhất 5 ký tự.'
+      if (!leaveEmergency && leavePreview && leavePreview.notice_workdays < leavePreview.required_notice) {
+        errs.leaveDates = `Cần báo trước ${leavePreview.required_notice} ngày làm việc, hoặc khai báo trường hợp khẩn cấp.`
+      }
       if (leaveType === 'paid') {
         if (balanceLoading || balanceError || Object.keys(leaveBalances).length !== Object.keys(leaveDaysByYear).length) {
           errs.leaveBalance = balanceError || 'Đang tải số phép còn lại. Vui lòng thử lại.'
         } else {
           for (const [year, daysNeeded] of Object.entries(leaveDaysByYear)) {
             const balance = leaveBalances[year]
-            if (!balance?.configured) errs.leaveBalance = `Chưa cài đặt phép năm ${year}. Vui lòng liên hệ HR.`
+            if (!balance?.configured) errs.leaveBalance = `Cần HR đối soát số đầu kỳ năm ${year}.`
+            else if (!balance.eligible || leaveStartDate < balance.eligible_from) errs.leaveBalance = `Cần đủ 6 tháng tròn từ ngày chính thức và xác nhận tiếp tục hợp đồng (${balance.eligible_from || 'thiếu ngày chính thức'}).`
             else if (Number(balance.remaining) < daysNeeded) {
               errs.leaveBalance = `Năm ${year} chỉ còn ${balance.remaining} ngày phép; đơn cần ${daysNeeded} ngày.`
-            }
-          }
-        }
-        if (leaveMonthlyUsageLoading || leaveMonthlyUsageError || Object.keys(leaveMonthlyUsage).length !== leaveMonths.length) {
-          errs.leaveMonthlyLimit = leaveMonthlyUsageError || 'Đang tải số lượt nghỉ trong tháng. Vui lòng thử lại.'
-        } else {
-          for (const month of leaveMonths) {
-            const usage = leaveMonthlyUsage[month]
-            if (Number(usage?.used) >= Number(usage?.limit || 2)) {
-              errs.leaveMonthlyLimit = `Tháng ${month} đã đủ ${usage?.limit || 2} lần sử dụng phép năm.`
-              break
             }
           }
         }
@@ -1439,6 +1396,9 @@ function Approvals() {
               leaveEndDate,
               leaveDuration,
               leaveType,
+              leaveEmergency,
+              leaveEmergencyReason,
+              leavePersonalReason,
               attendanceSyncStatus: 'pending'
             }
           : {}),
@@ -1905,11 +1865,11 @@ function Approvals() {
                     </strong>
                   </div>
                   <div className="apv-metric-pill">
-                    <span>Phép tháng</span>
+                    <span>Phép cấp tháng này</span>
                     <strong>
                       {ownLeaveSummaryLoading
                         ? '…'
-                        : formatLeaveCount(ownLeaveSummary?.usage?.remaining ?? 0)}
+                        : formatLeaveCount(ownLeaveSummary?.granted ?? 0)}
                     </strong>
                   </div>
                 </div>
@@ -2141,6 +2101,7 @@ function Approvals() {
                         >
                           <option value="paid">Sử dụng phép năm</option>
                           <option value="unpaid">Nghỉ không hưởng lương</option>
+                          <option value="personal_paid">Nghỉ việc riêng hưởng lương (không trừ phép năm)</option>
                         </select>
                       </div>
                       <div className="apv-field">
@@ -2155,6 +2116,15 @@ function Approvals() {
                         </select>
                       </div>
                     </div>
+                    {leaveType === 'personal_paid' && <div className="apv-field"><label>Lý do nghỉ việc riêng</label>
+                      <select className="apv-select" value={leavePersonalReason} onChange={e => setLeavePersonalReason(e.target.value)}>
+                        <option value="marriage">Bản thân kết hôn — tối đa 3 ngày</option>
+                        <option value="child_marriage">Con kết hôn — tối đa 1 ngày</option>
+                        <option value="bereavement">Tang cha/mẹ, cha/mẹ vợ/chồng, vợ/chồng hoặc con — tối đa 3 ngày</option>
+                      </select></div>}
+                    <div className="apv-field"><label><input type="checkbox" checked={leaveEmergency} onChange={e => setLeaveEmergency(e.target.checked)} /> Trường hợp khẩn cấp, không thể báo trước</label>
+                      {leaveEmergency && <textarea aria-label="Lý do nghỉ khẩn cấp" value={leaveEmergencyReason} onChange={e => setLeaveEmergencyReason(e.target.value)} placeholder="Nêu lý do; bổ sung chứng cứ/biểu mẫu khi quay lại làm việc" />}
+                    </div>
                     <div className="apv-leave-balance" aria-live="polite">
                       <strong>Số phép năm</strong>
                       {balanceLoading ? <span>Đang tính số phép...</span> : balanceError ? (
@@ -2164,28 +2134,21 @@ function Approvals() {
                         return <div className="apv-leave-balance__row" key={year}>
                           <b>{year}</b>
                           <span>Tổng: {balance?.configured ? balance.total : 'Chưa cài đặt'}</span>
-                          <span>Đã xin: {balance?.used ?? '—'}</span>
+                          <span>Đã nghỉ: {balance?.used ?? '—'}</span>
+                          <span>Chờ duyệt: {balance?.reserved ?? '—'}</span>
+                          <span>Đang khóa: {balance?.locked ?? '—'}</span>
+                          <span>Dự tính chờ tiếp tục: {balance?.provisional ?? '—'}</span>
                           <span>Còn: {balance?.remaining ?? '—'}</span>
                           <span>Đơn này: {requested}</span>
                         </div>
                       })}
                       {leaveType === 'unpaid' && <small>Nghỉ không hưởng lương không trừ phép năm.</small>}
+                      {leaveType === 'personal_paid' && <small>Nghỉ việc riêng hưởng lương không trừ phép năm.</small>}
                     </div>
                     <div className="apv-leave-balance apv-leave-month-usage" aria-live="polite">
-                      <strong>Số lượt sử dụng phép trong tháng (tối đa 2 lần)</strong>
-                      {leaveMonthlyUsageLoading ? <span>Đang tính số lượt phép...</span> : leaveMonthlyUsageError ? (
-                        <span className="apv-field-error">{leaveMonthlyUsageError}</span>
-                      ) : leaveMonths.map(month => {
-                        const usage = leaveMonthlyUsage[month]
-                        const used = Number(usage?.used || 0)
-                        const limit = Number(usage?.limit || 2)
-                        return <div className="apv-leave-balance__row" key={month}>
-                          <b>{month}</b>
-                          <span>Đã xin: {used}/{limit} lần</span>
-                          <span>Còn: {Math.max(0, limit - used)} lượt</span>
-                        </div>
-                      })}
-                      {leaveType === 'unpaid' && <small>Giới hạn 2 lần/tháng áp dụng khi sử dụng phép năm.</small>}
+                      <strong>Lịch nghỉ và thời hạn phản hồi</strong>
+                      <span>{leavePreview?.days?.length ?? '—'} ngày làm việc cần nghỉ; đã loại ngày lễ/nghỉ theo lịch.</span>
+                      <small>Đăng ký trước {leavePreview?.required_notice ?? '3 hoặc 7'} ngày làm việc. Quản lý phản hồi trong 2 ngày làm việc; không tự động duyệt.</small>
                     </div>
                     <div className="apv-leave-fields__note">
                       <i className="fas fa-link"></i>
@@ -2193,7 +2156,6 @@ function Approvals() {
                     </div>
                     {errors.leaveDates && <div className="apv-field-error">{errors.leaveDates}</div>}
                     {errors.leaveBalance && <div className="apv-field-error">{errors.leaveBalance}</div>}
-                    {errors.leaveMonthlyLimit && <div className="apv-field-error">{errors.leaveMonthlyLimit}</div>}
                   </div>
                 )}
 
@@ -2413,7 +2375,7 @@ function Approvals() {
             <div className="apv-actionbar">
               <button
                 className="apv-btn apv-btn--primary"
-                disabled={submitting || readingAttachments || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && leaveType === 'paid' && (balanceLoading || leaveMonthlyUsageLoading))}
+                disabled={submitting || readingAttachments || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && balanceLoading)}
                 onClick={handleSubmitRequest}
               >
                 {submitting ? (
@@ -2522,8 +2484,9 @@ function Approvals() {
                     </div>
                     <div>
                       <span>Loại nghỉ</span>
-                      <strong>{selectedRequest.leaveType === 'unpaid' ? 'Không lương' : 'Có phép'}</strong>
+                      <strong>{selectedRequest.leaveType === 'unpaid' ? 'Không lương' : selectedRequest.leaveType === 'personal_paid' ? 'Việc riêng hưởng lương' : 'Phép năm'}</strong>
                     </div>
+                    {selectedRequest.leaveResponseDueDate && <div><span>Hạn phản hồi</span><strong>{formatDateShort(selectedRequest.leaveResponseDueDate)}</strong></div>}
                     <div>
                       <span>Thời lượng</span>
                       <strong>{selectedRequest.leaveDuration === 'half' ? '0,5 công/ngày' : '1 công/ngày'}</strong>
@@ -3247,6 +3210,10 @@ function Approvals() {
                             {r.leaveDuration === 'half' ? '0,5 công' : '1 công'}
                           </span>
                         )}
+                        {r.leaveResponseDueDate && r.status === 'pending' && <span className="apv-card__chip">
+                          Phản hồi trước {formatDateShort(r.leaveResponseDueDate)}
+                          {r.leaveResponseDueDate < new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()) ? ' · Quá hạn' : ''}
+                        </span>}
                         {r.quotaLimit > 0 && (
                           <span className="apv-card__chip">
                             Còn {r.quotaRemainingAfter ?? '—'}/{r.quotaLimit} lần/{APPROVAL_PERIOD_LABELS[r.quotaPeriod] || 'kỳ'}
@@ -3301,7 +3268,7 @@ function Approvals() {
         {rejectPrompt && selectedRequest && (
           <BottomSheet title="Lý do từ chối" onClose={() => setRejectPrompt(false)}>
             <textarea
-              placeholder="Nhập lý do từ chối (không bắt buộc)"
+              placeholder={selectedRequest.leaveStartDate ? 'Nhập lý do từ chối và thời điểm nghỉ đề xuất khác' : 'Nhập lý do từ chối (không bắt buộc)'}
               value={decisionComment}
               onChange={(e) => setDecisionComment(e.target.value)}
             />
