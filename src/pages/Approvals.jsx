@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbDelete, fbGet, fbPush, fbUpdate } from '../services/firebase'
-import { approveMatchingLeaveDays } from '../services/leaveDays'
+import AttachmentLinks from '../components/AttachmentLinks'
+import { readAttachmentFiles } from '../utils/attachments'
 import { supabase } from '../services/supabase'
 import {
   APPROVAL_PERIOD_LABELS,
@@ -314,6 +315,7 @@ function Approvals() {
   const [subject, setSubject] = useState('')
   const [content, setContent] = useState('')
   const [attachments, setAttachments] = useState([])
+  const [readingAttachments, setReadingAttachments] = useState(false)
   const [attendanceDate, setAttendanceDate] = useState('')
   const [leaveStartDate, setLeaveStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [leaveEndDate, setLeaveEndDate] = useState(new Date().toISOString().slice(0, 10))
@@ -1306,12 +1308,18 @@ function Approvals() {
   const addStep = () => setApproverSteps((prev) => [...prev, emptyStep()])
   const removeStep = (idx) => setApproverSteps((prev) => prev.filter((_, i) => i !== idx))
 
-  const handleFilesSelected = (e) => {
+  const handleFilesSelected = async (e) => {
     const files = Array.from(e.target.files || [])
-    // Only file names are kept for display — there is no file-storage backend wired
-    // up for this module yet, so the actual bytes are not persisted.
-    setAttachments((prev) => [...prev, ...files.map((f) => ({ name: f.name }))])
     e.target.value = ''
+    if (!files.length || readingAttachments) return
+    setReadingAttachments(true)
+    setErrors(previous => ({ ...previous, attachments: '' }))
+    try {
+      const added = await readAttachmentFiles(files, attachments)
+      setAttachments(previous => [...previous, ...added])
+    } catch (error) {
+      setErrors(previous => ({ ...previous, attachments: error.message }))
+    } finally { setReadingAttachments(false) }
   }
 
   const validateForm = () => {
@@ -1370,6 +1378,7 @@ function Approvals() {
   }
 
   const handleSubmitRequest = async () => {
+    if (readingAttachments || submitting) return
     if (!me) {
       showToast('Vui lòng đăng nhập lại để gửi đề xuất.')
       return
@@ -1489,14 +1498,8 @@ function Approvals() {
         p_comment: comment
       })
       if (error) throw error
-      const leaveDates = decision === 'approved' ? listRequestLeaveDates(target) : []
-      if (leaveDates.length) {
-        try {
-          await approveMatchingLeaveDays({ employeeId: target.requesterId, dates: leaveDates })
-        } catch (syncError) {
-          console.error('Không đồng bộ được ngày nghỉ phép:', syncError)
-        }
-      }
+      // Only the final approval syncs leave days, atomically in the database trigger.
+      const leaveDates = data?.status === 'approved' ? listRequestLeaveDates(data) : []
       showToast(
         decision === 'approved'
           ? leaveDates.length
@@ -2216,9 +2219,11 @@ function Approvals() {
                     style={{ display: 'none' }}
                     onChange={handleFilesSelected}
                   />
-                  <button type="button" className="apv-attach-btn" onClick={() => fileInputRef.current?.click()}>
-                    <i className="fas fa-paperclip"></i> Thêm tập tin
+                  <button type="button" className="apv-attach-btn" disabled={readingAttachments || submitting} onClick={() => fileInputRef.current?.click()}>
+                    <i className="fas fa-paperclip"></i> {readingAttachments ? 'Đang đọc tệp...' : 'Thêm tập tin'}
                   </button>
+                  <small>Tối đa 5 tệp, mỗi tệp 2 MB; tổng dung lượng 5 MB.</small>
+                  {errors.attachments && <div className="apv-field-error" role="alert">{errors.attachments}</div>}
                   {attachments.length > 0 && (
                     <div className="apv-attach-list">
                       {attachments.map((a, i) => (
@@ -2408,7 +2413,7 @@ function Approvals() {
             <div className="apv-actionbar">
               <button
                 className="apv-btn apv-btn--primary"
-                disabled={submitting || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && leaveType === 'paid' && (balanceLoading || leaveMonthlyUsageLoading))}
+                disabled={submitting || readingAttachments || selectedTemplateUsage.limitReached || leaderLoading || (isEmployee && !teamLeader) || (selectedTemplateUsesLeaveDates && leaveType === 'paid' && (balanceLoading || leaveMonthlyUsageLoading))}
                 onClick={handleSubmitRequest}
               >
                 {submitting ? (
@@ -2545,14 +2550,7 @@ function Approvals() {
                 <div className="apv-field">
                   <label>Đính kèm</label>
                   {(selectedRequest.attachments || []).length > 0 ? (
-                    <div className="apv-attach-list">
-                      {selectedRequest.attachments.map((a, i) => (
-                        <div key={i} className="apv-attach-chip">
-                          <i className="fas fa-paperclip"></i>
-                          <span>{a.name}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <AttachmentLinks attachments={selectedRequest.attachments} />
                   ) : (
                     <div className="apv-detail-text" style={{ color: '#98a2b3' }}>
                       Không có tập tin

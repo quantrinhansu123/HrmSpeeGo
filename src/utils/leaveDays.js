@@ -1,3 +1,5 @@
+import { validateAttachmentFiles } from './attachments.js'
+
 export const todayLocalDate = (today = new Date()) => {
   const year = today.getFullYear()
   const month = String(today.getMonth() + 1).padStart(2, '0')
@@ -22,4 +24,14 @@ export const normalizeLeaveReason = value => {
   const reason = String(value || '').trim()
   if (!LEAVE_REASON_OPTIONS.includes(reason)) throw new Error('Vui lòng chọn lý do nghỉ phép.')
   return reason
+}
+export const validateLeaveAdjustment = ({ leaveDate, reason, note, attachments = [] }) => {
+  if (!isValidLeaveDate(leaveDate)) throw new Error('Vui lòng chọn ngày nghỉ hợp lệ.')
+  const normalizedNote = String(note || '').trim()
+  if (normalizedNote.length < 5 || normalizedNote.length > 2000) {
+    throw new Error('Ghi chú điều chỉnh cần từ 5 đến 2.000 ký tự.')
+  }
+  if (!Array.isArray(attachments)) throw new Error('Danh sách tệp không hợp lệ.')
+  validateAttachmentFiles(attachments)
+  return { leaveDate, reason: normalizeLeaveReason(reason), note: normalizedNote, attachments }
 }
