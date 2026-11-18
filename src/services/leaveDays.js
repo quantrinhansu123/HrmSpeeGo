@@ -17,7 +17,7 @@ const throwLeaveError = error => {
   throw error
 }
 
-export const loadLeaveDays = async ({ companyId, employeeId }) => {
+export const loadLeaveDays = async ({ companyId, employeeId, approvalRequestId }) => {
   if (!companyId) throw new Error('Thiếu mã công ty.')
   const rows = []
   for (let from = 0; ; from += PAGE_SIZE) {
@@ -25,6 +25,7 @@ export const loadLeaveDays = async ({ companyId, employeeId }) => {
       .select(SUMMARY_COLUMNS)
       .eq('company_id', companyId)
     if (employeeId) query = query.eq('employee_id', employeeId)
+    if (approvalRequestId) query = query.eq('approval_request_id', `approvalRequests::${String(approvalRequestId).replace(/^approvalRequests::/, '')}`)
     const { data, error } = await query
       .order('leave_date', { ascending: false })
       .order('id', { ascending: true })

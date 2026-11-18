@@ -21,7 +21,6 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
     ...(user?.role === 'admin' ? [] : [{ path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' }]),
     ...(user?.role === 'admin' || user?.role === 'hr' ? [{ path: '/bang-phep', icon: 'fas fa-calendar-alt', label: 'Bảng phép' }] : []),
-    { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/dang-ky-ca', icon: 'fas fa-calendar-week', label: 'Đăng ký ca' },
     { path: '/holiday-settings', icon: 'fas fa-cog', label: 'Cài đặt' }
   ]
@@ -38,16 +37,15 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
   const employeeItems = [
     { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
-    { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/dang-ky-ca', icon: 'fas fa-calendar-week', label: 'Đăng ký ca' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
     { path: '/lich-su-cham-cong', icon: 'fas fa-clock-rotate-left', label: 'Lịch sử chấm công' }
   ]
 
   const accountingItems = [
+    { path: '/approvals', icon: 'fas fa-stamp', label: 'Đề xuất' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
     { path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' },
-    { path: '/ngay-nghi-phep', icon: 'fas fa-calendar-minus', label: 'Ngày nghỉ phép' },
     { path: '/holiday-settings', icon: 'fas fa-calendar-day', label: 'Cài đặt chấm công' },
     { path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' },
     { path: '/lich-su-cham-cong', icon: 'fas fa-clock-rotate-left', label: 'Lịch sử chấm công' }
@@ -56,7 +54,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
   const accountingOnly = isAccountingUser(user) && !isCoreStaffUser(user)
   const staffGroups = [
     { label: 'Nhân sự', paths: ['/employees', '/giay-to-cong-ty'] },
-    { label: 'Chấm công', paths: ['/cham-cong-online', '/lich-su-cham-cong', '/bang-cong-preview', '/bang-cong', '/bang-phep', '/ngay-nghi-phep', '/dang-ky-ca', '/bang-phat'] },
+    { label: 'Chấm công', paths: ['/cham-cong-online', '/lich-su-cham-cong', '/bang-cong-preview', '/bang-cong', '/bang-phep', '/dang-ky-ca', '/bang-phat'] },
     { label: 'Phê duyệt', paths: ['/approvals', '/yeu-cau-dieu-chinh-cong'] },
     { label: 'Cài đặt', paths: ['/holiday-settings'] }
   ]

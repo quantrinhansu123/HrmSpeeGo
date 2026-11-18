@@ -72,6 +72,8 @@ test('staff menu groups preserve role restrictions and label only unfinished pag
         const links = nodes(tree).filter(node => node.type === 'a')
         const paths = links.map(node => node.props.to)
         assert.equal(new Set(paths).size, paths.length)
+        assert.ok(paths.includes('/approvals'), `${role} still has access to leave through approvals`)
+        assert.ok(!paths.includes('/ngay-nghi-phep'), `${role} has no separate leave menu`)
         if (['admin', 'hr', 'manager'].includes(role)) {
             for (const label of ['Nhân sự', 'Chấm công', 'Phê duyệt', 'Cài đặt']) {
                 assert.ok(nodes(tree).some(node => node.type === 'section' && node.props['aria-label'] === label))

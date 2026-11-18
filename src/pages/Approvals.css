@@ -2003,6 +2003,36 @@
   padding: 9px 11px;
 }
 
+.apv-request-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 14px 16px 0;
+}
+.apv-request-filter label { display: grid; gap: 6px; color: #475569; font-size: 13px; }
+.apv-request-filter select { min-height: 42px; max-width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #334155; font: inherit; }
+.apv-leave-history { margin: 0 16px 24px; min-width: 0; }
+.apv-leave-history > summary { padding: 14px 0; color: var(--primary-dark); cursor: pointer; font-weight: 600; }
+.apv .leave-days-page--embedded { min-width: 0; margin-bottom: 14px; }
+.leave-days-page--embedded .leave-days-list-head > div:first-child { flex: 1 1 auto; min-width: 0; }
+.leave-days-page--embedded .leave-days-list-head p { margin: 8px 0 0; font-size: 13px; line-height: 1.5; }
+.leave-days-page--embedded .leave-days-table-wrap table { min-width: 0; }
+
+@media (min-width: 960px) {
+  .apv-request-filter { padding: 14px 28px 0; }
+  .apv-leave-history { margin-left: 28px; margin-right: 28px; }
+}
+
+@media (min-width: 768px) and (max-width: 959px) {
+  .leave-days-page--embedded .leave-days-table-wrap thead { display: none; }
+  .leave-days-page--embedded .leave-days-table-wrap :is(table, tbody) { display: block; width: 100%; }
+  .leave-days-page--embedded .leave-days-table-wrap tr { display: grid; padding: 10px; border-bottom: 1px solid #e2e8f0; }
+  .leave-days-page--embedded .leave-days-table-wrap td { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; padding: 8px 4px; border: 0; }
+  .leave-days-page--embedded .leave-days-table-wrap td::before { content: attr(data-label); color: #64748b; font-weight: 600; }
+  .leave-days-page--embedded .leave-days-table-wrap .leave-days-check-col { width: auto; text-align: left; }
+}
+
 @media (max-width: 767px) {
   .apv-topbar {
     padding: 12px;

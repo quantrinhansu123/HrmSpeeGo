@@ -51,6 +51,20 @@ test('chi tiết tải đúng đề xuất và bỏ qua đề xuất khác nhân
   assert.equal((await loadLeaveDayDetails({ companyId: 'company', id: 'day-1' })).approval_request_id, 'approvalRequests::request-1')
 })
 
+test('ngày nghỉ trong chi tiết đề xuất được lọc đúng đơn, công ty và quyền nhân sự', async () => {
+  for (const approvalRequestId of ['request-1', 'approvalRequests::request-1']) {
+    calls.length = 0
+    responses = { employee_leave_days: { data: [], error: null } }
+    await loadLeaveDays({ companyId: 'company', employeeId: 'employee', approvalRequestId })
+    const filters = calls[0].operations.filter(op => op[0] === 'eq')
+    assert.deepEqual(filters, [
+      ['eq', 'company_id', 'company'],
+      ['eq', 'employee_id', 'employee'],
+      ['eq', 'approval_request_id', 'approvalRequests::request-1']
+    ])
+  }
+})
+
 test('điều chỉnh gửi ghi chú, tệp và phiên bản vào RPC nguyên tử', async () => {
   calls.length = 0
   responses = {}
