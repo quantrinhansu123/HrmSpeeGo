@@ -3,7 +3,7 @@ import test from 'node:test'
 import ExcelJS from 'exceljs'
 import {
   isAttendancePointsMonth, pointRuleForEvent, buildAttendancePointEvents, mergeAttendancePointEvents,
-  summarizeEmployeePoints, validatePointEvents, attachSavedAttendancePoints
+  summarizeEmployeePoints, validatePointEvents, attachSavedAttendancePoints, normalizePointEvent, createManualPointEvent
 } from './attendancePoints.js'
 import { buildAttendanceSummary, serializeAttendanceSummaryRows, hydrateAttendanceSummaryRows } from './attendanceSummary.js'
 import { applyPenaltyAmountsToSummaryRows, buildPenaltyDetailRows } from './attendancePenalties.js'
@@ -30,15 +30,15 @@ test('từng lần muộn/sớm/ra ngoài: đúng 30 và 60 trừ 20, trên 60 t
   assert.equal(pointRuleForEvent('conduct').points, 10)
   assert.equal(pointRuleForEvent('emergency_leave').points, 0)
 })
-test('chỉ trừ điểm đã xác nhận, người không lỗi vẫn có 100, chưa phân nhóm không tự trả tiền', () => {
+test('trừ ngay cả sự kiện từng chờ duyệt, miễn điểm không trừ, chưa phân nhóm không tự trả tiền', () => {
   const rows = [make('late',20), make('late',20,{id:'2',reviewStatus:'pending'}), make('missing_punch',0,{id:'3',reviewStatus:'exempt'})]
   const employee = summarizeEmployeePoints(rows, 'e1', 'employee')
-  assert.equal(employee.deductedPoints, 10)
-  assert.equal(employee.pendingPoints, 10)
-  assert.equal(employee.pendingCount, 1)
-  assert.equal(employee.remainingPoints, 90)
-  assert.equal(employee.benefitAmount, 900000)
-  assert.equal(summarizeEmployeePoints(rows, 'e1', 'manager').benefitAmount, 1800000)
+  assert.equal(employee.deductedPoints, 20)
+  assert.equal(employee.pendingPoints, 0)
+  assert.equal(employee.pendingCount, 0)
+  assert.equal(employee.remainingPoints, 80)
+  assert.equal(employee.benefitAmount, 800000)
+  assert.equal(summarizeEmployeePoints(rows, 'e1', 'manager').benefitAmount, 1600000)
   assert.equal(summarizeEmployeePoints([], 'e2', 'employee').remainingPoints, 100)
   assert.equal(summarizeEmployeePoints([], 'e2').benefitAmount, null)
   assert.equal(summarizeEmployeePoints(rows, 'e1', 'ineligible').benefitAmount, 0)
@@ -63,7 +63,7 @@ test('bỏ miễn hai lần nhỏ và giữ từng sự kiện độc lập tron
   const events = buildPenaltyDetailRows(rows)
   assert.equal(events.length,5)
   assert.equal(events.filter(row=>row.eventType==='late').length,2)
-  assert.ok(events.every(row=>row.reviewStatus==='pending' && row.amount===0))
+  assert.ok(events.every(row=>row.reviewStatus==='confirmed' && row.amount===0))
   assert.match(events[0].note,/đã duyệt/)
   const [summary] = applyPenaltyAmountsToSummaryRows(rows)
   assert.equal(summary.totalFine,0)
@@ -81,7 +81,7 @@ test('snapshot giữ từng lượt trong cùng ngày, không chọn mức đi�
   assert.ok(events.every(event=>event.points===10 && event.minutes===20))
   assert.equal(new Set(events.map(event=>event.id)).size,2)
 })
-test('tổng hợp lại giữ miễn/xác nhận và ghi chú, đổi thời lượng yêu cầu kiểm tra lại', () => {
+test('tổng hợp lại giữ miễn và ghi chú, đổi thời lượng áp dụng ngay điểm mới', () => {
   const initial = buildAttendancePointEvents([{employeeId:'e1',days:{'2026-11-02':{late:true,lateMinutes:20}}}])
   const reviewed = initial.map(row=>({...row,reviewStatus:'exempt',note:'Đã báo đúng hạn'}))
   const manual = make('conduct',0,{id:'manual'})
@@ -90,13 +90,14 @@ test('tổng hợp lại giữ miễn/xác nhận và ghi chú, đổi thời l�
   assert.equal(same.find(row=>row.source==='auto').reviewStatus,'exempt')
   assert.equal(same.find(row=>row.source==='auto').note,'Đã báo đúng hạn')
   const changed=mergeAttendancePointEvents(reviewed,[{...initial[0],minutes:29}])
-  assert.equal(changed[0].reviewStatus,'pending')
+  assert.equal(changed[0].reviewStatus,'confirmed')
   assert.match(changed[0].note,/thay đổi/)
   assert.deepEqual(mergeAttendancePointEvents([...reviewed,manual],[]).map(row=>row.id),['manual'])
 })
-test('xác thực ngày, điểm, ghi nhận HCNS, nghỉ không phép tính một lần/ngày và tối đa hai giải trình', () => {
+test('không cần ghi nhận để trừ ngay; miễn cần lý do; kiểm tra ngày, điểm, số lần nghỉ và giải trình', () => {
   assert.doesNotThrow(()=>validatePointEvents('2026-11',[make('late',30)]))
-  for(const patch of [{date:'2026-10-02'},{date:'2026-11-31'},{date:''},{points:50000},{minutes:-1},{minutes:1.5},{reviewStatus:'confirmed',note:''},{employeeId:''}]) {
+  assert.doesNotThrow(()=>validatePointEvents('2026-11',[make('late',30,{note:''})]))
+  for(const patch of [{date:'2026-10-02'},{date:'2026-11-31'},{date:''},{points:50000},{minutes:-1},{minutes:1.5},{reviewStatus:'exempt',note:''},{employeeId:''}]) {
     assert.throws(()=>validatePointEvents('2026-11',[make('late',30,patch)]))
   }
   assert.throws(()=>validatePointEvents('2026-11',[make('absence'),make('absence',0,{id:'other'})]),/một lần/)
@@ -112,12 +113,36 @@ test('Excel tháng mới chỉ xuất điểm đã lưu và dữ liệu kiểm t
   const reopened = new ExcelJS.Workbook()
   await reopened.xlsx.load(buffer)
   const sheet = reopened.getWorksheet('Chuyên cần theo điểm')
-  assert.equal(sheet.getCell('F2').value,10)
-  assert.equal(sheet.getCell('G2').value,90)
-  assert.equal(sheet.getCell('I2').value,1)
-  assert.equal(sheet.getCell('L2').value,900000)
+  assert.equal(sheet.getCell('F2').value,20)
+  assert.equal(sheet.getCell('G2').value,80)
+  assert.equal(sheet.getCell('J2').value,800000)
+  assert.ok(!sheet.getRow(1).values.some(value=>String(value).includes('chờ kiểm tra')))
   assert.equal(reopened.getWorksheet('Ghi nhận HCNS').rowCount,3)
   for (const worksheet of reopened.worksheets) worksheet.eachRow(row=>row.eachCell(cell=>{
     assert.notEqual(cell.type,ExcelJS.ValueType.Formula)
   }))
+})
+
+test('sự kiện tự động và nhập tay trừ ngay, không cần ghi chú hay duyệt', () => {
+  const events = buildAttendancePointEvents([{employeeId:'e1',days:{'2026-11-02':{late:true,lateMinutes:20}}}])
+  assert.equal(events[0].reviewStatus, 'confirmed')
+  assert.equal(summarizeEmployeePoints(events,'e1').remainingPoints,90)
+  assert.doesNotThrow(()=>validatePointEvents('2026-11',events))
+  assert.equal(createManualPointEvent('2026-11').reviewStatus, 'confirmed')
+  assert.equal(normalizePointEvent({reviewStatus:'pending'}).reviewStatus, 'confirmed')
+})
+
+test('mức admin chỉnh giữ nguyên khi nạp lại và đổi phút; chỉ điểm nguyên từ 0 đến 100', () => {
+  const initial = buildAttendancePointEvents([{employeeId:'e1',days:{'2026-11-02':{late:true,lateMinutes:20}}}])
+  const adjusted = [{...initial[0],points:5,pointsOverridden:true,note:'Admin chỉnh'}]
+  for (const generated of [initial, [{...initial[0],minutes:60,...pointRuleForEvent('late',60)}]]) {
+    const merged = mergeAttendancePointEvents(adjusted,generated)
+    assert.equal(merged[0].points,5)
+    assert.equal(merged[0].pointsOverridden,true)
+    assert.equal(summarizeEmployeePoints(merged,'e1','employee').benefitAmount,950000)
+    assert.doesNotThrow(()=>validatePointEvents('2026-11',merged))
+  }
+  for (const points of [0,5,100]) assert.doesNotThrow(()=>validatePointEvents('2026-11',[make('late',20,{points,pointsOverridden:true,note:''})]))
+  for (const points of [-1,101,1.5,NaN,Infinity,'']) assert.throws(()=>validatePointEvents('2026-11',[normalizePointEvent(make('late',20,{points,pointsOverridden:true}))]))
+  assert.throws(()=>validatePointEvents('2026-11',[make('late',20,{points:5})]))
 })

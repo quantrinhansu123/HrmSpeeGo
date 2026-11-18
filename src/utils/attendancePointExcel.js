@@ -11,11 +11,9 @@ export const buildAttendancePointWorkbook = (rows, month) => {
     { header: 'Bộ phận', key: 'department', width: 22 },
     { header: 'Tổng công', key: 'workdays', width: 14 },
     { header: 'Điểm đầu tháng', key: 'initial', width: 18 },
-    { header: 'Điểm trừ đã xác nhận', key: 'deducted', width: 24 },
+    { header: 'Điểm đã trừ', key: 'deducted', width: 24 },
     { header: 'Điểm còn lại', key: 'remaining', width: 18 },
     { header: 'Tỷ lệ hưởng (%)', key: 'rate', width: 18 },
-    { header: 'Sự kiện chờ kiểm tra', key: 'pendingCount', width: 24 },
-    { header: 'Điểm chờ kiểm tra', key: 'pendingPoints', width: 22 },
     { header: 'Phúc lợi tối đa (đ)', key: 'maximum', width: 24 },
     { header: 'Phúc lợi dự kiến (đ)', key: 'benefit', width: 24 },
     { header: 'Trạng thái', key: 'status', width: 32 }
@@ -26,16 +24,16 @@ export const buildAttendancePointWorkbook = (rows, month) => {
       employeeCode: row.employeeCode || '', employeeName: row.employeeName || '', department: row.department || '',
       workdays: row.workdays ?? null, initial: 100, deducted: points.deductedPoints,
       remaining: points.remainingPoints, rate: points.remainingPoints,
-      pendingCount: points.pendingCount, pendingPoints: points.pendingPoints,
       maximum: points.maximum, benefit: points.benefitAmount,
-      status: points.pendingCount ? 'Chưa kiểm tra xong' : points.maximum === null ? 'Chưa xác định nhóm hưởng' : 'Đã kiểm tra các sự kiện hiện có'
+      status: points.maximum === null ? 'Chưa xác định nhóm hưởng' : 'Áp dụng điểm trừ ngay'
     })
   })
   const events = workbook.addWorksheet('Ghi nhận HCNS')
   events.columns = [
     { header: 'Ngày', key: 'date', width: 14 }, { header: 'Mã NV', key: 'code', width: 16 },
     { header: 'Họ tên', key: 'name', width: 28 }, { header: 'Hành vi', key: 'type', width: 52 },
-    { header: 'Số phút', key: 'minutes', width: 12 }, { header: 'Điểm theo nội quy', key: 'points', width: 22 },
+    { header: 'Số phút', key: 'minutes', width: 12 }, { header: 'Điểm trừ', key: 'points', width: 22 },
+    { header: 'Admin đã chỉnh điểm', key: 'adjusted', width: 22 },
     { header: 'Kết quả', key: 'status', width: 22 }, { header: 'Ghi nhận / lý do HCNS', key: 'note', width: 55 }
   ]
   const seen = new Set()
@@ -44,8 +42,8 @@ export const buildAttendancePointWorkbook = (rows, month) => {
     seen.add(event.id)
     events.addRow({ date: event.date, code: event.employeeCode, name: event.employeeName,
       type: ATTENDANCE_POINT_TYPES.find(type => type.key === event.eventType)?.label || event.eventType,
-      minutes: event.minutes, points: event.points,
-      status: { confirmed: 'Xác nhận trừ', pending: 'Chờ kiểm tra', exempt: 'Miễn điểm' }[event.reviewStatus], note: event.note })
+      minutes: event.minutes, points: event.points, adjusted: event.pointsOverridden ? 'Có' : '',
+      status: event.reviewStatus === 'exempt' ? 'Miễn điểm' : 'Áp dụng trừ điểm', note: event.note })
   }))
   // Giữ dữ liệu chấm công trong báo cáo xuất từ trang Bảng công.
   const attendance = workbook.addWorksheet('Công theo ngày')

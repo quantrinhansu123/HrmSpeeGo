@@ -265,12 +265,12 @@ function MyAttendance() {
         {isAttendancePointsMonth(month) && <section className="card my-attendance__requests-card" aria-label="Thông báo điểm chuyên cần">
           <h3>Điểm chuyên cần tháng {month}</h3>
           {pointsLoading ? <p>Đang tải ghi nhận HCNS...</p> : pointError ? <p role="alert">{pointError}</p> : <>
-            <p><strong>{summarizeEmployeePoints(pointEvents, employeeId).remainingPoints}/100 điểm</strong> theo các sự kiện HCNS đã xác nhận. Điểm dùng xét phúc lợi chuyên cần ngoài lương.</p>
+            <p><strong>{summarizeEmployeePoints(pointEvents, employeeId).remainingPoints}/100 điểm</strong> · Điểm trừ được áp dụng ngay, không cần duyệt. Điểm dùng xét phúc lợi chuyên cần ngoài lương.</p>
             {pointEvents.length ? <div className="my-attendance__requests-list">{pointEvents.map(event => <article key={event.id} className="my-attendance__request-row">
               <div><strong>{new Date(`${event.date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span>{event.content}</span></div>
               <span>{event.reviewStatus === 'exempt' ? 'Được miễn điểm' : `Trừ ${event.points} điểm`}</span>
               <small>Ghi nhận HCNS: {event.note}{event.reviewedAt ? ` · ${new Date(event.reviewedAt).toLocaleString('vi-VN')}` : ''}</small>
-            </article>)}</div> : <p>Chưa có sự kiện đã xác nhận trong tháng.</p>}
+            </article>)}</div> : <p>Chưa có sự kiện trừ điểm trong tháng.</p>}
           </>}
         </section>}
         <section className="card my-attendance__summary-card">

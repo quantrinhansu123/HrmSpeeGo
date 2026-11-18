@@ -38,11 +38,12 @@ export const normalizePointEvent = (row = {}) => ({
   ...row,
   policyVersion: 'points-v0.4',
   amount: 0,
-  points: Number(row.points || 0),
+  points: row.points === '' ? NaN : Number(row.points ?? 0),
   minutes: Number(row.minutes || 0),
   eventType: row.eventType || 'late',
   categoryKey: row.categoryKey || '',
-  reviewStatus: row.reviewStatus || 'pending',
+  reviewStatus: !row.reviewStatus || row.reviewStatus === 'pending' ? 'confirmed' : row.reviewStatus,
+  pointsOverridden: row.pointsOverridden === true,
   note: row.note || '',
   source: row.source === 'auto' ? 'auto' : 'manual'
 })
@@ -54,7 +55,7 @@ export const createManualPointEvent = month => normalizePointEvent({
 })
 
 // Snapshot mới tách từng lượt; snapshot cũ chỉ có cờ ngày thì cần HCNS đối soát.
-// Dữ liệu máy chấm không đủ chứng minh "không phép": luôn chờ kiểm tra.
+// Sự kiện áp dụng trừ điểm ngay; admin có thể điều chỉnh sau.
 export const buildAttendancePointEvents = (summaryRows = []) => {
   const result = []
   for (const row of summaryRows) {
@@ -73,7 +74,7 @@ export const buildAttendancePointEvents = (summaryRows = []) => {
           eventType, minutes, ...rule,
           category: label,
           content: `${label}${minutes > 0 ? ` · ${minutes} phút` : ''}`,
-          source: 'auto', reviewStatus: 'pending'
+          source: 'auto', reviewStatus: 'confirmed'
         }))
       }
       // Đơn approved cũ chưa phân biệt phạm vi muộn/sớm: vẫn cần HCNS xác nhận
@@ -104,11 +105,13 @@ export const mergeAttendancePointEvents = (existing = [], generated = []) => {
   const automatic = generated.map(row => {
     const saved = previous.get(row.id)
     if (!saved) return normalizePointEvent(row)
-    const unchanged = saved.employeeId === row.employeeId && saved.date === row.date && saved.eventType === row.eventType && Number(saved.minutes) === Number(row.minutes) && Number(saved.points) === Number(row.points)
+    const sameEvent = saved.employeeId === row.employeeId && saved.date === row.date && saved.eventType === row.eventType
+    const unchanged = sameEvent && Number(saved.minutes) === Number(row.minutes)
     return normalizePointEvent({
       ...row,
+      ...(sameEvent && saved.pointsOverridden ? { points: saved.points, pointsOverridden: true } : {}),
       ...(unchanged ? { note: saved.note, reviewStatus: saved.reviewStatus, reviewedAt: saved.reviewedAt, reviewedBy: saved.reviewedBy } : {
-        note: 'Dữ liệu chấm công đã thay đổi; cần kiểm tra lại.', reviewStatus: 'pending', reviewedAt: null, reviewedBy: null
+        note: 'Dữ liệu chấm công đã thay đổi; đã cập nhật điểm trừ.', reviewStatus: 'confirmed', reviewedAt: null, reviewedBy: null
       })
     })
   })
@@ -117,10 +120,10 @@ export const mergeAttendancePointEvents = (existing = [], generated = []) => {
 
 export const summarizeEmployeePoints = (rows = [], employeeId, group = 'unassigned') => {
   const events = rows.filter(row => String(row.employeeId) === String(employeeId))
-  const confirmed = events.filter(row => row.reviewStatus === 'confirmed')
+  const confirmed = events.filter(row => ['confirmed', 'pending', undefined, null, ''].includes(row.reviewStatus))
   const deductedPoints = confirmed.reduce((sum, row) => sum + Math.max(0, Number(row.points) || 0), 0)
-  const pendingPoints = events.filter(row => row.reviewStatus === 'pending').reduce((sum, row) => sum + Math.max(0, Number(row.points) || 0), 0)
-  const pendingCount = events.filter(row => row.reviewStatus === 'pending').length
+  const pendingPoints = 0
+  const pendingCount = 0
   const remainingPoints = Math.max(0, 100 - deductedPoints)
   const maximum = ATTENDANCE_BENEFIT_GROUPS.find(item => item.key === group)?.maximum ?? null
   const frequencyCount = confirmed.filter(row => ['late', 'early', 'outside', 'emergency_leave'].includes(row.eventType)).length
@@ -144,15 +147,15 @@ export const validatePointEvents = (month, rows) => {
     const parsedDate = new Date(`${row.date}T00:00:00Z`)
     if (!String(row.date || '').startsWith(`${month}-`) || !/^\d{4}-\d{2}-\d{2}$/.test(row.date) || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== row.date) throw new Error('Ngày sự kiện phải hợp lệ và thuộc tháng đang xem.')
     const rule = pointRuleForEvent(row.eventType, row.minutes)
-    if (!rule.categoryKey || rule.categoryKey !== row.categoryKey || rule.points !== Number(row.points) || !Number.isInteger(Number(row.minutes)) || Number(row.minutes) < 0 || Number(row.minutes) > 1440 || (!isTimedPointEvent(row.eventType) && Number(row.minutes) !== 0)) throw new Error('Loại sự kiện, thời lượng hoặc điểm không đúng nội quy.')
+    if (!rule.categoryKey || rule.categoryKey !== row.categoryKey || !Number.isInteger(Number(row.points)) || Number(row.points) < 0 || Number(row.points) > 100 || (!row.pointsOverridden && rule.points !== Number(row.points)) || !Number.isInteger(Number(row.minutes)) || Number(row.minutes) < 0 || Number(row.minutes) > 1440 || (!isTimedPointEvent(row.eventType) && Number(row.minutes) !== 0)) throw new Error('Loại sự kiện, thời lượng hoặc điểm không hợp lệ (điểm từ 0 đến 100).')
     if (!['pending', 'confirmed', 'exempt'].includes(row.reviewStatus)) throw new Error('Trạng thái kiểm tra không hợp lệ.')
-    if (row.reviewStatus !== 'pending' && !String(row.note || '').trim()) throw new Error('HCNS cần ghi nhận/lý do trước khi xác nhận hoặc miễn điểm.')
+    if (row.reviewStatus === 'exempt' && !String(row.note || '').trim()) throw new Error('Cần ghi lý do khi miễn điểm.')
     if (row.eventType === 'missing_punch' && row.reviewStatus === 'exempt') {
       const count = (explainedPunches.get(row.employeeId) || 0) + 1
       explainedPunches.set(row.employeeId, count)
       if (count > 2) throw new Error('Tối đa 2 lần giải trình quên chấm mỗi người/tháng theo Điều 7.2.')
     }
-    if (row.eventType === 'absence' && row.reviewStatus === 'confirmed') {
+    if (row.eventType === 'absence' && row.reviewStatus !== 'exempt') {
       const key = `${row.employeeId}::${row.date}`
       if (dailyAbsences.has(key)) throw new Error('Một người chỉ bị trừ điểm nghỉ không phép một lần trong ngày.')
       dailyAbsences.add(key)
@@ -161,7 +164,7 @@ export const validatePointEvents = (month, rows) => {
   return rows
 }
 
-// Sử dụng dữ liệu đã lưu, không suy điểm xác nhận từ số lần trên bảng công.
+// Sử dụng dữ liệu đã lưu, bao gồm điều chỉnh của admin.
 export const attachSavedAttendancePoints = (summaryRows, events, benefits = {}) => summaryRows.map(row => ({
   ...row,
   attendancePoints: summarizeEmployeePoints(events, row.employeeId, benefits[row.employeeId] || 'unassigned'),

@@ -14,7 +14,8 @@
 .attendance-points-page .attendance-penalties-table { min-width: 1450px; }
 .attendance-points-page .attendance-penalties-table td:nth-child(8) { min-width: 230px; }
 .attendance-points-page .attendance-penalties-table td:nth-child(4) { width: 85px; }
-.attendance-points-page .attendance-penalties-table td:nth-child(5) { width: 55px; }
+.attendance-points-page .attendance-penalties-table td:nth-child(5) { min-width: 85px; }
+.attendance-points-policy-reset { margin-top: 6px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; color: #0d427a; background: #f8fafc; font: inherit; cursor: pointer; }
 .attendance-points-editor:disabled { opacity: 1; }
 .attendance-points-editor input:disabled, .attendance-points-editor select:disabled { color: #334155; opacity: 1; }
 @media(max-width:768px) {
