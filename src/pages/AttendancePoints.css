@@ -10,6 +10,18 @@
 .attendance-points-person label { display: grid; gap: 5px; margin-top: 12px; font-size: 12px; }
 .attendance-points-person select { width: 100%; padding: 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: white; }
 .attendance-points-person p { font-size: 13px; line-height: 1.5; margin: 10px 0 0; }
+.attendance-points-person:has(.attendance-points-details[open]) { grid-column: 1 / -1; }
+.attendance-points-person > label { max-width: 360px; }
+.attendance-points-details { margin-top: 14px; border-top: 1px solid #dbe3ec; }
+.attendance-points-details > summary { padding: 12px 0 0; color: #0d427a; font-size: 13px; font-weight: 700; cursor: pointer; overflow-wrap: anywhere; }
+.attendance-points-details > summary span { color: #64748b; font-weight: 400; }
+.attendance-points-details > summary:focus-visible { outline: 2px solid #0d427a; outline-offset: 4px; border-radius: 4px; }
+.attendance-points-details-content { margin-top: 12px; min-width: 0; }
+.attendance-points-add-event { margin-bottom: 12px; padding: 8px 12px; border: 1px solid #b6cee8; border-radius: 6px; background: #eff6ff; color: #0d427a; font: inherit; font-size: 13px; cursor: pointer; }
+.attendance-points-unassigned { padding: 16px; margin-bottom: 16px; border: 1px solid #f0c36d; border-radius: 12px; background: #fffbeb; min-width: 0; }
+.attendance-points-unassigned .attendance-points-events-heading { margin: 0; padding: 0; }
+.attendance-points-empty { padding: 12px 0; color: #64748b; font-size: 13px; }
+.attendance-points-page .penalty-card__field .is-danger { padding: 8px 12px; border: 0; border-radius: 6px; background: #fee4e2; color: #b42318; font: inherit; cursor: pointer; }
 .attendance-points-warning { color: #92400e; background: #fffbeb; padding: 8px; border-radius: 6px; }
 .attendance-points-page .attendance-penalties-table { min-width: 1450px; }
 .attendance-points-page .attendance-penalties-table td:nth-child(8) { min-width: 230px; }

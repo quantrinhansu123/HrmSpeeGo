@@ -43,6 +43,14 @@ function EventEditor({ item, employees, canAdjustPoints, onUpdate, onDelete, mob
     : controls.map(([label, control]) => <td key={label}>{control}</td>)
 }
 
+function EventList({ rows, employees, canAdjustPoints, onUpdate, onDelete }) {
+  if (!rows.length) return <p className="attendance-points-empty">Chưa có sự kiện trong tháng này.</p>
+  return <>
+    <div className="attendance-penalties-card attendance-penalties-card--desktop"><div className="attendance-penalties-scroll"><table className="attendance-penalties-table"><thead><tr>{['Ngày','Nhân sự','Hành vi','Phút','Điểm','Nội dung','Trạng thái','Ghi nhận / lý do HCNS','Nguồn',''].map((label, index) => <th key={index}>{label}</th>)}</tr></thead><tbody>{rows.map(item => <tr key={item.id}><EventEditor item={item} employees={employees} canAdjustPoints={canAdjustPoints} onUpdate={patch => onUpdate(item.id, patch)} onDelete={() => onDelete(item.id)} /></tr>)}</tbody></table></div></div>
+    <div className="attendance-penalties-mobile">{rows.map(item => <article className="penalty-card" key={item.id}><EventEditor mobile item={item} employees={employees} canAdjustPoints={canAdjustPoints} onUpdate={patch => onUpdate(item.id, patch)} onDelete={() => onDelete(item.id)} /></article>)}</div>
+  </>
+}
+
 export default function AttendancePoints({ month, onMonthChange }) {
   const { user } = useAuth()
   const canEdit = ['admin', 'hr'].includes(user?.role)
@@ -56,6 +64,7 @@ export default function AttendancePoints({ month, onMonthChange }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [reload, setReload] = useState(0)
+  const [expandedEmployees, setExpandedEmployees] = useState(new Set())
   useEffect(() => {
     let active = true
     setLoading(true)
@@ -83,13 +92,36 @@ export default function AttendancePoints({ month, onMonthChange }) {
       ...summarizeEmployeePoints(state.rows, employee.id, state.benefits[employee.id] || 'unassigned')
     }))
   }, [employees, state])
+  const eventsByEmployee = useMemo(() => {
+    const groups = new Map()
+    state.rows.forEach(row => {
+      const key = String(row.employeeId || '')
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(row)
+    })
+    return groups
+  }, [state.rows])
+  const unassignedEvents = eventsByEmployee.get('') || []
   const exemptCount = state.rows.filter(row => row.reviewStatus === 'exempt').length
   const confirmedCount = state.rows.filter(row => row.reviewStatus === 'confirmed').length
   const totalPoints = summaries.reduce((sum, row) => sum + row.deductedPoints, 0)
   const update = (id, patch) => {
     setState(current => ({ ...current, rows: current.rows.map(row => row.id === id ? { ...row, ...patch } : row) }))
+    if (patch.employeeId) setExpandedEmployees(current => new Set(current).add(String(patch.employeeId)))
     setDirty(true); setNotice('')
   }
+  const remove = id => {
+    setState(current => ({ ...current, rows: current.rows.filter(row => row.id !== id) }))
+    setDirty(true); setNotice('')
+  }
+  const add = employee => {
+    const item = { ...createManualPointEvent(month), ...(employee ? {
+      employeeId: employee.id, employeeCode: employee.code, employeeName: employee.name
+    } : {}) }
+    setState(current => ({ ...current, rows: [...current.rows, item] }))
+    setDirty(true); setNotice('')
+  }
+  const renderEvents = rows => <EventList rows={rows} employees={summaries} canAdjustPoints={canAdjustPoints} onUpdate={update} onDelete={remove} />
   const changeMonth = next => {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(next)) return
     if (dirty && !confirm('Đổi tháng sẽ bỏ các thay đổi chưa lưu. Tiếp tục?')) return
@@ -133,7 +165,7 @@ export default function AttendancePoints({ month, onMonthChange }) {
         <button disabled={saving || loading} onClick={() => { if (!dirty || confirm('Tải lại sẽ bỏ các thay đổi chưa lưu. Tiếp tục?')) setReload(value => value + 1) }}>Tải lại</button>
         <button disabled={saving || loading} onClick={exportReport}>Xuất Excel đã lưu</button>
         {canEdit && <><button disabled={saving || loading} onClick={fill}>Nạp từ chấm công</button>
-          <button disabled={saving || loading} onClick={() => { setState(current => ({ ...current, rows: [...current.rows, createManualPointEvent(month)] })); setDirty(true) }}>+ Thêm sự kiện</button>
+          <button disabled={saving || loading} onClick={() => add()}>+ Thêm sự kiện</button>
           <button className="is-primary" disabled={saving || loading || !dirty} onClick={save}>{saving ? 'Đang xử lý...' : 'Lưu bảng điểm'}</button></>}
       </div>
     </header>
@@ -144,6 +176,12 @@ export default function AttendancePoints({ month, onMonthChange }) {
       <section className="attendance-penalties-summary" aria-label="Tổng hợp điểm"><div><span>Áp dụng trừ điểm</span><strong>{confirmedCount}</strong><small>sự kiện · {totalPoints} điểm trừ</small></div><div><span>Được miễn điểm</span><strong>{exemptCount}</strong><small>sự kiện</small></div></section>
       <fieldset className="attendance-points-editor" disabled={!canEdit || saving}>
         <legend>Chuyên cần từng người</legend>
+        <p className="attendance-points-note">Bấm “Sự kiện và ghi nhận HCNS” ở từng người để mở chi tiết. Muộn/sớm/ra ngoài: dưới 30 phút trừ 10; từ 30 đến hết 60 phút trừ 20; trên 60 phút trừ 30. Quên chấm không giải trình được trừ 10; tối đa 2 lần giải trình/tháng. Nghỉ không phép trừ 40/ngày; vi phạm Điều 10 trừ 10/lần. Sửa dữ liệu chấm công tại Bảng công rồi nạp lại để đối soát.</p>
+        {unassignedEvents.length > 0 && <section className="attendance-points-unassigned" aria-label="Sự kiện chưa chọn nhân sự">
+          <h2 className="attendance-points-events-heading">Sự kiện chưa chọn nhân sự ({unassignedEvents.length})</h2>
+          <p className="attendance-points-note">Chọn nhân sự để chuyển sự kiện vào chi tiết của người đó.</p>
+          {renderEvents(unassignedEvents)}
+        </section>}
         <div className="attendance-points-employees">{summaries.map(employee => <article className="attendance-points-person" key={employee.id}>
           <strong>{employee.name} <small>{employee.code}</small></strong>
           <label>Nhóm hưởng trong tháng<select value={employee.group} onChange={event => {
@@ -153,13 +191,24 @@ export default function AttendancePoints({ month, onMonthChange }) {
           <p><b>{employee.remainingPoints}/100 điểm</b> · đã trừ {employee.deductedPoints} điểm</p>
           <p>Phúc lợi dự kiến: <b>{employee.benefitAmount === null ? 'Chưa xác định nhóm' : `${number(employee.benefitAmount)} đ`}</b></p>
           {employee.needsDisciplineReview && <p className="attendance-points-warning">Chuyển HCNS xem xét tần suất: {employee.frequencyCount} lần / {employee.absenceDays} ngày nghỉ không phép. Không tự áp kỷ luật.</p>}
+          <details className="attendance-points-details" open={expandedEmployees.has(String(employee.id))} onToggle={event => {
+            const open = event.currentTarget.open
+            setExpandedEmployees(current => {
+              const key = String(employee.id)
+              if (current.has(key) === open) return current
+              const next = new Set(current)
+              if (open) next.add(key)
+              else next.delete(key)
+              return next
+            })
+          }}>
+            <summary>Sự kiện và ghi nhận HCNS <span>({eventsByEmployee.get(String(employee.id))?.length || 0} sự kiện)</span></summary>
+            <div className="attendance-points-details-content">
+              {canEdit && <button type="button" className="attendance-points-add-event" onClick={() => add(employee)}>+ Thêm sự kiện cho {employee.name}</button>}
+              {expandedEmployees.has(String(employee.id)) && renderEvents(eventsByEmployee.get(String(employee.id)) || [])}
+            </div>
+          </details>
         </article>)}</div>
-        <h2 className="attendance-points-events-heading">Sự kiện và ghi nhận HCNS</h2>
-        <p className="attendance-points-note">Muộn/sớm/ra ngoài: dưới 30 phút trừ 10; từ 30 đến hết 60 phút trừ 20; trên 60 phút trừ 30. Quên chấm không giải trình được trừ 10; tối đa 2 lần giải trình/tháng. Nghỉ không phép trừ 40/ngày; vi phạm Điều 10 trừ 10/lần. Sửa dữ liệu chấm công tại Bảng công rồi nạp lại để đối soát.</p>
-        {state.rows.length === 0 ? <p className="attendance-penalties-state">Chưa có sự kiện. Nạp từ chấm công hoặc thêm sự kiện để ghi nhận.</p> : <>
-          <div className="attendance-penalties-card attendance-penalties-card--desktop"><div className="attendance-penalties-scroll"><table className="attendance-penalties-table"><thead><tr>{['Ngày','Nhân sự','Hành vi','Phút','Điểm','Nội dung','Trạng thái','Ghi nhận / lý do HCNS','Nguồn',''].map((label, index) => <th key={index}>{label}</th>)}</tr></thead><tbody>{state.rows.map(item => <tr key={item.id}><EventEditor item={item} employees={summaries} canAdjustPoints={canAdjustPoints} onUpdate={patch => update(item.id, patch)} onDelete={() => { setState(current => ({ ...current, rows: current.rows.filter(row => row.id !== item.id) })); setDirty(true) }} /></tr>)}</tbody></table></div></div>
-          <div className="attendance-penalties-mobile">{state.rows.map(item => <article className="penalty-card" key={item.id}><EventEditor mobile item={item} employees={summaries} canAdjustPoints={canAdjustPoints} onUpdate={patch => update(item.id, patch)} onDelete={() => { setState(current => ({ ...current, rows: current.rows.filter(row => row.id !== item.id) })); setDirty(true) }} /></article>)}</div>
-        </>}
       </fieldset>
     </>}
   </div>
