@@ -1,4 +1,13 @@
 import { formatDateDisplay, formatMoney } from '../utils/helpers'
+import { isAttendancePointsMonth, summarizeEmployeePoints } from '../utils/attendancePoints'
+
+function PointPayrollSummary({ penalties, employeeId, error }) {
+  if (error) return <span role="alert">Chưa tải được điểm chuyên cần: {error}</span>
+  const points = summarizeEmployeePoints(penalties, employeeId)
+  return <div className="payroll-penalty__total">Chuyên cần: {points.remainingPoints}/100 điểm
+    <small>Đã xác nhận trừ {points.deductedPoints} điểm · {points.pendingCount} sự kiện chờ kiểm tra. Phúc lợi xét riêng tại Bảng điểm chuyên cần.</small>
+  </div>
+}
 
 const dash = value => {
   const text = String(value ?? '').trim()
@@ -76,7 +85,7 @@ const kpiSalaryFor = (kpiByEmployee, employeeId, salary) => {
   return { amount, percent }
 }
 
-export default function PayrollTable({ rows, employeesById, penalties, leaveSettings, kpiByEmployee, month }) {
+export default function PayrollTable({ rows, employeesById, penalties, penaltiesError, leaveSettings, kpiByEmployee, month }) {
   return (
     <>
       <div className="attendance-preview-scroll">
@@ -91,7 +100,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
               <th rowSpan={2}>Ngày lên chính thức</th>
               <th rowSpan={2}>Ngày làm việc cuối</th>
               <th rowSpan={2}>Đi muộn</th>
-              <th rowSpan={2}>Phạt</th>
+              <th rowSpan={2}>{isAttendancePointsMonth(month) ? 'Điểm chuyên cần' : 'Phạt'}</th>
               <th rowSpan={2}>Vé xe</th>
               <th rowSpan={2}>Phép năm còn lại</th>
               <th rowSpan={2}>Phép năm sử dụng</th>
@@ -132,6 +141,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
                   <td>{row.lastWorkingDate || employee.ngay_nghi_viec ? formatDateDisplay(row.lastWorkingDate || employee.ngay_nghi_viec) : '—'}</td>
                   <td>{lateText(row)}</td>
                   <td className="payroll-penalty">
+                    {isAttendancePointsMonth(month) ? <PointPayrollSummary penalties={penalties} employeeId={row.employeeId} error={penaltiesError} /> : <>
                     <div className="payroll-penalty__total">Tổng phạt: {formatMoney(penalty.total)}</div>
                     {penalty.items.length > 0 && (
                       <div className="payroll-penalty__list">
@@ -143,6 +153,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
                         ))}
                       </div>
                     )}
+                    </>}
                   </td>
                   <td>—</td>
                   <td>{leave.remaining}</td>
@@ -196,6 +207,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
                 <div><dt>Lương KPIs</dt><dd>{kpi.amount !== null ? formatMoney(kpi.amount) : '—'}</dd></div>
               </dl>
               <div className="payroll-penalty">
+                {isAttendancePointsMonth(month) ? <PointPayrollSummary penalties={penalties} employeeId={row.employeeId} error={penaltiesError} /> : <>
                 <div className="payroll-penalty__total">Tổng phạt: {formatMoney(penalty.total)}</div>
                 {penalty.items.map((item, itemIndex) => (
                   <div className="payroll-penalty__row" key={`${row.employeeId}-m-${itemIndex}`}>
@@ -203,6 +215,7 @@ export default function PayrollTable({ rows, employeesById, penalties, leaveSett
                     <strong>{formatMoney(item.amount)}</strong>
                   </div>
                 ))}
+                </>}
               </div>
             </article>
           )

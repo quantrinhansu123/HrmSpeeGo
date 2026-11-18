@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import { isAttendancePointsMonth, mergeAttendancePointEvents } from '../utils/attendancePoints'
+import { loadAttendancePointMonth, saveAttendancePointMonth } from './attendancePointsDb'
 import {
   buildPenaltyDetailRows,
   mergeAutoPenaltiesWithManual,
@@ -52,33 +54,35 @@ const mapRowToDb = (row, month) => {
 }
 
 export const listPenaltyMonths = async () => {
-  const { data, error } = await supabase
-    .from('attendance_penalties')
-    .select('month')
-    .order('month', { ascending: false })
-    .limit(2000)
-
-  if (error) throw error
-  return [...new Set((data || []).map(row => row.month).filter(Boolean))]
+  const [legacy, points] = await Promise.all([
+    supabase.from('attendance_penalties').select('month').order('month', { ascending: false }).limit(2000),
+    supabase.from('attendance_point_months').select('month').order('month', { ascending: false }).limit(2000)
+  ])
+  if (legacy.error && points.error) throw legacy.error
+  return [...new Set([...(legacy.data || []), ...(points.data || [])].map(row => row.month).filter(Boolean))].sort().reverse()
 }
 
 export const listPenaltyEmployeesSlim = async () => {
   const { data, error } = await supabase
     .from('users')
-    .select('id, name, employee_id, username')
+    .select('id, name, employee_id, username, official_date, employment_status, position')
     .order('name', { ascending: true })
 
   if (error) throw error
   return (data || []).map(row => ({
     id: row.id,
     name: row.name || '',
-    code: row.employee_id || row.username || ''
+    code: row.employee_id || row.username || '',
+    officialDate: row.official_date || '',
+    employmentStatus: row.employment_status || '',
+    position: row.position || ''
   }))
 }
 
 export const getPenaltiesByMonth = async month => {
   const period = String(month || '').trim()
   if (!/^\d{4}-\d{2}$/.test(period)) return []
+  if (isAttendancePointsMonth(period)) return (await loadAttendancePointMonth(period)).rows
 
   const { data, error } = await supabase
     .from('attendance_penalties')
@@ -106,6 +110,11 @@ export const syncPenaltiesFromAttendanceSummary = async (
     throw new Error('Tháng không hợp lệ')
   }
 
+  if (isAttendancePointsMonth(period)) {
+    const state = await loadAttendancePointMonth(period)
+    const autoRows = buildPenaltyDetailRows(summaryRows.map(row => ({ ...row, month: period })), categories)
+    return saveAttendancePointMonth(period, mergeAttendancePointEvents(state.rows, autoRows), state.benefits, state.version)
+  }
   const existing = await getPenaltiesByMonth(period)
   const autoRows = buildPenaltyDetailRows(
     summaryRows,
@@ -120,6 +129,7 @@ export const savePenaltiesByMonth = async (month, rows = []) => {
   if (!/^\d{4}-\d{2}$/.test(period)) {
     throw new Error('Tháng không hợp lệ')
   }
+  if (isAttendancePointsMonth(period)) throw new Error('Tháng này dùng Bảng điểm chuyên cần; không lưu phạt tiền.')
 
   const { data: existing, error: existingError } = await supabase
     .from('attendance_penalties')

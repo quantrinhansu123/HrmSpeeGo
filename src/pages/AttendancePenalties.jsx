@@ -17,6 +17,9 @@ import {
   normalizePenaltyRows
 } from '../utils/attendancePenalties'
 import './AttendancePenalties.css'
+import AttendancePoints from './AttendancePoints'
+import { isAttendancePointsMonth } from '../utils/attendancePoints'
+import { todayLocalDate } from '../utils/leaveDays'
 
 const money = value => Number(value || 0).toLocaleString('vi-VN')
 const formatGeneratedAt = value => {
@@ -25,7 +28,7 @@ const formatGeneratedAt = value => {
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString('vi-VN')
 }
-const currentMonthValue = () => new Date().toISOString().slice(0, 7)
+const currentMonthValue = () => todayLocalDate().slice(0, 7)
 const employeeLabel = employee => {
   if (!employee) return ''
   const name = employee.name || employee.employeeName || ''
@@ -119,8 +122,8 @@ function EmployeeNameSuggest({ employees, employeeId, employeeName, employeeCode
   )
 }
 
-function AttendancePenalties() {
-  const [month, setMonth] = useState(currentMonthValue)
+function LegacyAttendancePenalties({ initialMonth, onMonthChange }) {
+  const [month, setMonth] = useState(initialMonth)
   const [months, setMonths] = useState([])
   const [rows, setRows] = useState([])
   const [employees, setEmployees] = useState([])
@@ -169,7 +172,6 @@ function AttendancePenalties() {
     ;(async () => {
       setLoading(true)
       setError('')
-      const initialMonth = currentMonthValue()
       try {
         const [penaltyMonthsResult, summaryIdsResult, employeesResult, monthRowsResult, settingsResult] = await Promise.allSettled([
           listPenaltyMonths(),
@@ -232,6 +234,10 @@ function AttendancePenalties() {
 
   const handleMonthChange = async (nextMonth) => {
     if (dirty && !confirm('Bạn có thay đổi chưa lưu. Đổi tháng sẽ mất thay đổi đó. Tiếp tục?')) {
+      return
+    }
+    if (isAttendancePointsMonth(nextMonth)) {
+      onMonthChange(nextMonth)
       return
     }
     await loadMonth(nextMonth)
@@ -578,4 +584,9 @@ function AttendancePenalties() {
   )
 }
 
-export default AttendancePenalties
+export default function AttendancePenalties() {
+  const [month, setMonth] = useState(currentMonthValue)
+  return isAttendancePointsMonth(month)
+    ? <AttendancePoints key={month} month={month} onMonthChange={setMonth} />
+    : <LegacyAttendancePenalties initialMonth={month} onMonthChange={setMonth} />
+}

@@ -30,7 +30,7 @@ function Layout({ children }) {
   const mobileLinks = [
     ...(user?.role === 'admin' ? [] : [{ to: '/cham-cong-online', icon: 'fa-camera', label: 'Chấm công' }]),
     { to: isPersonalAttendance ? '/bang-cong' : '/bang-cong-preview', icon: 'fa-calendar-check', label: 'Bảng công' },
-    ...(isStaff ? [{ to: '/bang-phat', icon: 'fa-file-invoice-dollar', label: 'Bảng phạt' }] : []),
+    ...(isStaff ? [{ to: '/bang-phat', icon: 'fa-clipboard-check', label: 'Điểm chuyên cần' }] : []),
     { to: '/approvals', icon: 'fa-stamp', label: 'Đề xuất' }
   ]
 

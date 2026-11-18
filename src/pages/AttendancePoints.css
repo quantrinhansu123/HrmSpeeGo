@@ -1,0 +1,26 @@
+.attendance-points-note, .attendance-points-notice { color: #475569; font-size: 13px; line-height: 1.6; }
+.attendance-points-page > header { display: block; }
+.attendance-points-page .attendance-penalties-actions { margin-top: 16px; }
+.attendance-points-notice { padding: 12px; background: #ecfdf5; color: #065f46; border-radius: 8px; }
+.attendance-points-editor { border: 0; padding: 0; margin: 0; min-width: 0; }
+.attendance-points-editor > legend, .attendance-points-events-heading { font-size: 17px; font-weight: 700; color: #0d427a; padding: 12px 0; }
+.attendance-points-employees { display: grid; grid-template-columns: repeat(auto-fill,minmax(290px,1fr)); gap: 12px; margin-bottom: 20px; }
+.attendance-points-person { padding: 16px; border: 1px solid #dbe3ec; background: white; border-radius: 12px; min-width: 0; }
+.attendance-points-person small { font-weight: 400; color: #64748b; }
+.attendance-points-person label { display: grid; gap: 5px; margin-top: 12px; font-size: 12px; }
+.attendance-points-person select { width: 100%; padding: 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; background: white; }
+.attendance-points-person p { font-size: 13px; line-height: 1.5; margin: 10px 0 0; }
+.attendance-points-warning { color: #92400e; background: #fffbeb; padding: 8px; border-radius: 6px; }
+.attendance-points-page .attendance-penalties-table { min-width: 1450px; }
+.attendance-points-page .attendance-penalties-table td:nth-child(8) { min-width: 230px; }
+.attendance-points-page .attendance-penalties-table td:nth-child(4) { width: 85px; }
+.attendance-points-page .attendance-penalties-table td:nth-child(5) { width: 55px; }
+.attendance-points-editor:disabled { opacity: 1; }
+.attendance-points-editor input:disabled, .attendance-points-editor select:disabled { color: #334155; opacity: 1; }
+@media(max-width:768px) {
+  .attendance-points-employees { grid-template-columns: minmax(0,1fr); }
+  .attendance-points-page .attendance-penalties-actions { margin: 0; }
+  .attendance-points-page .attendance-penalties-summary { margin: 12px 0; }
+  .attendance-points-page .attendance-penalties-mobile { padding: 0; }
+  .attendance-points-page .attendance-penalties-actions button { flex: 1 1 45%; }
+}

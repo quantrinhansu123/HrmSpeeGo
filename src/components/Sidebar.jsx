@@ -17,7 +17,7 @@ function Sidebar({ open = false, onNavigate = () => {} }) {
     { path: '/giay-to-cong-ty', icon: 'fas fa-folder-open', label: 'Giấy tờ công ty' },
     ...(user?.role === 'admin' ? [] : [{ path: '/cham-cong-online', icon: 'fas fa-camera', label: 'Chấm công online' }]),
     { path: '/lich-su-cham-cong', icon: 'fas fa-clock-rotate-left', label: 'Lịch sử chấm công' },
-    { path: '/bang-phat', icon: 'fas fa-file-invoice-dollar', label: 'Bảng phạt' },
+    { path: '/bang-phat', icon: 'fas fa-clipboard-check', label: 'Điểm chuyên cần' },
     { path: '/bang-cong-preview', icon: 'fas fa-calendar-check', label: 'Bảng Công' },
     ...(user?.role === 'admin' ? [] : [{ path: '/bang-cong', icon: 'fas fa-user-clock', label: 'Bảng công cá nhân' }]),
     ...(user?.role === 'admin' || user?.role === 'hr' ? [{ path: '/bang-phep', icon: 'fas fa-calendar-alt', label: 'Bảng phép' }] : []),

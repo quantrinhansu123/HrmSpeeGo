@@ -1,3 +1,5 @@
+import { buildAttendancePointEvents, isAttendancePointsMonth, mergeAttendancePointEvents } from './attendancePoints.js'
+
 export const DEFAULT_PENALTY_CATEGORIES = [
   { key: 'late_under_30', label: 'Muộn/sớm tổng <30p', amount: 50000 },
   { key: 'late_over_30', label: 'Muộn/sớm tổng ≥30p', amount: 100000 },
@@ -79,6 +81,7 @@ export const createEmptyPenaltyRow = (monthValue = '', categories = DEFAULT_PENA
 
 export const normalizePenaltyRows = (rows = []) =>
   (rows || []).map((row, index) => ({
+    ...row,
     id: row.id || `p-legacy-${index}-${String(row.date || '')}-${String(row.employeeId || row.employeeName || '')}`,
     date: String(row.date || '').slice(0, 10),
     employeeId: row.employeeId || '',
@@ -187,6 +190,10 @@ export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PE
   const details = []
 
   summaryRows.forEach(row => {
+    if (isAttendancePointsMonth(row.month)) {
+      details.push(...buildAttendancePointEvents([row]))
+      return
+    }
     const employeeName = row.employeeName || row.employeeCode || row.employeeId || ''
     const employeeId = row.employeeId || ''
     const employeeCode = row.employeeCode || ''
@@ -243,6 +250,9 @@ export const buildPenaltyDetailRows = (summaryRows = [], categories = DEFAULT_PE
 
 /** Giữ dòng phạt nhập tay; thay toàn bộ dòng auto bằng dữ liệu từ bảng công. */
 export const mergeAutoPenaltiesWithManual = (existingRows = [], autoRows = []) => {
+  if (autoRows.some(row => row.policyVersion === 'points-v0.4') || existingRows.some(row => row.policyVersion === 'points-v0.4')) {
+    return mergeAttendancePointEvents(existingRows, autoRows)
+  }
   const manual = normalizePenaltyRows(existingRows).filter(row => row.source !== 'auto')
   return [...manual, ...normalizePenaltyRows(autoRows)]
 }
@@ -256,6 +266,13 @@ export const applyPenaltyAmountsToSummaryRows = (summaryRows = [], categories = 
   const absenceAmount = Number(findCategory(list, 'unapproved_absence')?.amount || 0)
 
   return (summaryRows || []).map(row => {
+    if (isAttendancePointsMonth(row.month)) {
+      return {
+        ...row, lateUnder30Fine: 0, lateOver30Fine: 0, lateFine: 0, earlyFine: 0,
+        missingPunchFine: 0, unapprovedAbsenceFine: 0, totalFine: 0,
+        lateEarlyPenaltyNote: 'Chuyên cần theo điểm từ 11/2026; đối soát tại Bảng điểm chuyên cần.'
+      }
+    }
     const events = collectLateEarlyOccurrences(row)
     const lateEarly = evaluateMonthlyLateEarlyPenalty(events, list)
     const missingPunchCount = Number(row.missingPunchCount || 0)

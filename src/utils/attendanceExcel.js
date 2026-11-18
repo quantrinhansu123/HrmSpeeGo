@@ -1,5 +1,7 @@
 import ExcelJS from 'exceljs'
 import { applyPenaltyAmountsToSummaryRows } from './attendancePenalties.js'
+import { isAttendancePointsMonth } from './attendancePoints.js'
+import { buildAttendancePointWorkbook, downloadPointWorkbook } from './attendancePointExcel.js'
 
 const TEMPLATE_URL = '/templates/attendance-report-template.xlsx'
 const SHEET_NAME = 'THÁNG 7'
@@ -280,6 +282,7 @@ const populateWeeklySummary = (worksheet, rows, month, summaryStartRow, daysInMo
 }
 
 export const buildAttendanceWorkbook = async (templateData, rows, month) => {
+  if (isAttendancePointsMonth(month)) return buildAttendancePointWorkbook(rows, month)
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(templateData)
   const worksheet = workbook.getWorksheet(SHEET_NAME) || workbook.worksheets[0]
@@ -309,6 +312,7 @@ export const buildAttendanceWorkbook = async (templateData, rows, month) => {
 }
 
 export const downloadAttendanceFromGoldenTemplate = async ({ rows, month, fileName }) => {
+  if (isAttendancePointsMonth(month)) return downloadPointWorkbook(buildAttendancePointWorkbook(rows, month), fileName)
   const response = await fetch(TEMPLATE_URL)
   if (!response.ok) {
     throw new Error(`Không tải được golden template (${response.status}).`)

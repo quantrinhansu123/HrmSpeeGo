@@ -77,6 +77,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   let paidLeaveWorkdays = 0
   let lateMinutes = 0
   let earlyMinutes = 0
+  const lateEarlyOccurrences = []
   let onlineWorkdays = 0
   let offlineWorkdays = 0
   let sourceHours = 0
@@ -85,6 +86,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   let hasSourceWorkday = false
   let hasPunch = false
   let missingPunch = false
+  const missingPunchOccurrences = []
   let unapprovedAbsence = false
   let checkIn = ''
   let checkOut = ''
@@ -100,7 +102,7 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
   const standardCheckIn = formatAttendanceTime(resolvedShift?.start || resolvedShift?.standardCheckIn)
   const standardCheckOut = formatAttendanceTime(resolvedShift?.end || resolvedShift?.standardCheckOut)
 
-  logs.forEach(sourceLog => {
+  logs.forEach((sourceLog, logIndex) => {
     const preservesSourceValues = ['source-value', 'matrix-value'].includes(sourceLog.calculationMode)
     const log = preservesSourceValues || (Array.isArray(sourceLog.punchPairs) && sourceLog.punchPairs.length)
       ? sourceLog
@@ -134,8 +136,12 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     if (useSourceValues) calculationMode = log.calculationMode
     if (!isSyntheticPunch) {
       if (useSourceValues || !logPairs.length) {
-        lateMinutes += numberValue(log.lateMinutes ?? log.vaoTre)
-        earlyMinutes += numberValue(log.earlyMinutes ?? log.raSom)
+        const late = numberValue(log.lateMinutes ?? log.vaoTre)
+        const early = numberValue(log.earlyMinutes ?? log.raSom)
+        lateMinutes += late
+        earlyMinutes += early
+        if (late > 0) lateEarlyOccurrences.push({ key: `${sourceLog.id || `log-${logIndex}`}-late`, type: 'late', minutes: late })
+        if (early > 0) lateEarlyOccurrences.push({ key: `${sourceLog.id || `log-${logIndex}`}-early`, type: 'early', minutes: early })
       } else {
         const firstCheckInIndex = logPairs.findIndex(pair => Boolean(pair.checkIn))
         const lastCheckOutIndex = logPairs.reduce((lastIndex, pair, index) => pair.checkOut ? index : lastIndex, -1)
@@ -154,12 +160,17 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
             attendanceSettings
           })
           const hasAssignedShift = Boolean(pair.shiftId || log.shiftId)
-          lateMinutes += hasAssignedShift && index === firstCheckInIndex && pair.lateMinutes !== null && pair.lateMinutes !== undefined && pair.lateMinutes !== ''
+          const pairLateMinutes = hasAssignedShift && index === firstCheckInIndex && pair.lateMinutes !== null && pair.lateMinutes !== undefined && pair.lateMinutes !== ''
             ? numberValue(pair.lateMinutes)
             : index === firstCheckInIndex && pair.checkIn ? numberValue(timing().lateMinutes) : 0
-          earlyMinutes += hasAssignedShift && index === lastCheckOutIndex && pair.earlyMinutes !== null && pair.earlyMinutes !== undefined && pair.earlyMinutes !== ''
+          const pairEarlyMinutes = hasAssignedShift && index === lastCheckOutIndex && pair.earlyMinutes !== null && pair.earlyMinutes !== undefined && pair.earlyMinutes !== ''
             ? numberValue(pair.earlyMinutes)
             : index === lastCheckOutIndex && pair.checkOut ? numberValue(timing().earlyMinutes) : 0
+          lateMinutes += pairLateMinutes
+          earlyMinutes += pairEarlyMinutes
+          const eventKey = `${sourceLog.id || `log-${logIndex}`}-${index}`
+          if (pairLateMinutes > 0) lateEarlyOccurrences.push({ key: `${eventKey}-late`, type: 'late', minutes: pairLateMinutes })
+          if (pairEarlyMinutes > 0) lateEarlyOccurrences.push({ key: `${eventKey}-early`, type: 'early', minutes: pairEarlyMinutes })
         })
       }
     }
@@ -192,7 +203,11 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
         }
       })
     }
-    if (!isSyntheticPunch && logPairs.some(pair => Boolean(pair.checkIn) !== Boolean(pair.checkOut))) missingPunch = true
+    const incompletePairIndexes = logPairs.flatMap((pair, index) => Boolean(pair.checkIn) !== Boolean(pair.checkOut) ? [index] : [])
+    if (!isSyntheticPunch && incompletePairIndexes.length) {
+      missingPunch = true
+      incompletePairIndexes.forEach(index => missingPunchOccurrences.push({ key: `${sourceLog.id || `log-${logIndex}`}-${index}-missing` }))
+    }
     const logShiftName = String(logPairs[0]?.shiftName || log.shiftName || log.tenCa || resolvedShift?.name || '').trim()
     logPairs.forEach(pair => { if (pair.shiftName) shiftNames.add(pair.shiftName) })
     if (logShiftName) shiftNames.add(logShiftName)
@@ -219,6 +234,9 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
       missingPunch ||
       status === 'KR' ||
       status === 'KV'
+    if (['KR', 'KV'].includes(status) && !incompletePairIndexes.length) {
+      missingPunchOccurrences.push({ key: `${sourceLog.id || `log-${logIndex}`}-missing` })
+    }
     unapprovedAbsence =
       unapprovedAbsence ||
       ['NP', 'VẮNG', 'VANG', 'NGHỈ KHÔNG PHÉP'].includes(status)
@@ -378,10 +396,12 @@ export const summarizeAttendanceDay = (logs, employee = {}, attendanceSettings =
     paidLeaveWorkdays: roundDecimal(paidLeaveWorkdays),
     lateMinutes,
     earlyMinutes,
+    lateEarlyOccurrences,
     lateEarlyApproved,
     late: lateMinutes > 0,
     early: earlyMinutes > 0,
     missingPunch,
+    missingPunchOccurrences,
     unapprovedAbsence,
     onlineWorkdays: Math.round(resolvedOnlineWorkdays * 100) / 100,
     offlineWorkdays: Math.round(offlineWorkdays * 100) / 100,
@@ -509,6 +529,7 @@ export const buildAttendanceSummary = ({
     }
     const employee = employeesById.get(employeeId)
     const row = {
+      month,
       employeeId,
       employeeCode:
         employee?.employeeId ||
@@ -804,9 +825,11 @@ export const serializeAttendanceSummaryRows = (rows = []) =>
           lateEarlyApproved: Boolean(day.lateEarlyApproved),
           lateMinutes: day.lateMinutes,
           earlyMinutes: day.earlyMinutes,
+          lateEarlyOccurrences: day.lateEarlyOccurrences,
           late: Boolean(day.late),
           early: Boolean(day.early),
           missingPunch: Boolean(day.missingPunch),
+          missingPunchOccurrences: day.missingPunchOccurrences,
           unapprovedAbsence: Boolean(day.unapprovedAbsence),
           onlineWorkdays: day.onlineWorkdays,
           offlineWorkdays: day.offlineWorkdays,

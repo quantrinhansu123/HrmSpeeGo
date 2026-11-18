@@ -2064,7 +2064,7 @@ function Approvals() {
                   <div className="apv-field">
                     <label htmlFor="late-early-date">Ngày đi muộn/về sớm <span className="req">*</span></label>
                     <input id="late-early-date" type="date" value={attendanceDate} onChange={e => setAttendanceDate(e.target.value)} required />
-                    <small>Khi được duyệt: miễn tiền phạt muộn/sớm trong ngày này. Vẫn ghi nhận số phút thực tế và trừ công nếu tổng muộn/sớm từ 60 phút.</small>
+                    <small>Từ 11/2026: HCNS đối chiếu phạm vi đơn để miễn điểm cho sự kiện được phép. Vẫn ghi nhận số phút thực tế; cách tính công được xét riêng.</small>
                     {errors.attendanceDate && <div className="apv-field-error">{errors.attendanceDate}</div>}
                   </div>
                 )}
