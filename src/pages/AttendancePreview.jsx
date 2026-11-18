@@ -269,6 +269,7 @@ function AttendancePreview() {
   const [weekFilter, setWeekFilter] = useState('')
   const [payrollBundle, setPayrollBundle] = useState({
     penalties: [],
+    penaltiesError: '',
     leave: {},
     employees: {},
     kpis: []
@@ -436,14 +437,15 @@ function AttendancePreview() {
     if (!canEditWorkdays) return undefined
     const loadPayroll = async () => {
       const [penalties, leave, employees, kpis] = await Promise.all([
-        getPenaltiesByMonth(month).catch(() => []),
+        getPenaltiesByMonth(month).then(items => ({ items, error: '' })).catch(requestError => ({ items: [], error: requestError.message || 'Không tải được dữ liệu chuyên cần.' })),
         loadEmployeeLeaveSettings(companyId, Number(month.slice(0, 4))).catch(() => ({})),
         fbGetEmployeesDirectory().catch(() => ({})),
         fbGet('hr/kpiResults').catch(() => ({}))
       ])
       if (cancelled) return
       setPayrollBundle({
-        penalties: penalties || [],
+        penalties: penalties.items,
+        penaltiesError: penalties.error,
         leave: leave || {},
         employees: employees || {},
         kpis: kpis && typeof kpis === 'object' ? Object.values(kpis) : []
@@ -816,7 +818,7 @@ function AttendancePreview() {
         `Đã lưu bảng công tháng ${targetMonth} (${snapshot.employeeCount || 0} nhân viên). ` +
         (snapshot.penaltySyncError
           ? `Chưa đồng bộ được Bảng phạt: ${snapshot.penaltySyncError}. Hãy tổng hợp lại để thử lại.`
-          : 'Bảng phạt đã đồng bộ các lỗi muộn/sớm/quên chấm từ bảng công (giữ dòng nhập tay).')
+          : 'Đã đồng bộ các sự kiện chuyên cần từ bảng công (giữ dòng nhập tay). Từ 11/2026, HCNS kiểm tra và xác nhận tại Bảng điểm chuyên cần.')
       )
     }
     return snapshot
@@ -1379,6 +1381,7 @@ function AttendancePreview() {
             rows={filteredRows}
             employeesById={payrollEmployees}
             penalties={payrollBundle.penalties}
+            penaltiesError={payrollBundle.penaltiesError}
             leaveSettings={payrollBundle.leave}
             kpiByEmployee={payrollKpis}
             month={month}

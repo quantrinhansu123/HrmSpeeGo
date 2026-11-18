@@ -5,6 +5,8 @@ import { fbGet, fbGetAttendanceByEmployee } from '../services/firebase'
 import { loadAttendanceCorrectionRequests, submitAttendanceCorrection } from '../services/attendanceCorrections'
 import { loadLeaveDays } from '../services/leaveDays'
 import { loadShiftRegistrations } from '../services/shiftRegistrations'
+import { loadMyAttendancePointEvents } from '../services/attendancePointsDb'
+import { isAttendancePointsMonth, summarizeEmployeePoints } from '../utils/attendancePoints'
 import { buildAttendanceSummary } from '../utils/attendanceSummary'
 import { uploadToCloudinary } from '../utils/cloudinary'
 import { getCompanyIdForUser } from '../utils/companyContext'
@@ -56,6 +58,9 @@ function MyAttendance() {
   const [leaves, setLeaves] = useState([])
   const [shifts, setShifts] = useState([])
   const [calendarError, setCalendarError] = useState('')
+  const [pointEvents, setPointEvents] = useState([])
+  const [pointError, setPointError] = useState('')
+  const [pointsLoading, setPointsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [correctionRequests, setCorrectionRequests] = useState([])
@@ -67,6 +72,17 @@ function MyAttendance() {
   const [correctionEvidence, setCorrectionEvidence] = useState(null)
   const [correctionNotice, setCorrectionNotice] = useState('')
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setPointEvents([]); setPointError(''); setPointsLoading(true)
+    loadMyAttendancePointEvents(employeeId, month).then(events => {
+      if (active) setPointEvents(events)
+    }).catch(requestError => {
+      if (active) setPointError(requestError.message || 'Chưa tải được ghi nhận chuyên cần.')
+    }).finally(() => { if (active) setPointsLoading(false) })
+    return () => { active = false }
+  }, [employeeId, month])
 
   useEffect(() => {
     let active = true
@@ -246,6 +262,17 @@ function MyAttendance() {
         <section className="my-attendance__stats">
           <div className="card"><span>Ngày có dữ liệu</span><strong>{summary?.attendanceDays || 0}</strong></div><div className="card"><span>Tổng công</span><strong>{decimalValue(summary?.workdays ?? 0)}</strong></div><div className="card"><span>Tổng giờ</span><strong>{decimalValue(summary?.totalHours ?? 0)}</strong></div><div className="card"><span>Đi muộn</span><strong>{summary?.lateCount || 0} lần</strong><small>{summary?.lateMinutes || 0} phút</small></div><div className="card"><span>Về sớm</span><strong>{summary?.earlyCount || 0} lần</strong><small>{summary?.earlyMinutes || 0} phút</small></div><div className="card"><span>Quên chấm</span><strong>{summary?.missingPunchCount || 0}</strong></div>
         </section>
+        {isAttendancePointsMonth(month) && <section className="card my-attendance__requests-card" aria-label="Thông báo điểm chuyên cần">
+          <h3>Điểm chuyên cần tháng {month}</h3>
+          {pointsLoading ? <p>Đang tải ghi nhận HCNS...</p> : pointError ? <p role="alert">{pointError}</p> : <>
+            <p><strong>{summarizeEmployeePoints(pointEvents, employeeId).remainingPoints}/100 điểm</strong> theo các sự kiện HCNS đã xác nhận. Điểm dùng xét phúc lợi chuyên cần ngoài lương.</p>
+            {pointEvents.length ? <div className="my-attendance__requests-list">{pointEvents.map(event => <article key={event.id} className="my-attendance__request-row">
+              <div><strong>{new Date(`${event.date}T00:00:00`).toLocaleDateString('vi-VN')}</strong><span>{event.content}</span></div>
+              <span>{event.reviewStatus === 'exempt' ? 'Được miễn điểm' : `Trừ ${event.points} điểm`}</span>
+              <small>Ghi nhận HCNS: {event.note}{event.reviewedAt ? ` · ${new Date(event.reviewedAt).toLocaleString('vi-VN')}` : ''}</small>
+            </article>)}</div> : <p>Chưa có sự kiện đã xác nhận trong tháng.</p>}
+          </>}
+        </section>}
         <section className="card my-attendance__summary-card">
           <h3>Tổng hợp công theo tháng</h3>
           <div className="my-attendance__summary-table-wrap">

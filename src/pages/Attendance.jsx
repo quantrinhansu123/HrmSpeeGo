@@ -30,6 +30,8 @@ import { asIdentityText, calculateProgressiveTax, formatMoney, normalizeString }
 import { downloadAttendanceFromGoldenTemplate } from '../utils/attendanceExcel'
 import { normalizeAttendanceShiftSettings } from '../utils/attendanceShift'
 import { applyPenaltyAmountsToSummaryRows } from '../utils/attendancePenalties'
+import { attachSavedAttendancePoints, isAttendancePointsMonth } from '../utils/attendancePoints'
+import { loadAttendancePointMonth } from '../services/attendancePointsDb'
 
 let XLSX = null
 const ensureXlsx = async () => {
@@ -1582,7 +1584,11 @@ function Attendance() {
 
     try {
       const baseRows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()
-      const rows = applyPenaltyAmountsToSummaryRows(baseRows, attendanceSettings?.penaltyCategories)
+      let rows = applyPenaltyAmountsToSummaryRows(baseRows, attendanceSettings?.penaltyCategories)
+      if (isAttendancePointsMonth(filterAttendanceMonth)) {
+        const saved = await loadAttendancePointMonth(filterAttendanceMonth)
+        rows = attachSavedAttendancePoints(rows, saved.rows, saved.benefits)
+      }
       await downloadAttendanceFromGoldenTemplate({
         rows,
         month: filterAttendanceMonth,
@@ -1597,6 +1603,10 @@ function Attendance() {
   const handleExportAttendanceSummary = async () => {
     if (!filterAttendanceMonth) {
       alert('Vui lòng chọn tháng cần xuất báo cáo.')
+      return
+    }
+    if (isAttendancePointsMonth(filterAttendanceMonth)) {
+      await handleExportAttendance()
       return
     }
     const baseRows = needsWorkdaySummary ? filteredAttendanceSummary : buildSummaryRowsForExport()

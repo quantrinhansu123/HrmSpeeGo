@@ -35,6 +35,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
 - **Bảo hiểm / thuế:** `insuranceInfo`, `taxInfo`, `dependents`
 - **Chấm công:** `attendanceLogs`, `attendanceAdjustments`, `manualWorkdays`, `attendanceMonthSummaries` (snapshot bảng công theo tháng)
 - **Bảng phạt:** bảng Postgres riêng `attendance_penalties` (nhập tay theo ngày/nhân sự) — migration `20260911180000_attendance_penalties_table.sql`
+- **Điểm chuyên cần từ 11/2026:** chạy [`migrations/20261118100000_attendance_points.sql`](./migrations/20261118100000_attendance_points.sql) trong SQL Editor. Tạo bảng điểm và RPC riêng, giữ nguyên dữ liệu tiền cũ. Xem [quy chế và hướng dẫn sử dụng](../docs/attendance-points-policy.md).
 - **KPI:** `kpiTemplates`, `employeeKPIs`, `kpiConversions`, `kpiResults`
 - **Giao việc:** `tasks`, `taskLogs`
 - **Tuyển dụng:** `recruitmentPlans`, `candidates`, `candidateStatusLogs`

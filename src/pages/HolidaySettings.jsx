@@ -20,14 +20,14 @@ import './HolidaySettings.css'
 const TABS = [
   { id: 'holidays', label: 'Cài đặt ngày lễ', icon: 'fas fa-calendar-day' },
   { id: 'shifts', label: 'Cài đặt ca', icon: 'fas fa-clock' },
-  { id: 'penalties', label: 'Cài đặt Nội dung phạt và mức phạt', icon: 'fas fa-file-invoice-dollar' },
+  { id: 'penalties', label: 'Điểm chuyên cần / kỳ cũ', icon: 'fas fa-clipboard-check' },
   { id: 'leave', label: 'Cài đặt phép', icon: 'fas fa-calendar-alt' }
 ]
 
 const TAB_COPY = {
   holidays: 'Khai báo ngày lễ/ngày nghỉ để hiển thị chính xác trên Bảng Công.',
   shifts: 'Cài giờ chuẩn từng ca. Báo cáo đi muộn/về sớm dùng ca của từng nhân viên.',
-  penalties: 'Mức phạt dùng khi nạp Bảng phạt từ chấm công. Muộn/sớm: 2 lần đầu mỗi lần <15p miễn phạt; từ lần 3 hoặc có lần ≥15p thì tổng <30p phạt 50.000đ, ≥30p phạt 100.000đ. Công chỉ trừ khi muộn+sớm ≥60 phút trong ngày.',
+  penalties: 'Từ 11/2026 xét chuyên cần theo 100 điểm/tháng, từng lần vi phạm theo nội quy v0.4. Nhóm hưởng phúc lợi được HCNS xác định trong Bảng điểm chuyên cần.',
   leave: 'Thiết lập phép theo tháng, đối soát số đầu kỳ và theo dõi lịch sử cấp phép.'
 }
 
@@ -478,7 +478,7 @@ function HolidaySettings() {
                       ))}
                     </div>
                     <p className="holiday-settings-split-note">
-                      Tổng muộn/sớm trong ngày dưới 60 phút: giữ công; từ 60 phút: trừ công theo thời gian vi phạm. Cả hai trường hợp đều xét phạt tiền theo quy định. Đơn muộn/sớm đã duyệt: chỉ miễn tiền phạt, vẫn trừ công nếu đủ ngưỡng. Thiếu lượt chấm: dùng giờ vào đầu và ra cuối.
+                      Cách tính công hiện tại: tổng muộn/sớm dưới 60 phút/ngày giữ công, từ 60 phút tính theo thời gian thực tế. Từ 11/2026, điểm chuyên cần được HCNS xét riêng từng sự kiện tại Bảng điểm chuyên cần. Thiếu lượt chấm: dùng giờ vào đầu và ra cuối.
                     </p>
                   </>
                 )}
@@ -502,6 +502,10 @@ function HolidaySettings() {
 
       {activeTab === 'penalties' && (
         <section className="holiday-settings-card" role="tabpanel">
+          <h2>Quy chế điểm từ tháng 11/2026</h2>
+          <p>100 điểm/người/tháng. Muộn, về sớm, ra ngoài không phép: dưới 30 phút trừ 10; từ 30 đến hết 60 phút trừ 20; trên 60 phút trừ 30. Quên chấm không giải trình được trừ 10/lần; nghỉ không phép trừ 40/ngày; vi phạm Điều 10 trừ 10/lần.</p>
+          <p>Phúc lợi tối đa: nhân viên chính thức 1.000.000đ, quản lý chính thức 2.000.000đ. Tỷ lệ hưởng bằng điểm còn lại / 100. <a href="/bang-phat">Mở Bảng điểm chuyên cần</a> để phân nhóm và kiểm tra từng sự kiện.</p>
+          <h3>Danh mục tiền phạt cho kỳ trước tháng 11/2026</h3>
           <div className="holiday-settings-penalty-toolbar">
             <button type="button" className="btn" onClick={addPenaltyCategory} disabled={loading}>
               <i className="fas fa-plus"></i> Thêm nội dung phạt

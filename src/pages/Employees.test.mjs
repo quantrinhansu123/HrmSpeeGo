@@ -33,6 +33,7 @@ const compiled = await build({
             : args.path.endsWith('/EmployeeDirectory') ? `export default function EmployeeDirectory() {}`
             : args.path.endsWith('firebase') ? `
                 export const fbGet = async () => null;
+                export const fbSet = async () => {};
                 export const fbListCollectionIds = async () => [];`
             : args.path.endsWith('employeeDirectory') ? `
                 import { db } from '../services/supabase';
