@@ -818,7 +818,7 @@ function AttendancePreview() {
         `Đã lưu bảng công tháng ${targetMonth} (${snapshot.employeeCount || 0} nhân viên). ` +
         (snapshot.penaltySyncError
           ? `Chưa đồng bộ được Bảng phạt: ${snapshot.penaltySyncError}. Hãy tổng hợp lại để thử lại.`
-          : 'Đã đồng bộ các sự kiện chuyên cần từ bảng công (giữ dòng nhập tay). Từ 11/2026, HCNS kiểm tra và xác nhận tại Bảng điểm chuyên cần.')
+          : 'Đã đồng bộ và áp dụng điểm trừ chuyên cần từ bảng công (giữ dòng nhập tay). Admin có thể chỉnh mức trừ tại Bảng điểm chuyên cần.')
       )
     }
     return snapshot

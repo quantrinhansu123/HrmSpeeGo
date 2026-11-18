@@ -6,7 +6,8 @@ const fromDb = row => normalizePointEvent({
   employeeId: row.employee_id, employeeCode: row.employee_code, employeeName: row.employee_name,
   eventType: row.event_type, categoryKey: row.category_key, points: row.points, minutes: row.minutes,
   content: row.content, note: row.note, source: row.source,
-  reviewStatus: row.review_status, reviewedBy: row.reviewed_by, reviewedAt: row.reviewed_at
+  reviewStatus: row.review_status, reviewedBy: row.reviewed_by, reviewedAt: row.reviewed_at,
+  pointsOverridden: row.points_overridden
 })
 
 const check = result => {
@@ -31,6 +32,7 @@ export const loadAttendancePointMonth = async month => {
 }
 
 export const saveAttendancePointMonth = async (month, rows, benefits, version) => {
+  rows = rows.map(normalizePointEvent)
   validatePointEvents(month, rows)
   if (Object.values(benefits).some(value => !ATTENDANCE_BENEFIT_GROUPS.some(group => group.key === value))) throw new Error('Nhóm phúc lợi không hợp lệ.')
   const result = await supabase.rpc('save_attendance_points', {

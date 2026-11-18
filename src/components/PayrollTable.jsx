@@ -5,7 +5,7 @@ function PointPayrollSummary({ penalties, employeeId, error }) {
   if (error) return <span role="alert">Chưa tải được điểm chuyên cần: {error}</span>
   const points = summarizeEmployeePoints(penalties, employeeId)
   return <div className="payroll-penalty__total">Chuyên cần: {points.remainingPoints}/100 điểm
-    <small>Đã xác nhận trừ {points.deductedPoints} điểm · {points.pendingCount} sự kiện chờ kiểm tra. Phúc lợi xét riêng tại Bảng điểm chuyên cần.</small>
+    <small>Đã trừ {points.deductedPoints} điểm. Phúc lợi xét riêng tại Bảng điểm chuyên cần.</small>
   </div>
 }
 
