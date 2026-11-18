@@ -13,7 +13,7 @@ function Layout({ children }) {
   // it expands to a full-width workspace while still using the main sidebar.
   const isImmersive = location.pathname.startsWith('/approvals')
   const isAttendancePreview = location.pathname === '/bang-cong-preview'
-  const isEmployee = ['/bang-cong', '/cham-cong-online', '/lich-su-cham-cong', '/ngay-nghi-phep'].includes(location.pathname)
+  const isEmployee = ['/bang-cong', '/cham-cong-online', '/lich-su-cham-cong'].includes(location.pathname)
   const [menuOpen, setMenuOpen] = useState(false)
   const mainRef = useRef(null)
   const navigate = useNavigate()

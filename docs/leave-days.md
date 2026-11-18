@@ -10,7 +10,11 @@ Chỉ quyết định duyệt cuối cùng mới đồng bộ ngày nghỉ. Đ�
 
 ## Sử dụng
 
-- Tại `/ngay-nghi-phep`, lọc trạng thái và chọn mã đề xuất để mở chi tiết trên trang Đề xuất.
+- Trong **Đề xuất**, chọn **Loại đề xuất → Nghỉ phép** ở Gửi đến, Gửi đi hoặc Quản trị. Bộ lọc giữ trên URL (`type=leave`) khi tải lại, chuyển tab và quay lại từ chi tiết. Số lượng Đang xử lý/Đã xong tính theo loại đang lọc.
+- Tạo đơn bằng **Tạo đơn xin nghỉ phép** hoặc mẫu **Đơn xin nghỉ phép** có sẵn. Chỉ sử dụng luồng gửi/duyệt đề xuất; không còn form thêm ngày riêng.
+- Mở đơn nghỉ để xem **Ngày nghỉ đã ghi nhận**, lọc trạng thái, xem lịch sử, xóa hoặc điều chỉnh theo quyền hiện có. Danh sách chỉ tải các ngày liên kết đúng đơn; chỉ HR/admin xem toàn bộ, tài khoản khác xem ngày của mình.
+- Dưới danh sách khi lọc Nghỉ phép, mở **Ngày nghỉ thêm trực tiếp / đề xuất không còn trong danh sách** để quản lý bản ghi cũ và lịch sử. Ngày đã thuộc đề xuất hiện có không xuất hiện lặp ở đây.
+- Menu **Ngày nghỉ phép** riêng được bỏ; `/ngay-nghi-phep` chuyển đến `/approvals?tab=admin&type=leave&filter=done`. Menu kế toán có mục **Đề xuất** để tiếp tục truy cập dữ liệu cũ. **Bảng phép** vẫn ở vị trí hiện tại.
 - Chọn **Chi tiết / Điều chỉnh** để xem nội dung đề xuất, tệp và lịch sử.
 - HR/admin có thể đổi ngày, đổi lý do hoặc chỉ thêm ghi chú/tệp. Ghi chú bắt buộc 5–2.000 ký tự; tệp tùy chọn, tối đa 5 tệp, 2 MB mỗi tệp và 5 MB tổng dung lượng mỗi lần điều chỉnh.
 - Lịch sử lưu người sửa, thời điểm, ngày/lý do trước và sau, ghi chú và nội dung tệp. Nhân viên xem lịch sử ngày nghỉ của mình.
@@ -23,7 +27,7 @@ Tệp mới trên trang Đề xuất được lưu đầy đủ dạng data URL,
 ## Kiểm tra
 
 ```powershell
-node --test src/utils/leaveDays.test.mjs src/utils/attachments.test.mjs src/services/leaveDays.test.mjs
+node --test src/utils/leaveDays.test.mjs src/utils/approvalLeave.test.mjs src/utils/attachments.test.mjs src/services/leaveDays.test.mjs src/pages/Approvals.test.mjs src/components/DirectoryNavigation.test.mjs
 npm run build
 ```
 

@@ -4,6 +4,8 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fbDelete, fbGet, fbPush, fbUpdate } from '../services/firebase'
 import AttachmentLinks from '../components/AttachmentLinks'
+import LeaveDays from './LeaveDays'
+import { isLeaveRequest } from '../utils/approvalLeave'
 import { readAttachmentFiles } from '../utils/attachments'
 import { supabase } from '../services/supabase'
 import { previewLeaveRequest } from '../services/employeeLeave'
@@ -231,6 +233,7 @@ function Approvals() {
   const view = searchParams.get('view') || 'list'
   const tab = searchParams.get('tab') || 'inbox'
   const subFilter = searchParams.get('filter') || 'todo' // todo | done
+  const leaveOnly = searchParams.get('type') === 'leave'
   const selectedId = searchParams.get('id') || null
   const templateParam = searchParams.get('template') || ''
   const editTemplateId = searchParams.get('tplId') || null
@@ -257,6 +260,7 @@ function Approvals() {
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState('')
   const [recentTemplateIds, setRecentTemplateIds] = useState([])
+  const [showLegacyLeaveDays, setShowLegacyLeaveDays] = useState(false)
 
   const allTemplates = useMemo(() => {
     const customs = (customTemplates || []).map((t) => {
@@ -927,7 +931,8 @@ function Approvals() {
   )
 
   const seesWholeInbox = tab === 'inbox' && (isAdmin || isTeamLeader)
-  const baseList = tab === 'inbox' ? inboxRequests : tab === 'sent' ? sentRequests : requests
+  const baseList = (tab === 'inbox' ? inboxRequests : tab === 'sent' ? sentRequests : requests)
+    .filter(request => !leaveOnly || isLeaveRequest(request))
   const todoList = baseList.filter((r) => {
     if (r.status !== 'pending') return false
     if (tab !== 'inbox' || isAdmin) return true
@@ -2427,6 +2432,10 @@ function Approvals() {
                 </div>
               </div>
 
+              {isLeaveRequest(selectedRequest) && (
+                <LeaveDays key={selectedRequest.id} request={selectedRequest} />
+              )}
+
               <div className="apv-card-block">
                 <div className="apv-field">
                   <label>Về việc</label>
@@ -2758,6 +2767,18 @@ function Approvals() {
               <button className={tab === 'templates' ? 'active' : ''} onClick={() => setTabNav('templates')}>Mẫu yêu cầu</button>
               <button className={tab === 'stats' ? 'active' : ''} onClick={() => setTabNav('stats')}>Thống kê</button>
             </div>
+
+            {tab !== 'templates' && tab !== 'stats' && <div className="apv-request-filter">
+              <label>Loại đề xuất
+                <select value={leaveOnly ? 'leave' : ''} onChange={event => navigateApv({ type: event.target.value })}>
+                  <option value="">Tất cả đề xuất</option>
+                  <option value="leave">Nghỉ phép</option>
+                </select>
+              </label>
+              {leaveOnly && <button type="button" className="apv-btn apv-btn--approve apv-btn--sm" onClick={() => openCreate(allTemplates.find(template => template.id === 'leave'))}>
+                <i className="fas fa-plus" aria-hidden="true"></i> Tạo đơn xin nghỉ phép
+              </button>}
+            </div>}
 
             {tab === 'templates' ? (
               <div className="apv-templates">
@@ -3253,8 +3274,13 @@ function Approvals() {
               )}
             </div>
 
+            {leaveOnly && <details className="apv-leave-history" onToggle={event => setShowLegacyLeaveDays(event.currentTarget.open)}>
+              <summary>Ngày nghỉ thêm trực tiếp / đề xuất không còn trong danh sách</summary>
+              {showLegacyLeaveDays && <LeaveDays requests={requests} />}
+            </details>}
+
             {tab === 'sent' && (
-              <button className="apv-fab" onClick={() => openCreate()} title="Tạo yêu cầu">
+              <button className="apv-fab" onClick={() => openCreate(leaveOnly ? allTemplates.find(template => template.id === 'leave') : undefined)} title={leaveOnly ? 'Tạo đơn xin nghỉ phép' : 'Tạo yêu cầu'}>
                 <i className="fas fa-plus"></i>
               </button>
             )}

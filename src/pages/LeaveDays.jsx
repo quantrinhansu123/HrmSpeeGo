@@ -1,30 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import LeaveDayDetails from '../components/LeaveDayDetails'
 import { useAuth } from '../contexts/AuthContext'
 import { loadLeaveEmployees } from '../services/employeeLeave'
-import { addLeaveDay, approveLeaveDay, deleteLeaveDays, loadLeaveDays } from '../services/leaveDays'
+import { approveLeaveDay, deleteLeaveDays, loadLeaveDays } from '../services/leaveDays'
 import { getCompanyIdForUser } from '../utils/companyContext'
-import { formatLeaveDate, LEAVE_REASON_OPTIONS, todayLocalDate } from '../utils/leaveDays'
+import { formatLeaveDate } from '../utils/leaveDays'
+import { leaveDaysOutsideRequests } from '../utils/approvalLeave'
 import './LeaveDays.css'
 
 const UNASSIGNED_DEPARTMENT = 'Chưa có phòng ban'
 
-function LeaveDays() {
+function LeaveDays({ request = null, requests = null }) {
   const { user } = useAuth()
   const companyId = user?.company_id || user?.companyId || getCompanyIdForUser(user)
   const canViewAll = user?.role === 'admin' || user?.role === 'hr'
-  const name = String(user?.ho_va_ten || '').trim()
+  const requestId = request?.id
   const [records, setRecords] = useState([])
   const [departmentsByEmployee, setDepartmentsByEmployee] = useState({})
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedRecord, setSelectedRecord] = useState(null)
-  const [formOpen, setFormOpen] = useState(false)
-  const [leaveDate, setLeaveDate] = useState(() => todayLocalDate())
-  const [reason, setReason] = useState(LEAVE_REASON_OPTIONS[0])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [approvingId, setApprovingId] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [deleting, setDeleting] = useState(false)
@@ -35,9 +31,9 @@ function LeaveDays() {
     setLoading(true)
     setError('')
     try {
-      const rows = await loadLeaveDays({ companyId, employeeId: canViewAll ? null : user.id })
+      const rows = await loadLeaveDays({ companyId, employeeId: canViewAll ? null : user.id, approvalRequestId: requestId })
       let people = []
-      if (canViewAll) {
+      if (canViewAll && !requestId) {
         try {
           people = await loadLeaveEmployees(companyId)
         } catch (directoryError) {
@@ -56,17 +52,18 @@ function LeaveDays() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, canViewAll, user.id, user.bo_phan, user.department])
+  }, [companyId, canViewAll, user.id, user.bo_phan, user.department, requestId])
 
   useEffect(() => { reload() }, [reload])
 
   const departmentGroups = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('vi')
     const grouped = new Map()
-    records.forEach(record => {
+    const visibleRecords = requests ? leaveDaysOutsideRequests(records, requests) : records
+    visibleRecords.forEach(record => {
       if (statusFilter && record.status !== statusFilter) return
       const department = String(departmentsByEmployee[record.employee_id] || '').trim()
-      const label = department || UNASSIGNED_DEPARTMENT
+      const label = requestId ? 'Ngày nghỉ theo đề xuất' : department || UNASSIGNED_DEPARTMENT
       if (query && !`${record.employee_name} ${label}`.toLocaleLowerCase('vi').includes(query)) return
       if (!grouped.has(label)) grouped.set(label, [])
       grouped.get(label).push(record)
@@ -78,7 +75,7 @@ function LeaveDays() {
         return a[0].localeCompare(b[0], 'vi')
       })
       .map(([name, items]) => ({ name, items }))
-  }, [records, search, departmentsByEmployee, statusFilter])
+  }, [records, requests, requestId, search, departmentsByEmployee, statusFilter])
 
   const visibleIds = useMemo(
     () => departmentGroups.flatMap(group => group.items.map(record => record.id)),
@@ -131,31 +128,6 @@ function LeaveDays() {
     }
   }
 
-  const save = async event => {
-    event.preventDefault()
-    setError('')
-    setNotice('')
-    if (!name) {
-      setError('Hồ sơ tài khoản chưa có họ tên. Vui lòng liên hệ HR để cập nhật.')
-      return
-    }
-    setSaving(true)
-    try {
-      const record = await addLeaveDay({ companyId, employeeId: user.id, leaveDate, reason })
-      setRecords(current => [record, ...current].sort((a, b) =>
-        b.leave_date.localeCompare(a.leave_date) || a.id.localeCompare(b.id)))
-      setSearch('')
-      setFormOpen(false)
-      setLeaveDate(todayLocalDate())
-      setReason(LEAVE_REASON_OPTIONS[0])
-      setNotice('Đã gửi yêu cầu nghỉ phép. Trạng thái: Chờ duyệt.')
-    } catch (requestError) {
-      setError(requestError.message || 'Không ghi nhận được ngày nghỉ phép.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const approve = async record => {
     setError('')
     setNotice('')
@@ -171,53 +143,23 @@ function LeaveDays() {
     }
   }
 
-  return <div className="leave-days-page">
-    <header className="leave-days-header">
-      <div>
-        <h1>Ngày nghỉ phép</h1>
-        <p>{canViewAll ? 'Danh sách ngày nghỉ theo phòng ban, liên kết với đề xuất nghỉ phép đã duyệt.' : 'Ngày nghỉ của bạn, đề xuất liên quan và lịch sử điều chỉnh.'}</p>
-      </div>
-      <button type="button" className="btn btn-primary" onClick={() => {
-        setFormOpen(current => !current)
-        setError('')
-        setNotice('')
-      }} aria-expanded={formOpen}>
-        <i className={`fas fa-${formOpen ? 'times' : 'plus'}`} aria-hidden="true" /> {formOpen ? 'Đóng' : 'Thêm mới'}
-      </button>
-    </header>
-
-    {formOpen && <form className="leave-days-form" onSubmit={save}>
-      <h2>Thêm ngày nghỉ phép</h2>
-      <div className="leave-days-form-grid">
-        <label>Tên người nghỉ
-          <input type="text" value={name} readOnly aria-readonly="true" placeholder="Chưa có họ tên trong hồ sơ" />
-          {!name && <small>Hồ sơ tài khoản cần có họ tên trước khi ghi nhận ngày nghỉ.</small>}
-        </label>
-        <label>Ngày nghỉ phép
-          <input type="date" value={leaveDate} onChange={event => setLeaveDate(event.target.value)} required />
-        </label>
-      </div>
-      <label className="leave-days-reason">Lý do nghỉ phép
-        <select value={reason} onChange={event => setReason(event.target.value)} required>
-          {LEAVE_REASON_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-        </select>
-      </label>
-      <div className="leave-days-form-actions">
-        <button type="submit" className="btn btn-primary" disabled={saving || !name}>{saving ? 'Đang lưu...' : 'Lưu ngày nghỉ'}</button>
-      </div>
-    </form>}
-
+  return <div className="leave-days-page leave-days-page--embedded">
     {error && <div className="leave-days-message is-error" role="alert">{error}</div>}
     {notice && <div className="leave-days-message is-success" role="status">{notice}</div>}
 
     <section className="leave-days-list">
       <div className="leave-days-list-head">
-        <h2>Danh sách ngày nghỉ</h2>
+        <div>
+          <h2>{requestId ? 'Ngày nghỉ đã ghi nhận' : 'Ngày nghỉ ngoài danh sách đề xuất'}</h2>
+          <p className="leave-days-muted">{requestId
+            ? 'Ngày nghỉ được ghi nhận khi đề xuất được duyệt bước cuối. Chọn chi tiết để xem lịch sử điều chỉnh.'
+            : 'Các ngày đã thêm trực tiếp hoặc có đề xuất gốc không còn trong danh sách. Lịch sử và tệp điều chỉnh vẫn được giữ.'}</p>
+        </div>
         <div className="leave-days-list-tools">
           <label>Trạng thái<select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
             <option value="">Tất cả</option><option value="approved">Đã duyệt</option><option value="pending">Chờ duyệt</option>
           </select></label>
-          {canViewAll && <label>Tìm nhân sự
+          {canViewAll && !requestId && <label>Tìm nhân sự
             <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Tên hoặc phòng ban" />
           </label>}
           {visibleIds.length > 0 && <label className="leave-days-select-all">
@@ -236,7 +178,11 @@ function LeaveDays() {
         </div>
       </div>
       {loading ? <p className="leave-days-empty">Đang tải danh sách...</p> : error && records.length === 0 ? null : departmentGroups.length === 0 ? (
-        <p className="leave-days-empty">Chưa có ngày nghỉ phép nào.</p>
+        <p className="leave-days-empty">{requestId && !canViewAll && request.requesterId !== user.id
+          ? 'Bạn chỉ có quyền xem ngày nghỉ đã ghi nhận của mình.'
+          : requestId && request.status !== 'approved'
+            ? 'Đề xuất chưa được duyệt bước cuối nên chưa ghi nhận ngày nghỉ.'
+            : requestId ? 'Không có ngày nghỉ đã ghi nhận cho đề xuất này.' : 'Không có ngày nghỉ ngoài danh sách đề xuất.'}</p>
       ) : <div className="leave-days-groups">
         {departmentGroups.map(group => <section key={group.name} className="leave-days-group">
           <div className="leave-days-group-head">
@@ -255,7 +201,7 @@ function LeaveDays() {
                     aria-label={`Chọn tất cả ngày nghỉ của ${group.name}`}
                   />
                 </th>
-                <th scope="col">Tên người nghỉ</th><th scope="col">Ngày nghỉ phép</th><th scope="col">Lý do</th><th scope="col">Trạng thái</th><th scope="col">Đề xuất liên quan</th><th scope="col">Điều chỉnh</th><th scope="col">Thao tác</th>
+                {!requestId && <th scope="col">Tên người nghỉ</th>}<th scope="col">Ngày nghỉ phép</th><th scope="col">Lý do</th><th scope="col">Trạng thái</th>{!requestId && <th scope="col">Đề xuất liên quan</th>}<th scope="col">Điều chỉnh</th><th scope="col">Thao tác</th>
               </tr></thead>
               <tbody>{group.items.map(record => <tr key={record.id}>
                 <td className="leave-days-check-col" data-label="Chọn">
@@ -267,15 +213,16 @@ function LeaveDays() {
                     aria-label={`Chọn ngày nghỉ của ${record.employee_name}`}
                   />
                 </td>
-                <td data-label="Tên người nghỉ">{record.employee_name}</td>
+                {!requestId && <td data-label="Tên người nghỉ">{record.employee_name}</td>}
                 <td data-label="Ngày nghỉ phép">{formatLeaveDate(record.leave_date)}</td>
                 <td data-label="Lý do">{record.reason || '—'}</td>
                 <td data-label="Trạng thái"><span className={`leave-days-status is-${record.status || 'pending'}`}>{record.status === 'approved' ? 'Đã duyệt' : 'Chờ duyệt'}</span></td>
-                <td data-label="Đề xuất liên quan">{record.approval_request_id
-                  ? <Link to={`/approvals?view=detail&id=${encodeURIComponent(record.approval_snapshot?.id || record.approval_request_id.replace(/^approvalRequests::/, ''))}`}>
-                    {record.approval_snapshot?.code ? `#${record.approval_snapshot.code}` : 'Xem đề xuất'}
+                {!requestId && <td data-label="Đề xuất liên quan">{record.approval_request_id
+                  ? <span>
+                    {record.approval_snapshot?.code ? `#${record.approval_snapshot.code}` : 'Đề xuất nghỉ phép'}
                     {record.approval_snapshot?.subject && <small className="leave-days-source-subject">{record.approval_snapshot.subject}</small>}
-                  </Link> : <span className="leave-days-muted">Thêm trực tiếp</span>}</td>
+                    <small className="leave-days-source-subject leave-days-muted">Không còn trong danh sách đề xuất</small>
+                  </span> : <span className="leave-days-muted">Thêm trực tiếp</span>}</td>}
                 <td data-label="Điều chỉnh">{record.adjustment_count > 0
                   ? <button type="button" className="leave-days-text-button" onClick={() => setSelectedRecord(record)}>{record.adjustment_count} lần · Xem ghi chú / tệp</button>
                   : <span className="leave-days-muted">Chưa điều chỉnh</span>}</td>

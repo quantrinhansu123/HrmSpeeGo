@@ -14,7 +14,6 @@ const Employees = lazy(() => import('./pages/Employees'))
 const FeatureComingSoon = lazy(() => import('./pages/FeatureComingSoon'))
 const HolidaySettings = lazy(() => import('./pages/HolidaySettings'))
 const LeaveBoard = lazy(() => import('./pages/LeaveBoard'))
-const LeaveDays = lazy(() => import('./pages/LeaveDays'))
 const Login = lazy(() => import('./pages/Login'))
 const MyAttendance = lazy(() => import('./pages/MyAttendance'))
 const OnlineAttendance = lazy(() => import('./pages/OnlineAttendance'))
@@ -41,7 +40,7 @@ function App() {
               <Route path="/bang-cong" element={<MyAttendance />} />
               <Route path="/cham-cong-online" element={<OnlineAttendance />} />
               <Route path="/lich-su-cham-cong" element={<AttendanceHistory />} />
-              <Route path="/ngay-nghi-phep" element={<LeaveDays />} />
+              <Route path="/ngay-nghi-phep" element={<Navigate to="/approvals?tab=admin&type=leave&filter=done" replace />} />
               <Route path="/dang-ky-ca" element={<ShiftRegistration />} />
               <Route path="/approvals" element={<Approvals />} />
             </Route>
